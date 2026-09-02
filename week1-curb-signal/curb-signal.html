@@ -186,6 +186,15 @@
     0%{opacity:0.6; transform:scale(1);}
     100%{opacity:0; transform:scale(1.35);}
   }
+  .dc-icon.pinging .dc-pulse{
+    border-color:var(--accent);
+    animation:ping 0.9s ease-out;
+  }
+  @media (prefers-reduced-motion: reduce){ .dc-icon.pinging .dc-pulse{animation:none !important;} }
+  @keyframes ping{
+    0%{opacity:0.8; transform:scale(0.9);}
+    100%{opacity:0; transform:scale(1.5);}
+  }
 
   .dc-text .headline{font-family:"Overpass"; font-weight:800; font-size:17px; margin-bottom:6px;}
   .dc-chip{
@@ -230,6 +239,44 @@
   .pc-icon svg{width:13px; height:13px;}
   .priority-chip span{font-size:13px; font-weight:600; color:var(--ink);}
   .priority-chip strong{font-family:"Overpass"; font-weight:800;}
+
+  .ramp-btn{
+    margin-top:10px; width:100%;
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    padding:12px 14px; border-radius:var(--radius-md);
+    border:1.5px solid var(--accent);
+    background:var(--surface); color:var(--accent);
+    font-family:"Source Sans 3"; font-size:14px; font-weight:700;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .ramp-btn svg{width:18px; height:18px; flex:0 0 auto;}
+  .ramp-btn:hover{background:var(--accent-soft);}
+  .ramp-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .ramp-btn:active{transform:scale(0.98);}
+  .ramp-btn[aria-pressed="true"]{
+    background:var(--good); color:#fff; border-color:var(--good);
+  }
+  .ramp-btn[aria-pressed="true"]:hover{background:var(--good); opacity:0.9;}
+  .ramp-hint{margin-top:7px; font-size:11px; color:var(--ink-faint); text-align:center; line-height:1.4;}
+
+  .ghost-btn{
+    margin-top:12px; width:100%;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    padding:10px 14px; border-radius:var(--radius-md);
+    border:1.5px dashed var(--line);
+    background:transparent; color:var(--ink-soft);
+    font-family:"Source Sans 3"; font-size:13px; font-weight:600;
+    cursor:pointer;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .ghost-btn svg{width:16px; height:16px; flex:0 0 auto;}
+  .ghost-btn:hover{border-color:var(--ink-faint); background:var(--surface-2);}
+  .ghost-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .ghost-btn:active{transform:scale(0.98);}
+  .ghost-btn[aria-pressed="true"]{
+    border-style:solid; border-color:var(--good); background:var(--good-soft); color:var(--good);
+  }
 
   /* bus status row (driver-reported), shares the driver-card wrapper */
   .s-icon{
@@ -364,19 +411,29 @@
             <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
             <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
             <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-            <div class="avatar overflow">+2</div>
+            <div class="avatar overflow" id="waiting-overflow">+2</div>
           </div>
           <div>
-            <div class="waiting-count num">6</div>
+            <div class="waiting-count num" id="waiting-count">6</div>
             <div class="waiting-sub">people at this stop</div>
           </div>
         </div>
+        <button class="ghost-btn" id="waiting-btn" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg>
+          <span id="waiting-btn-label">I'm waiting here too</span>
+        </button>
+
         <div class="priority-chip" id="priority-chip">
           <div class="pc-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
           </div>
-          <span><strong class="num">1</strong> priority rider detected</span>
+          <span><strong class="num" id="ramp-count">1</strong> <span id="ramp-count-label">rider needs</span> the ramp</span>
         </div>
+        <button class="ramp-btn" id="ramp-btn" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+          <span id="ramp-btn-label">Request the ramp</span>
+        </button>
+        <div class="ramp-hint">Tap to let the driver know — tap again to undo.</div>
       </div>
 
       <div class="block">
@@ -397,7 +454,7 @@
         <div class="block-label">Boarding</div>
         <div class="boarding-note" id="boarding-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
-          <p id="boarding-text">Please let the <strong>priority rider board first</strong>, then everyone else in line.</p>
+          <p id="boarding-text">Please let the <strong>ramp rider board first</strong>, then everyone else in line.</p>
         </div>
         <div class="mini-queue">
           <div class="mq-door" aria-hidden="true">
@@ -411,7 +468,7 @@
           <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
           <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
         </div>
-        <div class="mq-caption">Matches the lane markings on the ground — priority lane stays closest to the door</div>
+        <div class="mq-caption">Matches the lane markings on the ground — ramp lane stays closest to the door</div>
       </div>
 
       <div class="block-bottom"></div>
@@ -455,29 +512,43 @@
   const btnPending = document.getElementById('btn-pending');
   const btnConfirmed = document.getElementById('btn-confirmed');
 
+  const dcIcon = document.getElementById('dc-icon');
   const dcHeadline = document.getElementById('dc-headline');
   const dcChip = document.getElementById('dc-chip');
   const boardingText = document.getElementById('boarding-text');
   const groundNote = document.getElementById('ground-note');
+  const rampBtn = document.getElementById('ramp-btn');
+  const rampBtnLabel = document.getElementById('ramp-btn-label');
+  const rampCountEl = document.getElementById('ramp-count');
+  const rampCountLabel = document.getElementById('ramp-count-label');
+  const waitingBtn = document.getElementById('waiting-btn');
+  const waitingBtnLabel = document.getElementById('waiting-btn-label');
+  const waitingCountEl = document.getElementById('waiting-count');
+  const waitingOverflowEl = document.getElementById('waiting-overflow');
 
   let capacity = 'available';
   let driver = 'confirmed';
+  const rampBase = 1;
+  let rampRequested = false;
+  const waitingBase = 6;
+  const waitingShownAvatars = 4;
+  let waitingManual = false;
 
   const CAPACITY_COPY = {
     available: {
       chip:'Plenty of room',
-      boarding:'Please let the <strong>priority rider board first</strong>, then everyone else in line.',
+      boarding:'Please let the <strong>ramp rider board first</strong>, then everyone else in line.',
       note:"Lane closest to the door stays clear until it's needed — everyone else lines up in 2, 3, 4."
     },
     holding: {
       chip:'Nearly full',
-      boarding:'Bus is close to full. <strong>The priority rider still boards first</strong> — others may be asked to wait for the next 21.',
+      boarding:'Bus is close to full. <strong>The ramp rider still boards first</strong> — others may be asked to wait for the next 21.',
       note:'Lane closest to the door is being held — others may be asked to wait for the next bus.'
     },
     full: {
       chip:'Bus full',
-      boarding:'This bus is full. <strong>Please wait here</strong> — the next 21 in 11 min will hold space for the priority rider first.',
-      note:'This bus is full — the next 21 is being flagged to have priority space open.'
+      boarding:'This bus is full. <strong>Please wait here</strong> — the next 21 in 11 min will hold space for the ramp rider first.',
+      note:'This bus is full — the next 21 is being flagged to hold ramp space.'
     }
   };
 
@@ -511,13 +582,50 @@
     renderStatus();
   }
 
+  function renderRampCount(){
+    const total = rampBase + (rampRequested ? 1 : 0);
+    rampCountEl.textContent = total;
+    rampCountLabel.textContent = total === 1 ? 'rider needs' : 'riders need';
+  }
+
+  function toggleRamp(){
+    rampRequested = !rampRequested;
+    renderRampCount();
+
+    rampBtn.setAttribute('aria-pressed', String(rampRequested));
+    rampBtnLabel.textContent = rampRequested ? 'Ramp requested ✓ (tap to undo)' : 'Request the ramp';
+
+    if(rampRequested){
+      dcIcon.classList.add('pinging');
+      setTimeout(() => dcIcon.classList.remove('pinging'), 900);
+    }
+  }
+
+  function renderWaitingCount(){
+    const total = waitingBase + (waitingManual ? 1 : 0);
+    waitingCountEl.textContent = total;
+    const overflow = total - waitingShownAvatars;
+    waitingOverflowEl.textContent = '+' + overflow;
+  }
+
+  function toggleWaiting(){
+    waitingManual = !waitingManual;
+    renderWaitingCount();
+    waitingBtn.setAttribute('aria-pressed', String(waitingManual));
+    waitingBtnLabel.textContent = waitingManual ? "You're counted ✓ (tap to undo)" : "I'm waiting here too";
+  }
+
   btns.available.addEventListener('click', () => setCapacity('available'));
   btns.holding.addEventListener('click', () => setCapacity('holding'));
   btns.full.addEventListener('click', () => setCapacity('full'));
   btnPending.addEventListener('click', () => setDriver('pending'));
   btnConfirmed.addEventListener('click', () => setDriver('confirmed'));
+  rampBtn.addEventListener('click', toggleRamp);
+  waitingBtn.addEventListener('click', toggleWaiting);
 
   setCapacity('available');
   setDriver('confirmed');
+  renderRampCount();
+  renderWaitingCount();
 })();
 </script>
