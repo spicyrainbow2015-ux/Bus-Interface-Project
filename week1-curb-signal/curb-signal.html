@@ -1,7 +1,7 @@
 <title>Curb Signal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root{
     --ground:#eef1ec;
@@ -64,21 +64,35 @@
     --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 20px 44px -20px rgba(0,0,0,0.7);
   }
 
+  /* ---- SEPTA-derived signage palette, fixed regardless of viewer theme ---- */
+  .bezel, .ground{
+    --sg-bg:#ffffff;
+    --sg-bg-2:#f2f2f2;
+    --sg-ink:#0a0a0a;
+    --sg-white:#ffffff;
+    --sg-muted:rgba(10,10,10,0.58);
+    --sg-line:rgba(10,10,10,0.14);
+    --sg-red:#d1332f;
+    --sg-yellow:#ffc300;
+    --sg-green:#1f8f52;
+    --sg-blue:#1e6fa8;
+  }
+
   *{box-sizing:border-box;}
   body{
     background:var(--ground);
     color:var(--ink);
-    font-family:"Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    font-family:"Archivo", ui-sans-serif, system-ui, sans-serif;
     padding:26px 16px 50px;
     display:flex; flex-direction:column; align-items:center; gap:20px;
   }
-  h1,h2,h3{font-family:"Overpass", ui-sans-serif, system-ui, sans-serif; text-wrap:balance; margin:0;}
+  h1,h2,h3{font-family:"Archivo", ui-sans-serif, system-ui, sans-serif; text-wrap:balance; margin:0;}
   .num{font-variant-numeric:tabular-nums;}
 
   .page-head{width:100%; max-width:920px; display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;}
   .brand{display:flex; align-items:center; gap:10px;}
-  .brand-mark{width:28px; height:28px; border-radius:8px; background:var(--accent); color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-family:"Overpass"; font-weight:800; font-size:14px;}
-  .brand-name{font-family:"Overpass"; font-weight:700; font-size:16px;}
+  .brand-mark{width:28px; height:28px; border-radius:8px; background:var(--accent); color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-family:"Archivo"; font-weight:800; font-size:14px;}
+  .brand-name{font-family:"Archivo"; font-weight:700; font-size:16px;}
   .page-head .tag{color:var(--ink-faint); font-size:12.5px;}
 
   .demo-bar{
@@ -90,7 +104,7 @@
   .demo-bar .label{font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-faint); white-space:nowrap;}
   .demo-bar .btns{display:flex; gap:8px; flex-wrap:wrap;}
   .demo-btn{
-    font-family:"Source Sans 3"; font-size:13px; font-weight:600;
+    font-family:"Archivo"; font-size:13px; font-weight:600;
     padding:7px 13px; border-radius:999px; border:1.5px solid var(--line);
     background:var(--surface); color:var(--ink-soft); cursor:pointer;
     transition:border-color .15s ease, color .15s ease, background .15s ease;
@@ -113,72 +127,90 @@
     max-width:520px; margin:0 auto; line-height:1.5;
   }
 
-  /* ---- the portrait shelter panel ---- */
+  /* ---- the portrait shelter panel, styled after SEPTA's digital bus-shelter signage ---- */
   .bezel{
-    background:var(--panel-bezel);
-    border-radius:26px;
+    background:#050505;
+    border-radius:20px;
     padding:14px;
     box-shadow:var(--shadow);
     width:360px; max-width:100%;
     justify-self:center;
   }
   .sign{
-    background:var(--surface);
-    border-radius:16px;
+    background:var(--sg-bg);
+    border-radius:10px;
     overflow:hidden;
     display:flex; flex-direction:column;
+    box-shadow:0 0 0 1px rgba(10,10,10,0.08);
   }
 
   .sign-top{
     padding:20px 20px 16px;
     display:flex; align-items:center; justify-content:space-between; gap:12px;
-    border-bottom:1px solid var(--line);
+    border-bottom:1px solid var(--sg-line);
   }
   .route{display:flex; align-items:center; gap:10px;}
   .route-badge{
-    background:var(--ink); color:var(--ground);
-    font-family:"Overpass"; font-weight:800; font-size:19px;
-    padding:7px 12px; border-radius:9px; line-height:1;
+    background:var(--sg-red); color:var(--sg-white);
+    font-family:"Archivo"; font-weight:800; font-size:19px;
+    padding:6px 16px; border-radius:999px; line-height:1;
   }
-  :root[data-theme="dark"] .route-badge{background:var(--accent); color:var(--accent-ink);}
-  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .route-badge{background:var(--accent); color:var(--accent-ink);}}
-  .route-label{color:var(--ink-soft); font-size:12.5px; font-weight:600;}
+  .route-label{color:var(--sg-muted); font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.03em;}
   .eta{text-align:right;}
-  .eta .mins{font-family:"Overpass"; font-weight:800; font-size:34px; line-height:1;}
-  .eta .unit{font-size:11.5px; color:var(--ink-soft); font-weight:600;}
+  .eta .mins{font-family:"Archivo"; font-weight:900; font-size:34px; line-height:1; color:var(--sg-ink);}
+  .eta .unit{font-size:11px; color:var(--sg-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
 
   .block{padding:16px 20px 0;}
   .block-label{
     font-size:10.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
-    color:var(--ink-faint); margin-bottom:9px;
+    color:var(--sg-muted); margin-bottom:9px;
   }
+  .block-label-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin-bottom:9px;
+  }
+  .block-label-row .block-label{margin-bottom:0;}
+
+  .mini-btn{
+    display:flex; align-items:center; gap:5px;
+    padding:4px 10px 4px 8px; border-radius:999px;
+    border:1.5px dashed var(--sg-line);
+    background:transparent; color:var(--sg-muted);
+    font-family:"Archivo"; font-size:11px; font-weight:700;
+    cursor:pointer; white-space:nowrap;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .mini-btn svg{width:12px; height:12px; flex:0 0 auto;}
+  .mini-btn:hover{border-color:var(--sg-ink); background:var(--sg-bg-2);}
+  .mini-btn:focus-visible{outline:2px solid var(--sg-ink); outline-offset:2px;}
+  .mini-btn:active{transform:scale(0.96);}
+  .mini-btn[aria-pressed="true"]{
+    border-style:solid; border-color:var(--sg-green); background:var(--sg-green); color:var(--sg-white);
+  }
+  .mini-btn[aria-pressed="true"] svg{transform:rotate(45deg);}
 
   /* ---- driver + bus status: one compact block ---- */
   .driver-card{
     display:flex; align-items:center; gap:14px;
-    border-radius:var(--radius-md);
+    border-radius:8px;
     padding:14px 16px;
-    border:1.5px solid var(--good-line);
-    background:var(--good-soft);
-    transition:background .2s ease, border-color .2s ease;
+    border:1px solid var(--sg-line);
+    background:var(--sg-bg-2);
   }
-  body[data-capacity="holding"] .driver-card{background:var(--hold-soft); border-color:var(--hold-line);}
-  body[data-capacity="full"] .driver-card{background:var(--warn-soft); border-color:var(--warn-line);}
-  body[data-driver="pending"] .driver-card{background:var(--surface-2); border-color:var(--line);}
 
   .dc-icon{
-    width:52px; height:52px; flex:0 0 auto; border-radius:13px;
+    width:52px; height:52px; flex:0 0 auto; border-radius:8px;
     display:flex; align-items:center; justify-content:center;
-    background:var(--good); color:#fff; position:relative;
+    background:var(--sg-green); color:var(--sg-white); position:relative;
   }
   .dc-icon svg{width:27px; height:27px;}
-  body[data-capacity="holding"] .dc-icon{background:var(--hold);}
-  body[data-capacity="full"] .dc-icon{background:var(--warn);}
-  body[data-driver="pending"] .dc-icon{background:var(--ink-faint);}
+  body[data-capacity="holding"] .dc-icon{background:var(--sg-yellow); color:#1a1400;}
+  body[data-capacity="full"] .dc-icon{background:var(--sg-red); color:var(--sg-white);}
+  body[data-driver="pending"] .dc-icon{background:transparent; border:1.5px dashed var(--sg-line); color:var(--sg-muted);}
 
   .dc-pulse{
-    position:absolute; inset:-2px; border-radius:15px;
-    border:2px solid var(--ink-faint); opacity:0;
+    position:absolute; inset:-2px; border-radius:11px;
+    border:2px solid var(--sg-muted); opacity:0;
   }
   body[data-driver="pending"] .dc-pulse{animation:ring 1.6s ease-out infinite;}
   @media (prefers-reduced-motion: reduce){ .dc-pulse{animation:none !important;} }
@@ -187,7 +219,7 @@
     100%{opacity:0; transform:scale(1.35);}
   }
   .dc-icon.pinging .dc-pulse{
-    border-color:var(--accent);
+    border-color:var(--sg-blue);
     animation:ping 0.9s ease-out;
   }
   @media (prefers-reduced-motion: reduce){ .dc-icon.pinging .dc-pulse{animation:none !important;} }
@@ -196,172 +228,131 @@
     100%{opacity:0; transform:scale(1.5);}
   }
 
-  .dc-text .headline{font-family:"Overpass"; font-weight:800; font-size:17px; margin-bottom:6px;}
+  .dc-text .headline{font-family:"Archivo"; font-weight:800; font-size:17px; margin-bottom:6px; color:var(--sg-ink);}
   .dc-chip{
     display:inline-flex; align-items:center;
-    font-size:11.5px; font-weight:700;
-    padding:3px 10px; border-radius:999px;
-    background:var(--good); color:#fff;
+    font-size:11.5px; font-weight:800;
+    padding:3px 10px; border-radius:5px;
+    background:var(--sg-green); color:var(--sg-white);
   }
-  body[data-capacity="holding"] .dc-chip{background:var(--hold);}
-  body[data-capacity="full"] .dc-chip{background:var(--warn);}
-  body[data-driver="pending"] .dc-chip{background:var(--ink-faint); color:var(--ground);}
+  body[data-capacity="holding"] .dc-chip{background:var(--sg-yellow); color:#1a1400;}
+  body[data-capacity="full"] .dc-chip{background:var(--sg-red); color:var(--sg-white);}
+  body[data-driver="pending"] .dc-chip{background:transparent; border:1px solid var(--sg-line); color:var(--sg-muted);}
 
   /* waiting riders */
   .waiting-row{display:flex; align-items:center; gap:12px;}
   .avatars{display:flex;}
   .avatar{
     width:28px; height:28px; border-radius:50%;
-    background:var(--surface-2); border:2px solid var(--surface);
+    background:var(--sg-bg-2); border:2px solid var(--sg-bg);
     margin-left:-8px; display:flex; align-items:center; justify-content:center;
-    color:var(--ink-faint);
+    color:var(--sg-muted);
   }
   .avatar:first-child{margin-left:0;}
   .avatar svg{width:14px; height:14px;}
-  .avatar.overflow{background:var(--ink); color:var(--ground); font-family:"Overpass"; font-weight:700; font-size:10.5px;}
-  .waiting-count{font-family:"Overpass"; font-weight:800; font-size:24px;}
-  .waiting-sub{font-size:12px; color:var(--ink-soft); font-weight:500;}
+  .avatar.overflow{background:var(--sg-ink); color:var(--sg-bg); font-family:"Archivo"; font-weight:800; font-size:10.5px;}
+  .waiting-count{font-family:"Archivo"; font-weight:900; font-size:24px; color:var(--sg-ink);}
+  .waiting-sub{font-size:12px; color:var(--sg-muted); font-weight:500;}
 
   .priority-chip{
     margin-top:12px;
     display:flex; align-items:center; gap:9px;
-    padding:9px 13px;
-    border-radius:999px;
-    background:var(--good-soft);
-    border:1.5px solid var(--good-line);
+    padding:8px 12px;
+    border-radius:5px;
+    background:var(--sg-blue);
     width:fit-content;
   }
   .pc-icon{
-    width:22px; height:22px; flex:0 0 auto; border-radius:50%;
+    width:22px; height:22px; flex:0 0 auto; border-radius:4px;
     display:flex; align-items:center; justify-content:center;
-    background:var(--good); color:#fff;
+    background:rgba(255,255,255,0.22); color:var(--sg-white);
   }
   .pc-icon svg{width:13px; height:13px;}
-  .priority-chip span{font-size:13px; font-weight:600; color:var(--ink);}
-  .priority-chip strong{font-family:"Overpass"; font-weight:800;}
+  .priority-chip span{font-size:13px; font-weight:700; color:var(--sg-white);}
+  .priority-chip strong{font-family:"Archivo"; font-weight:900;}
 
   .ramp-btn{
     margin-top:10px; width:100%;
     display:flex; align-items:center; justify-content:center; gap:9px;
-    padding:12px 14px; border-radius:var(--radius-md);
-    border:1.5px solid var(--accent);
-    background:var(--surface); color:var(--accent);
-    font-family:"Source Sans 3"; font-size:14px; font-weight:700;
+    padding:12px 14px; border-radius:6px;
+    border:1.5px solid var(--sg-blue);
+    background:transparent; color:var(--sg-blue);
+    font-family:"Archivo"; font-size:14px; font-weight:800;
     cursor:pointer;
     transition:background .15s ease, color .15s ease, border-color .15s ease;
   }
   .ramp-btn svg{width:18px; height:18px; flex:0 0 auto;}
-  .ramp-btn:hover{background:var(--accent-soft);}
-  .ramp-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .ramp-btn:hover{background:rgba(30,111,168,0.12);}
+  .ramp-btn:focus-visible{outline:2px solid var(--sg-ink); outline-offset:2px;}
   .ramp-btn:active{transform:scale(0.98);}
   .ramp-btn[aria-pressed="true"]{
-    background:var(--good); color:#fff; border-color:var(--good);
+    background:var(--sg-green); color:var(--sg-white); border-color:var(--sg-green);
   }
-  .ramp-btn[aria-pressed="true"]:hover{background:var(--good); opacity:0.9;}
-  .ramp-hint{margin-top:7px; font-size:11px; color:var(--ink-faint); text-align:center; line-height:1.4;}
-
-  .ghost-btn{
-    margin-top:12px; width:100%;
-    display:flex; align-items:center; justify-content:center; gap:8px;
-    padding:10px 14px; border-radius:var(--radius-md);
-    border:1.5px dashed var(--line);
-    background:transparent; color:var(--ink-soft);
-    font-family:"Source Sans 3"; font-size:13px; font-weight:600;
-    cursor:pointer;
-    transition:background .15s ease, color .15s ease, border-color .15s ease;
-  }
-  .ghost-btn svg{width:16px; height:16px; flex:0 0 auto;}
-  .ghost-btn:hover{border-color:var(--ink-faint); background:var(--surface-2);}
-  .ghost-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
-  .ghost-btn:active{transform:scale(0.98);}
-  .ghost-btn[aria-pressed="true"]{
-    border-style:solid; border-color:var(--good); background:var(--good-soft); color:var(--good);
-  }
-
-  /* bus status row (driver-reported), shares the driver-card wrapper */
-  .s-icon{
-    width:48px; height:48px; flex:0 0 auto; border-radius:13px;
-    display:flex; align-items:center; justify-content:center;
-    background:var(--good); color:#fff;
-  }
-  .s-icon svg{width:24px; height:24px;}
-  .s-text .headline{font-family:"Overpass"; font-weight:800; font-size:16.5px; margin-bottom:3px;}
-  .s-text .sub{font-size:12.5px; color:var(--ink-soft); line-height:1.4;}
-
-  body[data-capacity="holding"] .s-icon{background:var(--hold);}
-  body[data-capacity="full"] .s-icon{background:var(--warn);}
-  body[data-driver="pending"] .s-icon{background:var(--ink-faint);}
+  .ramp-btn[aria-pressed="true"]:hover{background:var(--sg-green); opacity:0.9;}
+  .ramp-hint{margin-top:7px; font-size:11px; color:var(--sg-muted); text-align:center; line-height:1.4;}
 
   /* boarding note, simplified */
   .boarding-note{
     display:flex; align-items:flex-start; gap:11px;
-    border-radius:var(--radius-md);
+    border-radius:8px;
     padding:13px 15px;
-    background:var(--surface-2);
-    border:1px solid var(--line);
+    background:var(--sg-bg-2);
+    border:1px solid var(--sg-line);
   }
-  .boarding-note svg{width:19px; height:19px; flex:0 0 auto; color:var(--good); margin-top:1px;}
-  body[data-capacity="full"] .boarding-note svg{color:var(--warn);}
-  .boarding-note p{margin:0; font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
-  .boarding-note strong{color:var(--ink); font-weight:700;}
+  .boarding-note svg{width:19px; height:19px; flex:0 0 auto; color:var(--sg-blue); margin-top:1px;}
+  .boarding-note p{margin:0; font-size:12.5px; color:var(--sg-muted); line-height:1.5;}
+  .boarding-note strong{color:var(--sg-ink); font-weight:700;}
 
   /* mini queue: mirrors the ground panel's lane order */
   .mini-queue{
     display:flex; align-items:center; gap:6px;
     margin-top:10px; padding:10px 12px;
-    border-radius:var(--radius-sm);
-    background:var(--surface-2); border:1px dashed var(--line);
+    border-radius:6px;
+    background:var(--sg-bg-2); border:1px dashed var(--sg-line);
   }
   .mq-door{
     display:flex; flex-direction:column; align-items:center; gap:2px;
-    color:var(--ink-faint); flex:0 0 auto; margin-right:2px;
+    color:var(--sg-muted); flex:0 0 auto; margin-right:2px;
   }
   .mq-door svg{width:14px; height:14px;}
   .mq-door span{font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
   .mq-lane{
-    flex:1; aspect-ratio:1; border-radius:7px;
+    flex:1; aspect-ratio:1; border-radius:4px;
     display:flex; align-items:center; justify-content:center;
-    border:1.5px solid var(--line); background:var(--surface);
-    color:var(--ink-faint); max-width:32px;
+    border:1.5px solid var(--sg-line); background:var(--sg-bg);
+    color:var(--sg-muted); max-width:32px;
   }
   .mq-lane svg{width:15px; height:15px;}
   .mq-priority{
-    border-color:var(--good); background:var(--good-soft); color:var(--good);
+    border-color:var(--sg-blue); background:var(--sg-blue); color:var(--sg-white);
   }
-  body[data-capacity="holding"] .mq-priority{border-color:var(--hold); background:var(--hold-soft); color:var(--hold);}
-  body[data-capacity="full"] .mq-priority{border-color:var(--warn); background:var(--warn-soft); color:var(--warn);}
-  body[data-driver="pending"] .mq-priority{border-color:var(--line); background:var(--surface); color:var(--ink-faint);}
-  .mq-caption{margin-top:7px; font-size:11px; color:var(--ink-faint); line-height:1.4;}
+  .mq-caption{margin-top:7px; font-size:11px; color:var(--sg-muted); line-height:1.4;}
 
   .block-bottom{height:18px;}
 
-  /* ---- ground guide (secondary, smaller) ---- */
+  /* ---- ground guide: floor projection, styled to match the sign ---- */
   .ground{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    background:var(--sg-bg); border:1px solid var(--sg-line); border-radius:16px;
     box-shadow:var(--shadow); padding:18px 18px 20px;
     display:flex; flex-direction:column; gap:12px;
     max-width:360px;
   }
   .ground-head{display:flex; align-items:center; justify-content:space-between;}
-  .ground-head h2{font-size:13.5px; font-weight:700;}
-  .ground-head .hint{font-size:11px; color:var(--ink-faint);}
-  .curb-view{position:relative; background:var(--surface-2); border-radius:var(--radius-md); padding:16px 12px 14px; border:1px solid var(--line);}
+  .ground-head h2{font-size:13.5px; font-weight:700; color:var(--sg-ink);}
+  .ground-head .hint{font-size:11px; color:var(--sg-muted);}
+  .curb-view{position:relative; background:var(--sg-bg-2); border-radius:8px; padding:16px 12px 14px; border:1px solid var(--sg-line);}
   .door-marker{
     display:flex; align-items:center; justify-content:center; gap:6px;
-    font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint);
-    padding-bottom:11px; margin-bottom:11px; border-bottom:2px dashed var(--line);
+    font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--sg-muted);
+    padding-bottom:11px; margin-bottom:11px; border-bottom:2px dashed var(--sg-line);
   }
   .lanes{display:flex; gap:7px;}
-  .lane{flex:1; border-radius:9px; padding:10px 4px 8px; display:flex; flex-direction:column; align-items:center; gap:5px; border:1.5px solid var(--line); background:var(--surface);}
-  .lane .lane-num{font-family:"Overpass"; font-weight:800; font-size:13px; color:var(--ink-soft);}
-  .lane svg{width:16px; height:16px; color:var(--ink-faint);}
-  .lane.priority{border-color:var(--good); background:var(--good-soft);}
-  .lane.priority .lane-num, .lane.priority svg{color:var(--good);}
-  body[data-capacity="holding"] .lane.priority{border-color:var(--hold); background:var(--hold-soft);}
-  body[data-capacity="holding"] .lane.priority .lane-num, body[data-capacity="holding"] .lane.priority svg{color:var(--hold);}
-  body[data-capacity="full"] .lane.priority{border-color:var(--warn); background:var(--warn-soft);}
-  body[data-capacity="full"] .lane.priority .lane-num, body[data-capacity="full"] .lane.priority svg{color:var(--warn);}
-  .ground-note{font-size:12px; color:var(--ink-soft); line-height:1.5;}
+  .lane{flex:1; border-radius:6px; padding:10px 4px 8px; display:flex; flex-direction:column; align-items:center; gap:5px; border:1.5px solid var(--sg-line); background:var(--sg-bg);}
+  .lane .lane-num{font-family:"Archivo"; font-weight:800; font-size:13px; color:var(--sg-muted);}
+  .lane svg{width:16px; height:16px; color:var(--sg-muted);}
+  .lane.priority{border-color:var(--sg-blue); background:var(--sg-blue);}
+  .lane.priority .lane-num, .lane.priority svg{color:var(--sg-white);}
+  .ground-note{font-size:12px; color:var(--sg-muted); line-height:1.5;}
 
   footer{max-width:920px; width:100%; text-align:center; font-size:11.5px; color:var(--ink-faint); padding-top:4px;}
 </style>
@@ -404,7 +395,13 @@
       </div>
 
       <div class="block">
-        <div class="block-label">Waiting now</div>
+        <div class="block-label-row">
+          <div class="block-label">Waiting now</div>
+          <button class="mini-btn" id="waiting-btn" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+            <span id="waiting-btn-label">I'm here too</span>
+          </button>
+        </div>
         <div class="waiting-row">
           <div class="avatars">
             <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
@@ -418,10 +415,6 @@
             <div class="waiting-sub">people at this stop</div>
           </div>
         </div>
-        <button class="ghost-btn" id="waiting-btn" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg>
-          <span id="waiting-btn-label">I'm waiting here too</span>
-        </button>
 
         <div class="priority-chip" id="priority-chip">
           <div class="pc-icon">
@@ -612,7 +605,7 @@
     waitingManual = !waitingManual;
     renderWaitingCount();
     waitingBtn.setAttribute('aria-pressed', String(waitingManual));
-    waitingBtnLabel.textContent = waitingManual ? "You're counted ✓ (tap to undo)" : "I'm waiting here too";
+    waitingBtnLabel.textContent = waitingManual ? "Counted ✓" : "I'm here too";
   }
 
   btns.available.addEventListener('click', () => setCapacity('available'));
