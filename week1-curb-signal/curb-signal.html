@@ -1,0 +1,523 @@
+<title>Curb Signal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ground:#eef1ec;
+    --surface:#ffffff;
+    --surface-2:#eef1ec;
+    --panel-bezel:#0f1a17;
+    --ink:#1c2a26;
+    --ink-soft:#52645d;
+    --ink-faint:#8a978f;
+    --line:#dbe2dc;
+    --accent:#2f6f68;
+    --accent-ink:#ffffff;
+    --accent-soft:#e1f0ec;
+    --good:#347a52;
+    --good-soft:#e4f4e9;
+    --good-line:#bfe2cc;
+    --hold:#b8862c;
+    --hold-soft:#faf1de;
+    --hold-line:#eeda9c;
+    --warn:#b8482a;
+    --warn-soft:#fae4da;
+    --warn-line:#eeb49c;
+    --shadow: 0 1px 2px rgba(28,42,38,0.06), 0 20px 44px -20px rgba(28,42,38,0.28);
+    --radius-lg: 22px;
+    --radius-md: 14px;
+    --radius-sm: 9px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0d1412;
+      --surface:#1b2422;
+      --surface-2:#212b28;
+      --panel-bezel:#050908;
+      --ink:#eaf1ed;
+      --ink-soft:#a9bab2;
+      --ink-faint:#748881;
+      --line:#2c3835;
+      --accent:#5fb3a9;
+      --accent-ink:#0f1a18;
+      --accent-soft:#22322f;
+      --good:#6bc290;
+      --good-soft:#1e2f27;
+      --good-line:#345544;
+      --hold:#e0b25c;
+      --hold-soft:#332a18;
+      --hold-line:#5a4a27;
+      --warn:#e0785c;
+      --warn-soft:#332018;
+      --warn-line:#5a3527;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 20px 44px -20px rgba(0,0,0,0.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0d1412; --surface:#1b2422; --surface-2:#212b28; --panel-bezel:#050908;
+    --ink:#eaf1ed; --ink-soft:#a9bab2; --ink-faint:#748881; --line:#2c3835;
+    --accent:#5fb3a9; --accent-ink:#0f1a18; --accent-soft:#22322f;
+    --good:#6bc290; --good-soft:#1e2f27; --good-line:#345544;
+    --hold:#e0b25c; --hold-soft:#332a18; --hold-line:#5a4a27;
+    --warn:#e0785c; --warn-soft:#332018; --warn-line:#5a3527;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 20px 44px -20px rgba(0,0,0,0.7);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+    padding:26px 16px 50px;
+    display:flex; flex-direction:column; align-items:center; gap:20px;
+  }
+  h1,h2,h3{font-family:"Overpass", ui-sans-serif, system-ui, sans-serif; text-wrap:balance; margin:0;}
+  .num{font-variant-numeric:tabular-nums;}
+
+  .page-head{width:100%; max-width:920px; display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+  .brand{display:flex; align-items:center; gap:10px;}
+  .brand-mark{width:28px; height:28px; border-radius:8px; background:var(--accent); color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-family:"Overpass"; font-weight:800; font-size:14px;}
+  .brand-name{font-family:"Overpass"; font-weight:700; font-size:16px;}
+  .page-head .tag{color:var(--ink-faint); font-size:12.5px;}
+
+  .demo-bar{
+    width:100%; max-width:920px;
+    border:1.5px dashed var(--line); border-radius:var(--radius-md);
+    padding:12px 16px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    background:var(--surface-2);
+  }
+  .demo-bar .label{font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:var(--ink-faint); white-space:nowrap;}
+  .demo-bar .btns{display:flex; gap:8px; flex-wrap:wrap;}
+  .demo-btn{
+    font-family:"Source Sans 3"; font-size:13px; font-weight:600;
+    padding:7px 13px; border-radius:999px; border:1.5px solid var(--line);
+    background:var(--surface); color:var(--ink-soft); cursor:pointer;
+    transition:border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .demo-btn:hover{border-color:var(--accent);}
+  .demo-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  .demo-btn[aria-pressed="true"]{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .demo-btn:disabled{opacity:0.4; cursor:not-allowed;}
+
+  .scene{
+    width:100%; max-width:920px;
+    display:grid; grid-template-columns:auto 1fr; gap:26px; align-items:start;
+    justify-content:center;
+  }
+  @media (max-width:720px){ .scene{grid-template-columns:1fr;} }
+
+  .context-note{
+    grid-column:1 / -1;
+    font-size:12.5px; color:var(--ink-faint); text-align:center;
+    max-width:520px; margin:0 auto; line-height:1.5;
+  }
+
+  /* ---- the portrait shelter panel ---- */
+  .bezel{
+    background:var(--panel-bezel);
+    border-radius:26px;
+    padding:14px;
+    box-shadow:var(--shadow);
+    width:360px; max-width:100%;
+    justify-self:center;
+  }
+  .sign{
+    background:var(--surface);
+    border-radius:16px;
+    overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+
+  .sign-top{
+    padding:20px 20px 16px;
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    border-bottom:1px solid var(--line);
+  }
+  .route{display:flex; align-items:center; gap:10px;}
+  .route-badge{
+    background:var(--ink); color:var(--ground);
+    font-family:"Overpass"; font-weight:800; font-size:19px;
+    padding:7px 12px; border-radius:9px; line-height:1;
+  }
+  :root[data-theme="dark"] .route-badge{background:var(--accent); color:var(--accent-ink);}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .route-badge{background:var(--accent); color:var(--accent-ink);}}
+  .route-label{color:var(--ink-soft); font-size:12.5px; font-weight:600;}
+  .eta{text-align:right;}
+  .eta .mins{font-family:"Overpass"; font-weight:800; font-size:34px; line-height:1;}
+  .eta .unit{font-size:11.5px; color:var(--ink-soft); font-weight:600;}
+
+  .block{padding:16px 20px 0;}
+  .block-label{
+    font-size:10.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+    color:var(--ink-faint); margin-bottom:9px;
+  }
+
+  /* ---- driver + bus status: one compact block ---- */
+  .driver-card{
+    display:flex; align-items:center; gap:14px;
+    border-radius:var(--radius-md);
+    padding:14px 16px;
+    border:1.5px solid var(--good-line);
+    background:var(--good-soft);
+    transition:background .2s ease, border-color .2s ease;
+  }
+  body[data-capacity="holding"] .driver-card{background:var(--hold-soft); border-color:var(--hold-line);}
+  body[data-capacity="full"] .driver-card{background:var(--warn-soft); border-color:var(--warn-line);}
+  body[data-driver="pending"] .driver-card{background:var(--surface-2); border-color:var(--line);}
+
+  .dc-icon{
+    width:52px; height:52px; flex:0 0 auto; border-radius:13px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--good); color:#fff; position:relative;
+  }
+  .dc-icon svg{width:27px; height:27px;}
+  body[data-capacity="holding"] .dc-icon{background:var(--hold);}
+  body[data-capacity="full"] .dc-icon{background:var(--warn);}
+  body[data-driver="pending"] .dc-icon{background:var(--ink-faint);}
+
+  .dc-pulse{
+    position:absolute; inset:-2px; border-radius:15px;
+    border:2px solid var(--ink-faint); opacity:0;
+  }
+  body[data-driver="pending"] .dc-pulse{animation:ring 1.6s ease-out infinite;}
+  @media (prefers-reduced-motion: reduce){ .dc-pulse{animation:none !important;} }
+  @keyframes ring{
+    0%{opacity:0.6; transform:scale(1);}
+    100%{opacity:0; transform:scale(1.35);}
+  }
+
+  .dc-text .headline{font-family:"Overpass"; font-weight:800; font-size:17px; margin-bottom:6px;}
+  .dc-chip{
+    display:inline-flex; align-items:center;
+    font-size:11.5px; font-weight:700;
+    padding:3px 10px; border-radius:999px;
+    background:var(--good); color:#fff;
+  }
+  body[data-capacity="holding"] .dc-chip{background:var(--hold);}
+  body[data-capacity="full"] .dc-chip{background:var(--warn);}
+  body[data-driver="pending"] .dc-chip{background:var(--ink-faint); color:var(--ground);}
+
+  /* waiting riders */
+  .waiting-row{display:flex; align-items:center; gap:12px;}
+  .avatars{display:flex;}
+  .avatar{
+    width:28px; height:28px; border-radius:50%;
+    background:var(--surface-2); border:2px solid var(--surface);
+    margin-left:-8px; display:flex; align-items:center; justify-content:center;
+    color:var(--ink-faint);
+  }
+  .avatar:first-child{margin-left:0;}
+  .avatar svg{width:14px; height:14px;}
+  .avatar.overflow{background:var(--ink); color:var(--ground); font-family:"Overpass"; font-weight:700; font-size:10.5px;}
+  .waiting-count{font-family:"Overpass"; font-weight:800; font-size:24px;}
+  .waiting-sub{font-size:12px; color:var(--ink-soft); font-weight:500;}
+
+  .priority-chip{
+    margin-top:12px;
+    display:flex; align-items:center; gap:9px;
+    padding:9px 13px;
+    border-radius:999px;
+    background:var(--good-soft);
+    border:1.5px solid var(--good-line);
+    width:fit-content;
+  }
+  .pc-icon{
+    width:22px; height:22px; flex:0 0 auto; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--good); color:#fff;
+  }
+  .pc-icon svg{width:13px; height:13px;}
+  .priority-chip span{font-size:13px; font-weight:600; color:var(--ink);}
+  .priority-chip strong{font-family:"Overpass"; font-weight:800;}
+
+  /* bus status row (driver-reported), shares the driver-card wrapper */
+  .s-icon{
+    width:48px; height:48px; flex:0 0 auto; border-radius:13px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--good); color:#fff;
+  }
+  .s-icon svg{width:24px; height:24px;}
+  .s-text .headline{font-family:"Overpass"; font-weight:800; font-size:16.5px; margin-bottom:3px;}
+  .s-text .sub{font-size:12.5px; color:var(--ink-soft); line-height:1.4;}
+
+  body[data-capacity="holding"] .s-icon{background:var(--hold);}
+  body[data-capacity="full"] .s-icon{background:var(--warn);}
+  body[data-driver="pending"] .s-icon{background:var(--ink-faint);}
+
+  /* boarding note, simplified */
+  .boarding-note{
+    display:flex; align-items:flex-start; gap:11px;
+    border-radius:var(--radius-md);
+    padding:13px 15px;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+  }
+  .boarding-note svg{width:19px; height:19px; flex:0 0 auto; color:var(--good); margin-top:1px;}
+  body[data-capacity="full"] .boarding-note svg{color:var(--warn);}
+  .boarding-note p{margin:0; font-size:12.5px; color:var(--ink-soft); line-height:1.5;}
+  .boarding-note strong{color:var(--ink); font-weight:700;}
+
+  /* mini queue: mirrors the ground panel's lane order */
+  .mini-queue{
+    display:flex; align-items:center; gap:6px;
+    margin-top:10px; padding:10px 12px;
+    border-radius:var(--radius-sm);
+    background:var(--surface-2); border:1px dashed var(--line);
+  }
+  .mq-door{
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    color:var(--ink-faint); flex:0 0 auto; margin-right:2px;
+  }
+  .mq-door svg{width:14px; height:14px;}
+  .mq-door span{font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
+  .mq-lane{
+    flex:1; aspect-ratio:1; border-radius:7px;
+    display:flex; align-items:center; justify-content:center;
+    border:1.5px solid var(--line); background:var(--surface);
+    color:var(--ink-faint); max-width:32px;
+  }
+  .mq-lane svg{width:15px; height:15px;}
+  .mq-priority{
+    border-color:var(--good); background:var(--good-soft); color:var(--good);
+  }
+  body[data-capacity="holding"] .mq-priority{border-color:var(--hold); background:var(--hold-soft); color:var(--hold);}
+  body[data-capacity="full"] .mq-priority{border-color:var(--warn); background:var(--warn-soft); color:var(--warn);}
+  body[data-driver="pending"] .mq-priority{border-color:var(--line); background:var(--surface); color:var(--ink-faint);}
+  .mq-caption{margin-top:7px; font-size:11px; color:var(--ink-faint); line-height:1.4;}
+
+  .block-bottom{height:18px;}
+
+  /* ---- ground guide (secondary, smaller) ---- */
+  .ground{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-lg);
+    box-shadow:var(--shadow); padding:18px 18px 20px;
+    display:flex; flex-direction:column; gap:12px;
+    max-width:360px;
+  }
+  .ground-head{display:flex; align-items:center; justify-content:space-between;}
+  .ground-head h2{font-size:13.5px; font-weight:700;}
+  .ground-head .hint{font-size:11px; color:var(--ink-faint);}
+  .curb-view{position:relative; background:var(--surface-2); border-radius:var(--radius-md); padding:16px 12px 14px; border:1px solid var(--line);}
+  .door-marker{
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:11px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-faint);
+    padding-bottom:11px; margin-bottom:11px; border-bottom:2px dashed var(--line);
+  }
+  .lanes{display:flex; gap:7px;}
+  .lane{flex:1; border-radius:9px; padding:10px 4px 8px; display:flex; flex-direction:column; align-items:center; gap:5px; border:1.5px solid var(--line); background:var(--surface);}
+  .lane .lane-num{font-family:"Overpass"; font-weight:800; font-size:13px; color:var(--ink-soft);}
+  .lane svg{width:16px; height:16px; color:var(--ink-faint);}
+  .lane.priority{border-color:var(--good); background:var(--good-soft);}
+  .lane.priority .lane-num, .lane.priority svg{color:var(--good);}
+  body[data-capacity="holding"] .lane.priority{border-color:var(--hold); background:var(--hold-soft);}
+  body[data-capacity="holding"] .lane.priority .lane-num, body[data-capacity="holding"] .lane.priority svg{color:var(--hold);}
+  body[data-capacity="full"] .lane.priority{border-color:var(--warn); background:var(--warn-soft);}
+  body[data-capacity="full"] .lane.priority .lane-num, body[data-capacity="full"] .lane.priority svg{color:var(--warn);}
+  .ground-note{font-size:12px; color:var(--ink-soft); line-height:1.5;}
+
+  footer{max-width:920px; width:100%; text-align:center; font-size:11.5px; color:var(--ink-faint); padding-top:4px;}
+</style>
+
+<div class="page-head">
+  <div class="brand">
+    <div class="brand-mark">CS</div>
+    <div class="brand-name">Curb Signal</div>
+  </div>
+  <div class="tag">Looks-like prototype — Week 1</div>
+</div>
+
+<div class="demo-bar">
+  <span class="label">Demo controls</span>
+  <div class="btns">
+    <button class="demo-btn" id="btn-pending" aria-pressed="false">Driver: awaiting</button>
+    <button class="demo-btn" id="btn-confirmed" aria-pressed="true">Driver: confirmed</button>
+  </div>
+  <div class="btns" style="margin-left:auto;">
+    <button class="demo-btn" id="btn-available" aria-pressed="true">Reports: space available</button>
+    <button class="demo-btn" id="btn-holding" aria-pressed="false">Reports: nearly full</button>
+    <button class="demo-btn" id="btn-full" aria-pressed="false">Reports: full</button>
+  </div>
+</div>
+
+<div class="scene">
+  <p class="context-note">Mounted on the shelter's curb-facing side panel, at eye level, next to where riders already stand to wait.</p>
+
+  <div class="bezel">
+    <section class="sign" aria-label="Bus stop sign">
+      <div class="sign-top">
+        <div class="route">
+          <div class="route-badge">21</div>
+          <div class="route-label">Chestnut&nbsp;St</div>
+        </div>
+        <div class="eta">
+          <div class="mins num">4</div>
+          <div class="unit">min away</div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-label">Waiting now</div>
+        <div class="waiting-row">
+          <div class="avatars">
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar overflow">+2</div>
+          </div>
+          <div>
+            <div class="waiting-count num">6</div>
+            <div class="waiting-sub">people at this stop</div>
+          </div>
+        </div>
+        <div class="priority-chip" id="priority-chip">
+          <div class="pc-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+          </div>
+          <span><strong class="num">1</strong> priority rider detected</span>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-label">Driver &amp; bus status</div>
+        <div class="driver-card">
+          <div class="dc-icon" id="dc-icon">
+            <div class="dc-pulse" id="dc-pulse"></div>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M3 12h18"/><circle cx="7.5" cy="19.5" r="1.4"/><circle cx="16.5" cy="19.5" r="1.4"/></svg>
+          </div>
+          <div class="dc-text">
+            <div class="headline" id="dc-headline">Driver confirmed</div>
+            <div class="dc-chip" id="dc-chip">Plenty of room</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="block-label">Boarding</div>
+        <div class="boarding-note" id="boarding-note">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+          <p id="boarding-text">Please let the <strong>priority rider board first</strong>, then everyone else in line.</p>
+        </div>
+        <div class="mini-queue">
+          <div class="mq-door" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M5 12h14"/></svg>
+            <span>door</span>
+          </div>
+          <div class="mq-lane mq-priority" id="mq-priority">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+          </div>
+          <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+          <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+          <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+        </div>
+        <div class="mq-caption">Matches the lane markings on the ground — priority lane stays closest to the door</div>
+      </div>
+
+      <div class="block-bottom"></div>
+    </section>
+  </div>
+
+  <section class="ground" aria-label="Ground lane guide">
+    <div class="ground-head">
+      <h2>Where to line up</h2>
+      <span class="hint">projected on pavement</span>
+    </div>
+    <div class="curb-view">
+      <div class="door-marker">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M5 12h14"/></svg>
+        Bus door
+      </div>
+      <div class="lanes">
+        <div class="lane priority">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.2"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+          <div class="lane-num">1</div>
+        </div>
+        <div class="lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg><div class="lane-num">2</div></div>
+        <div class="lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg><div class="lane-num">3</div></div>
+        <div class="lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg><div class="lane-num">4</div></div>
+      </div>
+    </div>
+    <p class="ground-note" id="ground-note">Lane closest to the door stays clear until it's needed — everyone else lines up in 2, 3, 4.</p>
+  </section>
+</div>
+
+<footer>Curb Signal &middot; a rider-facing bus stop concept &middot; Street Interface, Week 1</footer>
+
+<script>
+(function(){
+  const body = document.body;
+  const btns = {
+    available: document.getElementById('btn-available'),
+    holding: document.getElementById('btn-holding'),
+    full: document.getElementById('btn-full'),
+  };
+  const btnPending = document.getElementById('btn-pending');
+  const btnConfirmed = document.getElementById('btn-confirmed');
+
+  const dcHeadline = document.getElementById('dc-headline');
+  const dcChip = document.getElementById('dc-chip');
+  const boardingText = document.getElementById('boarding-text');
+  const groundNote = document.getElementById('ground-note');
+
+  let capacity = 'available';
+  let driver = 'confirmed';
+
+  const CAPACITY_COPY = {
+    available: {
+      chip:'Plenty of room',
+      boarding:'Please let the <strong>priority rider board first</strong>, then everyone else in line.',
+      note:"Lane closest to the door stays clear until it's needed — everyone else lines up in 2, 3, 4."
+    },
+    holding: {
+      chip:'Nearly full',
+      boarding:'Bus is close to full. <strong>The priority rider still boards first</strong> — others may be asked to wait for the next 21.',
+      note:'Lane closest to the door is being held — others may be asked to wait for the next bus.'
+    },
+    full: {
+      chip:'Bus full',
+      boarding:'This bus is full. <strong>Please wait here</strong> — the next 21 in 11 min will hold space for the priority rider first.',
+      note:'This bus is full — the next 21 is being flagged to have priority space open.'
+    }
+  };
+
+  function renderStatus(){
+    if(driver === 'pending'){
+      dcHeadline.textContent = 'Notifying driver…';
+      dcChip.textContent = 'Checking bus fullness';
+      boardingText.innerHTML = 'Please wait here a moment — <strong>boarding details are on the way.</strong>';
+      groundNote.textContent = 'Line-up guide will activate once the driver reports bus status.';
+      return;
+    }
+    const c = CAPACITY_COPY[capacity];
+    dcHeadline.textContent = 'Driver confirmed';
+    dcChip.textContent = c.chip;
+    boardingText.innerHTML = c.boarding;
+    groundNote.textContent = c.note;
+  }
+
+  function setCapacity(state){
+    capacity = state;
+    body.setAttribute('data-capacity', state);
+    Object.keys(btns).forEach(k => btns[k].setAttribute('aria-pressed', k === state));
+    renderStatus();
+  }
+
+  function setDriver(state){
+    driver = state;
+    body.setAttribute('data-driver', state);
+    btnPending.setAttribute('aria-pressed', state === 'pending');
+    btnConfirmed.setAttribute('aria-pressed', state === 'confirmed');
+    renderStatus();
+  }
+
+  btns.available.addEventListener('click', () => setCapacity('available'));
+  btns.holding.addEventListener('click', () => setCapacity('holding'));
+  btns.full.addEventListener('click', () => setCapacity('full'));
+  btnPending.addEventListener('click', () => setDriver('pending'));
+  btnConfirmed.addEventListener('click', () => setDriver('confirmed'));
+
+  setCapacity('available');
+  setDriver('confirmed');
+})();
+</script>
