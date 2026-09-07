@@ -1,0 +1,648 @@
+<title>Ramp Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#EDF0F4; --surface:#FFFFFF; --surface-2:#E4E9EF;
+  --line:#C9D2DC; --ink:#161B22; --ink-2:#3C4754; --muted:#66727F;
+  --accent:#0A5AA6; --accent-soft:#DCE9F6;
+
+  --k-bg:#0D1218; --k-line:#232C36; --k-dim:#7A8894; --k-text:#E9EDF2;
+  --k-ok:#4FBE87; --k-warn:#E8A33F; --k-unk:#8794A1; --k-drv:#B692E8;
+  --k-band:#2A1D0C; --k-band-line:#6B4A16;
+  --k-priority-bg:#0F2032; --k-priority-line:#1F4460; --k-priority:#7DBBF2;
+  --k-btn-bg:#151C24;
+  --k-beacon-off:#3A4450; --k-beacon-on:#59A2E8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#10151B; --surface:#171D25; --surface-2:#1E252E;
+    --line:#2C3641; --ink:#E7ECF2; --ink-2:#BAC4CF; --muted:#8A96A3;
+    --accent:#59A2E8; --accent-soft:#14293F;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#10151B; --surface:#171D25; --surface-2:#1E252E;
+  --line:#2C3641; --ink:#E7ECF2; --ink-2:#BAC4CF; --muted:#8A96A3;
+  --accent:#59A2E8; --accent-soft:#14293F;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"Archivo", ui-sans-serif, system-ui, sans-serif;
+  padding:26px 16px 56px;
+  display:flex; flex-direction:column; align-items:center; gap:20px;
+}
+.mono{font-family:"IBM Plex Mono", ui-monospace, monospace;}
+.tabular{font-variant-numeric:tabular-nums;}
+
+/* ---- page chrome ---- */
+.page-head{width:100%; max-width:960px; display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+.brand{display:flex; align-items:center; gap:10px;}
+.brand-mark{width:28px; height:28px; border-radius:8px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px;}
+.brand-name{font-weight:700; font-size:16px;}
+.page-head .tag{color:var(--muted); font-size:12.5px;}
+
+.demo-bar{
+  width:100%; max-width:960px;
+  border:1.5px dashed var(--line); border-radius:12px;
+  padding:14px 16px; display:flex; flex-direction:column; gap:12px;
+  background:var(--surface);
+}
+.demo-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+.demo-label{font-size:11px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted); white-space:nowrap;}
+.demo-btn{
+  font-family:"Archivo"; font-size:13px; font-weight:600;
+  padding:7px 13px; border-radius:999px; border:1.5px solid var(--line);
+  background:var(--surface); color:var(--ink-2); cursor:pointer;
+  transition:border-color .15s ease, background .15s ease, color .15s ease, opacity .15s ease;
+}
+.demo-btn:hover:not(:disabled){border-color:var(--accent);}
+.demo-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+.demo-btn[aria-pressed="true"]{background:var(--accent); color:#fff; border-color:var(--accent);}
+.demo-btn:disabled{opacity:0.4; cursor:not-allowed;}
+.play-btn{
+  align-self:flex-start;
+  font-family:"Archivo"; font-size:14px; font-weight:700;
+  padding:9px 18px; border-radius:999px; border:none;
+  background:var(--ink); color:var(--ground); cursor:pointer;
+}
+.play-btn:hover{opacity:0.88;}
+.play-btn[aria-pressed="true"]{background:var(--k-warn); color:#241a05;}
+.reset-btn{
+  font-family:"Archivo"; font-size:12.5px; font-weight:600;
+  padding:6px 12px; border-radius:999px; border:1px solid var(--line);
+  background:transparent; color:var(--muted); cursor:pointer;
+}
+.reset-btn:hover{border-color:var(--muted); color:var(--ink-2);}
+.demo-note{font-size:11.5px; color:var(--muted); line-height:1.45;}
+
+/* ---- stage: beacon + kiosk ---- */
+.stage{
+  width:100%; max-width:960px;
+  display:flex; align-items:flex-start; gap:22px; justify-content:center; flex-wrap:wrap;
+}
+.beacon-col{display:flex; flex-direction:column; align-items:center; gap:8px; padding-top:36px;}
+.beacon{
+  width:34px; height:34px; border-radius:50%;
+  background:var(--k-beacon-off);
+  box-shadow:none;
+  transition:background .3s ease, box-shadow .3s ease;
+}
+.beacon.on{
+  background:var(--k-beacon-on);
+  box-shadow:0 0 0 6px rgba(89,162,232,0.22), 0 0 22px 4px rgba(89,162,232,0.55);
+  animation:beacon-pulse 1.6s ease-in-out infinite;
+}
+@keyframes beacon-pulse{
+  0%,100%{box-shadow:0 0 0 6px rgba(89,162,232,0.22), 0 0 22px 4px rgba(89,162,232,0.55);}
+  50%{box-shadow:0 0 0 9px rgba(89,162,232,0.14), 0 0 30px 8px rgba(89,162,232,0.7);}
+}
+@media (prefers-reduced-motion: reduce){ .beacon.on{animation:none;} }
+.beacon-label{font-family:"IBM Plex Mono"; font-size:9.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); text-align:center;}
+.beacon-state{font-family:"IBM Plex Mono"; font-size:9.5px; color:var(--ink-2); text-align:center;}
+
+.kiosk{
+  width:480px; max-width:100%;
+  background:var(--k-bg); border:1px solid var(--k-line); border-radius:10px;
+  padding:18px 20px 20px;
+  font-family:"IBM Plex Mono", ui-monospace, monospace; color:var(--k-text);
+  box-shadow:0 24px 50px -24px rgba(0,0,0,0.5);
+}
+.kiosk-head{
+  display:flex; justify-content:space-between; align-items:baseline; gap:14px;
+  font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--k-dim);
+  padding-bottom:11px; margin-bottom:13px; border-bottom:1px solid var(--k-line);
+}
+
+.band{
+  background:var(--k-band); border:1px solid var(--k-band-line); border-radius:6px;
+  padding:13px 15px 14px; margin-bottom:14px;
+}
+.band .bt{display:block; font-size:16.5px; font-weight:600; color:var(--k-warn); line-height:1.28; letter-spacing:-0.01em; margin-bottom:5px;}
+.band .bs{font-size:11.5px; color:var(--k-dim); line-height:1.5;}
+.band .bs .src{color:var(--k-drv);}
+
+.band-priority{background:var(--k-priority-bg); border-color:var(--k-priority-line);}
+.band-priority .bt{color:var(--k-priority); font-size:17.5px;}
+.band-priority .bs{color:var(--k-dim);}
+
+.waiting-note{
+  display:flex; align-items:center; gap:8px;
+  font-size:12px; color:var(--k-dim); line-height:1.45;
+  padding:10px 2px; margin-bottom:6px; border-bottom:1px solid var(--k-line);
+}
+.waiting-note .dot{
+  width:7px; height:7px; border-radius:50%; background:var(--k-priority);
+  flex:0 0 auto; animation:dot-pulse 1.8s ease-in-out infinite;
+}
+@keyframes dot-pulse{0%,100%{opacity:0.4;} 50%{opacity:1;}}
+@media (prefers-reduced-motion: reduce){ .waiting-note .dot{animation:none;} }
+
+.row{
+  display:grid; grid-template-columns:44px 44px 1fr; align-items:baseline; gap:12px;
+  padding:11px 8px; margin:0 -8px; border-radius:6px; border-bottom:1px solid var(--k-line);
+  font-size:13.2px; cursor:pointer; background:transparent;
+  transition:background .12s ease;
+}
+.row:hover{background:#151C24;}
+.row:focus-visible{outline:2px solid var(--k-beacon-on); outline-offset:-2px;}
+.row:last-child{border-bottom:0;}
+.rt{font-weight:700; font-size:15.5px; letter-spacing:-0.01em;}
+.eta{text-align:right;}
+.st{font-size:12px; line-height:1.42;}
+.st .veh, .st .rider{color:var(--k-dim);}
+.st .src{color:var(--k-drv);}
+.st.ok{color:var(--k-ok);}
+.st.warn{color:var(--k-warn);}
+.st.unk{color:var(--k-unk);}
+.tap-hint{font-size:11px; color:var(--k-dim); text-align:center; padding-top:12px; margin-top:2px;}
+
+.kmsg{font-size:14px; line-height:1.55; padding:4px 0 2px;}
+.kmsg .big{display:block; font-size:16.5px; font-weight:600; margin-bottom:6px; letter-spacing:-0.01em; color:var(--k-text);}
+.kmsg .dim{color:var(--k-dim);}
+.chip{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--k-ok); color:var(--k-ok); border-radius:4px; padding:6px 11px; font-size:12px; margin-bottom:11px;}
+
+.kbtns{display:flex; flex-direction:column; gap:9px; margin-top:14px;}
+.kbtn{
+  border:1px solid var(--k-line); background:var(--k-btn-bg); color:var(--k-text);
+  border-radius:6px; padding:13px 16px; font-size:14px; font-weight:500;
+  font-family:inherit; text-align:left; cursor:pointer;
+  transition:border-color .12s ease, background .12s ease;
+}
+.kbtn:hover{border-color:var(--k-dim);}
+.kbtn:focus-visible{outline:2px solid var(--k-beacon-on); outline-offset:1px;}
+.klink{
+  margin-top:16px; background:none; border:none; color:var(--k-dim);
+  font-family:inherit; font-size:12px; text-decoration:underline; cursor:pointer; padding:0;
+}
+.klink:hover{color:var(--k-text);}
+
+@media (max-width: 560px){
+  .stage{flex-direction:column; align-items:center;}
+  .beacon-col{flex-direction:row; padding-top:0;}
+}
+</style>
+
+<div class="page-head">
+  <div class="brand">
+    <div class="brand-mark">RC</div>
+    <div class="brand-name">Ramp Check</div>
+  </div>
+  <div class="tag">Interactive prototype — Tier 1</div>
+</div>
+
+<div class="demo-bar">
+  <button class="play-btn" id="play-btn" aria-pressed="false">▶ Play walkthrough</button>
+
+  <div class="demo-row">
+    <span class="demo-label">Stop</span>
+    <button class="demo-btn" id="stop-a-btn" aria-pressed="true">40th &amp; Walnut</button>
+    <button class="demo-btn" id="stop-b-btn" aria-pressed="false">34th &amp; Walnut</button>
+    <span class="demo-label" style="margin-left:8px;">Scripted driver report</span>
+    <button class="demo-btn" id="driver-report-btn">Route 42 (bus 7145): ramp not working</button>
+  </div>
+
+  <div class="demo-row">
+    <span class="demo-label" id="detect-label">Camera at this stop — simulate:</span>
+    <button class="demo-btn" id="detect-wheelchair-btn" aria-pressed="false">Wheelchair user</button>
+    <button class="demo-btn" id="detect-stroller-btn" aria-pressed="false">Stroller / trolley</button>
+    <button class="demo-btn" id="detect-bike-btn" aria-pressed="false">Bike</button>
+  </div>
+
+  <div class="demo-row" id="arrival-row" hidden>
+    <span class="demo-label">Simulate arrival</span>
+    <button class="demo-btn" id="boarded-btn">Boarded fine</button>
+    <button class="demo-btn" id="didnt-board-btn">Didn't board</button>
+  </div>
+
+  <div class="demo-row">
+    <button class="reset-btn" id="reset-btn">↺ Reset demo</button>
+    <span class="demo-note">Stop switcher, driver-report trigger, and the category buttons above stand in for real inputs — a real kiosk lives at one stop, a real driver reports from the bus, and a real camera would call the same detection code these buttons call. Detection is assumed accurate here (no correction UI yet), and applies to whichever bus is soonest to arrive. Everything inside the dark screen below is the actual rider-facing interface, including the manual "tap a route" fallback for needs the camera doesn't catch.</span>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="beacon-col">
+    <div class="beacon" id="beacon"></div>
+    <div class="beacon-label">Stop signal</div>
+    <div class="beacon-state" id="beacon-state">off</div>
+  </div>
+
+  <div class="kiosk" id="kiosk" role="group" aria-label="Ramp Check kiosk screen"></div>
+</div>
+
+<script>
+(function(){
+  const VEHICLES = {
+    '8236': { id:'8236', route:'21', ramp:{status:'ok', source:'driver', time:'4:02'}, riderReports:[] },
+    '7145': { id:'7145', route:'42', ramp:{status:null}, riderReports:[] },
+    '8102': { id:'8102', route:'21', ramp:{status:null}, riderReports:[] },
+  };
+
+  const STOPS = {
+    A: { name:'40th & Walnut', dir:'Eastbound', detected:new Set(), rows:[
+      { vehicle:'8236', eta:4 },
+      { vehicle:'7145', eta:9 },
+      { vehicle:'8102', eta:14 },
+    ]},
+    B: { name:'34th & Walnut', dir:'Eastbound', detected:new Set(), rows:[
+      { vehicle:'7145', eta:3 },
+      { vehicle:'8102', eta:19 },
+    ]},
+  };
+
+  const REASON_LABEL = {
+    ramp: "Ramp didn't work",
+    full: 'Bus was full',
+    nostop: "Bus didn't stop",
+  };
+
+  const CATEGORY_LABEL = {
+    wheelchair: 'wheelchair user',
+    stroller: 'stroller or trolley',
+    bike: 'bike',
+  };
+
+  // Placeholder default — how close the soonest bus needs to be before a
+  // detection actually pings the driver, rather than just sitting as an
+  // ambient "waiting nearby" note. Same window used for the ramp-fault banner.
+  const PRIORITY_NOTIFY_ETA_MIN = 10;
+
+  let currentStop = 'A';
+  let view = 'rest';          // rest | need-type | confirmed | report | report-done
+  let pendingRow = null;      // { vehicle, route }
+  let pendingNeed = null;
+  let beaconOn = false;
+
+  const kiosk = document.getElementById('kiosk');
+  const beaconEl = document.getElementById('beacon');
+  const beaconStateEl = document.getElementById('beacon-state');
+  const stopABtn = document.getElementById('stop-a-btn');
+  const stopBBtn = document.getElementById('stop-b-btn');
+  const driverReportBtn = document.getElementById('driver-report-btn');
+  const detectLabel = document.getElementById('detect-label');
+  const detectBtns = {
+    wheelchair: document.getElementById('detect-wheelchair-btn'),
+    stroller: document.getElementById('detect-stroller-btn'),
+    bike: document.getElementById('detect-bike-btn'),
+  };
+  const arrivalRow = document.getElementById('arrival-row');
+  const boardedBtn = document.getElementById('boarded-btn');
+  const didntBoardBtn = document.getElementById('didnt-board-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const playBtn = document.getElementById('play-btn');
+
+  function fmt(n){ return n + ' min'; }
+
+  function rowStatus(v){
+    if(v.ramp.status === 'broken'){
+      return `<span class="st warn">Ramp not working<br><span class="src">Driver reported</span>${v.ramp.time ? ' at '+v.ramp.time : ''} <span class="veh">· bus ${v.id}</span></span>`;
+    }
+    if(v.ramp.status === 'ok'){
+      const riderNote = v.riderReports.length
+        ? `<br><span class="rider">${v.riderReports.length} rider${v.riderReports.length>1?'s':''} reported: ${REASON_LABEL[v.riderReports[v.riderReports.length-1]]}</span>`
+        : '';
+      return `<span class="st ok">Ramp working · space available<br><span class="src">Driver reported</span> <span class="veh">· bus ${v.id} · ${v.ramp.time}</span>${riderNote}</span>`;
+    }
+    const riderNote = v.riderReports.length
+      ? ` · ${v.riderReports.length} rider${v.riderReports.length>1?'s':''} reported: ${REASON_LABEL[v.riderReports[v.riderReports.length-1]]}`
+      : '';
+    return `<span class="st unk">No report yet <span class="veh">· bus ${v.id}</span>${riderNote}</span>`;
+  }
+
+  function bannerFor(stop){
+    return stop.rows.find(r => VEHICLES[r.vehicle].ramp.status === 'broken' && r.eta <= 10);
+  }
+
+  function nextWorking(stop, excludeVehicle){
+    const r = stop.rows.find(r => r.vehicle !== excludeVehicle && VEHICLES[r.vehicle].ramp.status === 'ok');
+    return r ? { route: VEHICLES[r.vehicle].route, eta: r.eta } : null;
+  }
+
+  // The bus that a detection at this stop would actually notify — the
+  // soonest arrival within the notify window. null if nothing's close yet.
+  function approachingRow(stop){
+    const within = stop.rows.filter(r => r.eta <= PRIORITY_NOTIFY_ETA_MIN);
+    if(!within.length) return null;
+    return within.reduce((a, b) => a.eta <= b.eta ? a : b);
+  }
+
+  /* ---------------------------------------------------------------------
+   * CAMERA INTEGRATION POINT
+   * This is the one function a real detection pipeline needs to call.
+   * Wire your model's output here — on every frame, or every time its
+   * read of the waiting area changes — instead of the demo buttons below.
+   *
+   *   applyDetection('A', ['wheelchair'])   // camera at stop A currently
+   *                                         // sees a wheelchair user
+   *   applyDetection('A', [])               // camera at stop A currently
+   *                                         // sees none of the 3 categories
+   *
+   * stopKey: 'A' | 'B' — whichever physical kiosk the camera belongs to.
+   * categories: array of zero or more of 'wheelchair' | 'stroller' | 'bike'.
+   * Known simplification: detection is assumed correct (no confidence score,
+   * no correction UI) and multiple simultaneous categories collapse to one
+   * generic "priority boarding" signal rather than being reported one by one.
+   * Nothing else in this file needs to change to swap in a real model.
+   * ------------------------------------------------------------------- */
+  function applyDetection(stopKey, categories){
+    STOPS[stopKey].detected = new Set(categories);
+    if(stopKey === currentStop){
+      renderDetectionToggles();
+      if(view === 'rest') render();
+      refreshBeacon();
+    }
+  }
+
+  function toggleCategory(cat){
+    const stop = STOPS[currentStop];
+    const next = new Set(stop.detected);
+    next.has(cat) ? next.delete(cat) : next.add(cat);
+    applyDetection(currentStop, Array.from(next));
+  }
+
+  function renderDetectionToggles(){
+    const stop = STOPS[currentStop];
+    detectLabel.textContent = `Camera at ${stop.name} — simulate:`;
+    Object.keys(detectBtns).forEach(cat => {
+      detectBtns[cat].setAttribute('aria-pressed', String(stop.detected.has(cat)));
+    });
+  }
+
+  function setBeacon(on){
+    beaconOn = on;
+    beaconEl.classList.toggle('on', on);
+    beaconStateEl.textContent = on ? 'on' : 'off';
+  }
+
+  // Beacon reflects whichever source is currently active for this stop —
+  // a manual request in progress, or an active automatic detection.
+  function refreshBeacon(){
+    const stop = STOPS[currentStop];
+    const manualActive = (view === 'confirmed');
+    const detectionActive = stop.detected.size > 0 && !!approachingRow(stop);
+    setBeacon(manualActive || detectionActive);
+  }
+
+  function render(){
+    const stop = STOPS[currentStop];
+
+    if(view === 'need-type'){
+      renderNeedType(pendingRow);
+      return;
+    }
+    if(view === 'confirmed'){
+      renderConfirmed(pendingRow, pendingNeed, stop);
+      return;
+    }
+    if(view === 'report'){
+      renderReport(pendingRow, stop);
+      return;
+    }
+    if(view === 'report-done'){
+      renderReportDone();
+      return;
+    }
+    renderRest(stop);
+  }
+
+  function renderRest(stop){
+    const banner = bannerFor(stop);
+    let bannerHTML = '';
+    if(banner){
+      const v = VEHICLES[banner.vehicle];
+      const alt = nextWorking(stop, banner.vehicle);
+      bannerHTML = `
+        <div class="band">
+          <span class="bt">Route ${v.route} in ${banner.eta} min — ramp not working</span>
+          <span class="bs"><span class="src">Driver reported</span>${v.ramp.time ? ' at '+v.ramp.time : ''} · bus ${v.id}${alt ? ' · next working ramp: Route '+alt.route+', '+alt.eta+' min' : ''}</span>
+        </div>`;
+    }
+
+    const ar = approachingRow(stop);
+    const detecting = stop.detected.size > 0;
+    let priorityHTML = '';
+    if(detecting && ar){
+      priorityHTML = `
+        <div class="band band-priority">
+          <span class="bt">Please let priority riders board first</span>
+          <span class="bs">Priority boarding detected automatically · driver notified · Route ${VEHICLES[ar.vehicle].route}</span>
+        </div>`;
+    } else if(detecting){
+      priorityHTML = `
+        <div class="waiting-note"><span class="dot"></span>Priority rider waiting nearby — driver will be notified as the bus gets closer</div>`;
+    }
+
+    const rowsHTML = stop.rows.map(r => {
+      const v = VEHICLES[r.vehicle];
+      return `<div class="row" data-vehicle="${r.vehicle}" data-route="${v.route}" tabindex="0" role="button"
+                aria-label="Route ${v.route}, ${r.eta} minutes, request priority boarding">
+        <span class="rt">${v.route}</span>
+        <span class="eta tabular">${fmt(r.eta)}</span>
+        <span>${rowStatus(v)}</span>
+      </div>`;
+    }).join('');
+
+    kiosk.innerHTML = `
+      <div class="kiosk-head"><span>${stop.name} · ${stop.dir}</span><span>4:12 PM</span></div>
+      ${bannerHTML}
+      ${priorityHTML}
+      ${rowsHTML}
+      <div class="tap-hint">Camera didn't notice you? Tap your route to request help boarding.</div>
+    `;
+
+    kiosk.querySelectorAll('.row').forEach(el => {
+      el.addEventListener('click', () => selectRow(el.dataset.vehicle, el.dataset.route));
+      el.addEventListener('keydown', e => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); selectRow(el.dataset.vehicle, el.dataset.route); } });
+    });
+  }
+
+  function renderNeedType(row){
+    kiosk.innerHTML = `
+      <div class="kiosk-head"><span>Priority boarding · Route ${row.route}</span><span>4:12 PM</span></div>
+      <div class="kmsg"><span class="big">Need help boarding?</span><span class="dim">One tap. The driver is told before they arrive.</span></div>
+      <div class="kbtns">
+        <button class="kbtn" data-need="wheelchair">Wheelchair or mobility device</button>
+        <button class="kbtn" data-need="stroller">Stroller</button>
+        <button class="kbtn" data-need="bike">Bike</button>
+      </div>
+      <button class="klink" id="cancel-need">Cancel</button>
+    `;
+    kiosk.querySelectorAll('.kbtn').forEach(b => b.addEventListener('click', () => selectNeed(b.dataset.need)));
+    document.getElementById('cancel-need').addEventListener('click', () => { view='rest'; render(); });
+  }
+
+  function renderConfirmed(row, need, stop){
+    kiosk.innerHTML = `
+      <div class="kiosk-head"><span>${stop.name} · ${stop.dir}</span><span>4:12 PM</span></div>
+      <div class="kmsg">
+        <span class="chip">✓ Priority boarding requested · Route ${row.route}</span><br>
+        <span class="dim">The stop is showing this to everyone waiting. Wait at the front door.</span>
+      </div>
+      <button class="klink" id="cancel-confirmed">Cancel request</button>
+    `;
+    document.getElementById('cancel-confirmed').addEventListener('click', cancelRequest);
+  }
+
+  function renderReport(row, stop){
+    const alt = nextWorking(stop, row.vehicle) || nextWorking(STOPS.A, row.vehicle) || nextWorking(STOPS.B, row.vehicle);
+    kiosk.innerHTML = `
+      <div class="kiosk-head"><span>${stop.name} · ${stop.dir}</span><span>4:12 PM</span></div>
+      <div class="kmsg">
+        <span class="big">${alt ? 'Next Route '+alt.route+' in '+alt.eta+' min' : 'Checking the next bus…'}</span>
+        <span class="dim">Or: Route 42 at 34th &amp; Walnut, 6 min walk.</span>
+      </div>
+      <div class="kmsg" style="margin-top:14px;">
+        <span class="big">What happened?</span>
+        <span class="dim">One tap warns riders further down the line.</span>
+      </div>
+      <div class="kbtns">
+        <button class="kbtn" data-reason="ramp">Ramp didn't work</button>
+        <button class="kbtn" data-reason="full">Bus was full</button>
+        <button class="kbtn" data-reason="nostop">Bus didn't stop</button>
+      </div>
+    `;
+    kiosk.querySelectorAll('.kbtn').forEach(b => b.addEventListener('click', () => submitReport(b.dataset.reason)));
+  }
+
+  function renderReportDone(){
+    kiosk.innerHTML = `
+      <div class="kiosk-head"><span>Thanks</span><span>4:12 PM</span></div>
+      <div class="kmsg"><span class="big">Report sent.</span><span class="dim">This helps riders further down the line. Returning to the board…</span></div>
+    `;
+  }
+
+  function selectRow(vehicle, route){
+    pendingRow = { vehicle, route };
+    view = 'need-type';
+    render();
+  }
+
+  function selectNeed(need){
+    pendingNeed = need;
+    view = 'confirmed';
+    arrivalRow.hidden = false;
+    render();
+    refreshBeacon();
+  }
+
+  function cancelRequest(){
+    pendingRow = null; pendingNeed = null;
+    view = 'rest';
+    arrivalRow.hidden = true;
+    render();
+    refreshBeacon();
+  }
+
+  function simulateBoarded(){
+    pendingRow = null; pendingNeed = null;
+    view = 'rest';
+    arrivalRow.hidden = true;
+    render();
+    refreshBeacon();
+  }
+
+  function simulateDidntBoard(){
+    view = 'report';
+    arrivalRow.hidden = true;
+    render();
+    refreshBeacon();
+  }
+
+  function submitReport(reason){
+    if(pendingRow){
+      VEHICLES[pendingRow.vehicle].riderReports.push(reason);
+    }
+    view = 'report-done';
+    render();
+    setTimeout(() => {
+      pendingRow = null; pendingNeed = null;
+      view = 'rest';
+      render();
+    }, 2200);
+  }
+
+  function setStop(s){
+    currentStop = s;
+    stopABtn.setAttribute('aria-pressed', String(s === 'A'));
+    stopBBtn.setAttribute('aria-pressed', String(s === 'B'));
+    renderDetectionToggles();
+    if(view === 'rest') render();
+    refreshBeacon();
+  }
+
+  function triggerDriverReport(){
+    VEHICLES['7145'].ramp = { status:'broken', source:'driver', time:'3:41' };
+    driverReportBtn.disabled = true;
+    if(view === 'rest') render();
+  }
+
+  function resetAll(){
+    VEHICLES['8236'].ramp = { status:'ok', source:'driver', time:'4:02' };
+    VEHICLES['8236'].riderReports = [];
+    VEHICLES['7145'].ramp = { status:null };
+    VEHICLES['7145'].riderReports = [];
+    VEHICLES['8102'].ramp = { status:null };
+    VEHICLES['8102'].riderReports = [];
+    STOPS.A.detected = new Set();
+    STOPS.B.detected = new Set();
+    pendingRow = null; pendingNeed = null;
+    view = 'rest';
+    arrivalRow.hidden = true;
+    driverReportBtn.disabled = false;
+    setStop('A');
+    render();
+    refreshBeacon();
+  }
+
+  stopABtn.addEventListener('click', () => setStop('A'));
+  stopBBtn.addEventListener('click', () => setStop('B'));
+  driverReportBtn.addEventListener('click', triggerDriverReport);
+  Object.keys(detectBtns).forEach(cat => detectBtns[cat].addEventListener('click', () => toggleCategory(cat)));
+  boardedBtn.addEventListener('click', simulateBoarded);
+  didntBoardBtn.addEventListener('click', simulateDidntBoard);
+  resetBtn.addEventListener('click', resetAll);
+
+  /* ---- walkthrough ---- */
+  let walkTimers = [];
+  let playing = false;
+
+  const SEQUENCE = [
+    { t: 0,     run: () => resetAll() },
+    { t: 2600,  run: () => triggerDriverReport() },
+    { t: 6200,  run: () => setStop('B') },
+    { t: 9800,  run: () => setStop('A') },
+    { t: 13000, run: () => applyDetection('A', ['wheelchair']) },
+    { t: 17500, run: () => applyDetection('A', []) },
+    { t: 19500, run: () => selectRow('8102', '21') },
+    { t: 21500, run: () => selectNeed('stroller') },
+    { t: 25500, run: () => simulateDidntBoard() },
+    { t: 28500, run: () => submitReport('full') },
+    { t: 32300, run: () => stopWalkthrough() },
+  ];
+
+  function stopWalkthrough(){
+    walkTimers.forEach(clearTimeout);
+    walkTimers = [];
+    playing = false;
+    playBtn.textContent = '▶ Play walkthrough';
+    playBtn.setAttribute('aria-pressed', 'false');
+  }
+
+  function playWalkthrough(){
+    if(playing){ stopWalkthrough(); return; }
+    playing = true;
+    playBtn.textContent = '■ Stop';
+    playBtn.setAttribute('aria-pressed', 'true');
+    walkTimers = SEQUENCE.map(step => setTimeout(step.run, step.t));
+  }
+
+  playBtn.addEventListener('click', playWalkthrough);
+
+  resetAll();
+})();
+</script>
