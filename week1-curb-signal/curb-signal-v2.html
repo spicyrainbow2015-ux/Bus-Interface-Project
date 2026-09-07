@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Curb Signal v2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -167,6 +172,12 @@
     padding:13px 0; border-bottom:1px solid var(--sg-line);
   }
   .incoming-row:last-child{border-bottom:0;}
+  .disruption-line{
+    margin-top:11px; padding:10px 12px; border-radius:8px;
+    background:var(--sg-bg-2); border:1px solid var(--sg-line);
+    font-size:11.5px; color:var(--sg-muted); line-height:1.45;
+  }
+  .disruption-line strong{color:var(--sg-ink); font-weight:700;}
   .route-badge{
     background:var(--sg-red); color:var(--sg-white);
     font-family:"Archivo"; font-weight:800; font-size:19px;
@@ -295,13 +306,15 @@
 
   footer{max-width:920px; width:100%; text-align:center; font-size:11.5px; color:var(--ink-faint); padding-top:4px;}
 </style>
+</head>
+<body>
 
 <div class="page-head">
   <div class="brand">
     <div class="brand-mark">CS</div>
     <div class="brand-name">Curb Signal</div>
   </div>
-  <div class="tag">Looks-like prototype — Week 1, v2</div>
+  <div class="tag">Looks-like prototype — Week 1, v2 · live SEPTA data</div>
 </div>
 
 <div class="demo-bar">
@@ -314,14 +327,15 @@
   </div>
 
   <div class="demo-row">
-    <span class="label">Bus status</span>
-    <button class="demo-btn" id="btn-available" aria-pressed="true">Seat available</button>
-    <button class="demo-btn" id="btn-holding" aria-pressed="false">Almost full</button>
-    <button class="demo-btn" id="btn-full" aria-pressed="false">Full</button>
+    <span class="label">Bus status override</span>
+    <button class="demo-btn" id="btn-available">Seat available</button>
+    <button class="demo-btn" id="btn-holding">Almost full</button>
+    <button class="demo-btn" id="btn-full">Full</button>
+    <span class="demo-note" style="flex-basis:100%;">Live from SEPTA by default — these force a state for a moment, then the next live refresh (~20s) takes back over.</span>
   </div>
 
   <div class="demo-row">
-    <span class="demo-note">"Camera" and "Bus status" here stand in for a real detection model and a real driver report. Everything inside the white screen below — including "+ Add request" — is the real rider-facing interface.</span>
+    <span class="demo-note">Incoming arrivals, seat availability, and any active disruption are real, live SEPTA data — fetched every 20s from <code>/api/stop-status</code>. Priority detection is still simulated (no camera yet); ramp status has no live source at all, matching what SEPTA actually publishes. "+ Add request" is the real rider-facing manual fallback.</span>
   </div>
 </div>
 
@@ -332,17 +346,18 @@
     <section class="sign" aria-label="Bus stop sign">
 
       <div class="block">
-        <div class="block-label">Incoming</div>
+        <div class="block-label">Incoming — Chestnut St &amp; 30th St</div>
         <div class="incoming-row">
           <div class="route-badge">21</div>
-          <div class="route-label">Chestnut St</div>
-          <div class="eta"><div class="mins num">4</div><div class="unit">min away</div></div>
+          <div class="route-label" id="incoming-21-label">Loading…</div>
+          <div class="eta"><div class="mins num" id="incoming-21-mins">–</div><div class="unit">min away</div></div>
         </div>
         <div class="incoming-row">
           <div class="route-badge">42</div>
-          <div class="route-label">Chestnut St</div>
-          <div class="eta"><div class="mins num">10</div><div class="unit">min away</div></div>
+          <div class="route-label" id="incoming-42-label">Loading…</div>
+          <div class="eta"><div class="mins num" id="incoming-42-mins">–</div><div class="unit">min away</div></div>
         </div>
+        <div class="disruption-line" id="disruption-line" hidden></div>
       </div>
 
       <div class="block">
@@ -448,6 +463,9 @@
   const statusTime = document.getElementById('status-time');
   const statusFullness = document.getElementById('status-fullness');
   const playBtn = document.getElementById('play-btn');
+  const incomingLabels = { 21: document.getElementById('incoming-21-label'), 42: document.getElementById('incoming-42-label') };
+  const incomingMins = { 21: document.getElementById('incoming-21-mins'), 42: document.getElementById('incoming-42-mins') };
+  const disruptionLine = document.getElementById('disruption-line');
 
   let capacity = 'available';
   let priorityAuto = false;   // stands in for the camera's live read
@@ -500,6 +518,53 @@
   addRequestBtn.addEventListener('click', toggleNeedPicker);
   needPicker.querySelectorAll('.need-btn').forEach(b => b.addEventListener('click', chooseNeed));
 
+  /* ---- live SEPTA data ---- */
+  const STOP_ID = '20976'; // Chestnut St & 30th St — real SEPTA stop, serves both routes below
+  const ROUTES = ['21', '42'];
+  const POLL_MS = 20000;
+
+  async function fetchLiveStatus(){
+    let data;
+    try {
+      const res = await fetch(`/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
+      data = await res.json();
+    } catch (err) {
+      console.error('Live SEPTA fetch failed:', err);
+      return;
+    }
+
+    ROUTES.forEach(route => {
+      const next = data.arrivals.find(a => a.route === route);
+      if (next){
+        incomingLabels[route].textContent = next.destination || 'On the way';
+        incomingMins[route].textContent = Math.max(0, next.etaMinutes);
+      } else {
+        incomingLabels[route].textContent = 'No live bus right now';
+        incomingMins[route].textContent = '–';
+      }
+    });
+
+    const soonest = data.arrivals[0];
+    if (soonest && soonest.fullness){
+      setCapacity(soonest.fullness);
+    }
+
+    if (data.fetchedAt){
+      const t = new Date(data.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      statusTime.textContent = 'Last update: ' + t + (data.error ? ' (live data unavailable)' : '');
+    }
+
+    if (data.disruptions && data.disruptions.length){
+      disruptionLine.innerHTML = '<strong>Route ' + data.disruptions[0].route + ':</strong> ' + data.disruptions[0].message;
+      disruptionLine.hidden = false;
+    } else {
+      disruptionLine.hidden = true;
+    }
+  }
+
+  fetchLiveStatus();
+  setInterval(fetchLiveStatus, POLL_MS);
+
   /* ---- walkthrough ---- */
   let walkTimers = [];
   let playing = false;
@@ -537,3 +602,5 @@
   renderPriority();
 })();
 </script>
+</body>
+</html>

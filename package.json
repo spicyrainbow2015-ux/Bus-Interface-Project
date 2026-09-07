@@ -1,0 +1,8 @@
+{
+  "name": "bus-interface-project",
+  "private": true,
+  "description": "Serverless API that proxies and combines SEPTA's public data feeds for the Curb Signal / Ramp Check prototype.",
+  "dependencies": {
+    "jszip": "^3.10.1"
+  }
+}
