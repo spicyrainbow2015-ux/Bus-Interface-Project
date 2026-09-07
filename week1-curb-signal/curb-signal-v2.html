@@ -167,18 +167,12 @@
     color:var(--sg-muted); margin-bottom:10px;
   }
 
-  /* ---- 1. Incoming ---- */
+  /* ---- Incoming board ---- */
   .incoming-row{
     display:flex; align-items:center; gap:14px;
     padding:13px 0; border-bottom:1px solid var(--sg-line);
   }
   .incoming-row:last-child{border-bottom:0;}
-  .disruption-line{
-    margin-top:11px; padding:10px 12px; border-radius:8px;
-    background:var(--sg-bg-2); border:1px solid var(--sg-line);
-    font-size:11.5px; color:var(--sg-muted); line-height:1.45;
-  }
-  .disruption-line strong{color:var(--sg-ink); font-weight:700;}
   .route-badge{
     background:var(--sg-red); color:var(--sg-white);
     font-family:"Archivo"; font-weight:800; font-size:19px;
@@ -192,7 +186,36 @@
   .eta .mins{font-family:"Archivo"; font-weight:900; font-size:30px; line-height:1; color:var(--sg-ink);}
   .eta .unit{font-size:10.5px; color:var(--sg-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
 
-  /* ---- 2. Priority rider notification ---- */
+  /* the following bus: same data, deliberately quieter */
+  .next-bus-label{
+    font-size:9.5px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase;
+    color:var(--sg-muted); margin:14px 0 8px;
+  }
+  .incoming-row.secondary{padding:9px 0; opacity:0.72;}
+  .incoming-row.secondary .route-badge{
+    background:transparent; color:var(--sg-muted); border:1.5px solid var(--sg-line);
+    font-size:15px; padding:4px 13px;
+  }
+  .incoming-row.secondary .route-label{font-size:12px; color:var(--sg-muted);}
+  .incoming-row.secondary .eta .mins{font-size:20px; color:var(--sg-muted);}
+
+  /* live bus status: only rendered when there's something to say */
+  .bus-warning{
+    display:flex; align-items:flex-start; gap:12px;
+    margin-top:13px; padding:14px 15px; border-radius:10px;
+    background:var(--sg-yellow);
+  }
+  .bus-warning-icon{
+    width:26px; height:26px; border-radius:6px; flex:0 0 auto;
+    background:rgba(10,10,10,0.14); color:#1a1400;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .bus-warning-icon svg{width:15px; height:15px;}
+  .bus-warning-lines{display:flex; flex-direction:column; gap:3px;}
+  .bus-warning-lines .line{font-family:"Archivo"; font-weight:800; font-size:14.5px; color:#1a1400;}
+  .bus-warning-time{margin-top:6px; font-size:11px; font-weight:700; color:rgba(26,20,0,0.65);}
+
+  /* ---- Priority rider notification (hidden entirely when inactive) ---- */
   .priority-card{
     background:var(--sg-bg-2); border:1px solid var(--sg-line); border-radius:10px;
     padding:16px 17px;
@@ -234,22 +257,39 @@
   .need-btn:hover{border-color:var(--sg-blue);}
   .need-btn:focus-visible{outline:2px solid var(--sg-blue); outline-offset:1px;}
 
-  /* ---- 3. Real time bus status ---- */
-  .status-card{
-    display:flex; align-items:center; gap:14px;
-    background:var(--sg-bg-2); border:1px solid var(--sg-line); border-radius:10px;
-    padding:16px 17px;
+  /* ---- Waiting now (lowest priority, ambient context) ---- */
+  .block-label-row{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    margin-bottom:10px;
   }
-  .status-icon{
-    width:44px; height:44px; border-radius:9px; flex:0 0 auto;
-    background:var(--sg-green); color:var(--sg-white);
-    display:flex; align-items:center; justify-content:center;
+  .block-label-row .block-label{margin-bottom:0;}
+  .mini-btn{
+    display:flex; align-items:center; gap:5px;
+    padding:4px 10px 4px 8px; border-radius:999px;
+    border:1.5px dashed var(--sg-line);
+    background:transparent; color:var(--sg-muted);
+    font-family:"Archivo"; font-size:11px; font-weight:700;
+    cursor:pointer; white-space:nowrap;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
   }
-  .status-icon svg{width:22px; height:22px;}
-  body[data-capacity="holding"] .status-icon{background:var(--sg-yellow); color:#1a1400;}
-  body[data-capacity="full"] .status-icon{background:var(--sg-red);}
-  .status-time{font-size:11.5px; color:var(--sg-muted); font-weight:700; margin-bottom:4px;}
-  .status-fullness{font-family:"Archivo"; font-size:16.5px; font-weight:800; color:var(--sg-ink);}
+  .mini-btn:hover{border-color:var(--sg-ink); background:var(--sg-bg-2);}
+  .mini-btn:focus-visible{outline:2px solid var(--sg-ink); outline-offset:2px;}
+  .mini-btn[aria-pressed="true"]{
+    border-style:solid; border-color:var(--sg-green); background:var(--sg-green); color:var(--sg-white);
+  }
+  .waiting-row{display:flex; align-items:center; gap:12px;}
+  .avatars{display:flex;}
+  .avatar{
+    width:26px; height:26px; border-radius:50%;
+    background:var(--sg-bg-2); border:2px solid var(--sg-bg);
+    margin-left:-8px; display:flex; align-items:center; justify-content:center;
+    color:var(--sg-muted);
+  }
+  .avatar:first-child{margin-left:0;}
+  .avatar svg{width:13px; height:13px;}
+  .avatar.overflow{background:var(--sg-ink); color:var(--sg-bg); font-family:"Archivo"; font-weight:800; font-size:10px;}
+  .waiting-count{font-family:"Archivo"; font-weight:900; font-size:22px; color:var(--sg-ink);}
+  .waiting-sub{font-size:11.5px; color:var(--sg-muted); font-weight:500;}
 
   /* ---- boarding + ground mirror (kept, moved below) ---- */
   .boarding-note{
@@ -336,7 +376,12 @@
   </div>
 
   <div class="demo-row">
-    <span class="demo-note">Incoming arrivals, seat availability, and any active disruption are real, live SEPTA data — fetched every 20s from <code>/api/stop-status</code>. Priority detection is still simulated (no camera yet); ramp status has no live source at all, matching what SEPTA actually publishes. "+ Add request" is the real rider-facing manual fallback.</span>
+    <span class="label">Driver report (simulated)</span>
+    <button class="demo-btn" id="btn-ramp-fault" aria-pressed="false">Route 21 ramp not working</button>
+  </div>
+
+  <div class="demo-row">
+    <span class="demo-note">Incoming arrivals, seat availability, and any active disruption are real, live SEPTA data — fetched every 20s from <code>/api/stop-status</code>. Priority detection and the ramp report are still simulated (no camera or driver app yet); ramp status has no live source at all anywhere, matching what SEPTA actually publishes. "+ Add request" is the real rider-facing manual fallback.</span>
   </div>
 </div>
 
@@ -346,6 +391,19 @@
   <div class="bezel">
     <section class="sign" aria-label="Bus stop sign">
 
+      <div class="block" id="priority-block" hidden>
+        <div class="block-label">Priority rider detected</div>
+        <div class="priority-card">
+          <div class="priority-headline" id="priority-headline">Please let priority riders board first</div>
+          <div class="priority-status" id="priority-status">
+            <div class="priority-status-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            </div>
+            <span>Driver notified</span>
+          </div>
+        </div>
+      </div>
+
       <div class="block">
         <div class="block-label">Incoming — Chestnut St &amp; 43rd St</div>
         <div class="incoming-row" id="incoming-row-0">
@@ -353,43 +411,48 @@
           <div class="route-label" id="incoming-label-0">Loading…</div>
           <div class="eta"><div class="mins num" id="incoming-mins-0">–</div><div class="unit">min away</div></div>
         </div>
-        <div class="incoming-row" id="incoming-row-1" hidden>
+
+        <div class="bus-warning" id="bus-warning" hidden>
+          <div class="bus-warning-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L14.1 3.9a2 2 0 0 0-3.8 0Z"/></svg>
+          </div>
+          <div>
+            <div class="bus-warning-lines" id="bus-warning-lines"></div>
+            <div class="bus-warning-time" id="bus-warning-time"></div>
+          </div>
+        </div>
+
+        <div class="next-bus-label">Next bus</div>
+        <div class="incoming-row secondary" id="incoming-row-1">
           <div class="route-badge">21</div>
           <div class="route-label" id="incoming-label-1">Loading…</div>
           <div class="eta"><div class="mins num" id="incoming-mins-1">–</div><div class="unit">min away</div></div>
         </div>
-        <div class="disruption-line" id="disruption-line" hidden></div>
       </div>
 
       <div class="block">
-        <div class="block-label">Priority rider detected</div>
-        <div class="priority-card">
-          <div class="priority-headline idle" id="priority-headline">No priority boarding requested yet</div>
-          <div class="priority-status" id="priority-status" hidden>
-            <div class="priority-status-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-            </div>
-            <span>Driver notified</span>
-          </div>
-          <button class="add-request-btn" id="add-request-btn">+ Add request</button>
-          <div class="need-picker" id="need-picker" hidden>
-            <button class="need-btn" data-need="wheelchair">Wheelchair or mobility device</button>
-            <button class="need-btn" data-need="stroller">Stroller</button>
-            <button class="need-btn" data-need="bike">Bike</button>
-          </div>
+        <div class="block-label-row">
+          <div class="block-label">Waiting now</div>
+          <button class="mini-btn" id="waiting-btn" aria-pressed="false">+ I'm here too</button>
         </div>
-      </div>
-
-      <div class="block">
-        <div class="block-label">Real time bus status</div>
-        <div class="status-card">
-          <div class="status-icon" id="status-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M3 12h18"/><circle cx="7.5" cy="19.5" r="1.4"/><circle cx="16.5" cy="19.5" r="1.4"/></svg>
+        <div class="waiting-row">
+          <div class="avatars">
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="avatar overflow" id="waiting-overflow">+2</div>
           </div>
           <div>
-            <div class="status-time" id="status-time">Last update: 4:03 PM</div>
-            <div class="status-fullness" id="status-fullness">Bus seat available</div>
+            <div class="waiting-count num" id="waiting-count">6</div>
+            <div class="waiting-sub">people at this stop</div>
           </div>
+        </div>
+        <button class="add-request-btn" id="add-request-btn">+ Add request</button>
+        <div class="need-picker" id="need-picker" hidden>
+          <button class="need-btn" data-need="wheelchair">Wheelchair or mobility device</button>
+          <button class="need-btn" data-need="stroller">Stroller</button>
+          <button class="need-btn" data-need="bike">Bike</button>
         </div>
       </div>
 
@@ -450,42 +513,42 @@
 
   const btnDetectOn = document.getElementById('btn-detect-on');
   const btnDetectOff = document.getElementById('btn-detect-off');
+  const btnRampFault = document.getElementById('btn-ramp-fault');
   const capacityBtns = {
     available: document.getElementById('btn-available'),
     holding: document.getElementById('btn-holding'),
     full: document.getElementById('btn-full'),
   };
 
-  const priorityHeadline = document.getElementById('priority-headline');
-  const priorityStatus = document.getElementById('priority-status');
+  const priorityBlock = document.getElementById('priority-block');
   const addRequestBtn = document.getElementById('add-request-btn');
   const needPicker = document.getElementById('need-picker');
-  const statusIcon = document.getElementById('status-icon');
-  const statusTime = document.getElementById('status-time');
-  const statusFullness = document.getElementById('status-fullness');
   const playBtn = document.getElementById('play-btn');
-  const incomingRows = [document.getElementById('incoming-row-0'), document.getElementById('incoming-row-1')];
   const incomingLabels = [document.getElementById('incoming-label-0'), document.getElementById('incoming-label-1')];
   const incomingMins = [document.getElementById('incoming-mins-0'), document.getElementById('incoming-mins-1')];
-  const disruptionLine = document.getElementById('disruption-line');
+  const busWarning = document.getElementById('bus-warning');
+  const busWarningLines = document.getElementById('bus-warning-lines');
+  const busWarningTime = document.getElementById('bus-warning-time');
+  const waitingBtn = document.getElementById('waiting-btn');
+  const waitingCountEl = document.getElementById('waiting-count');
+  const waitingOverflowEl = document.getElementById('waiting-overflow');
 
   let capacity = 'available';
   let priorityAuto = false;   // stands in for the camera's live read
   let priorityManual = false; // set by "+ Add request"
+  let rampFault = false;      // stands in for a driver's "ramp not working" report
+  let lastUpdateText = '';
+  let activeDisruption = null;
+  let waitingManual = false;
+  const waitingBase = 6;
+  const waitingShownAvatars = 4;
 
-  const CAPACITY_TEXT = {
-    available: 'Bus seat available',
-    holding: 'Almost full',
-    full: 'Full',
-  };
+  const CAPACITY_TEXT = { holding: 'Almost full', full: 'Full' };
 
+  // Priority section (#1): the whole block is either fully present or fully
+  // absent — this is status the stop is broadcasting, not something to soften.
   function renderPriority(){
-    const active = priorityAuto || priorityManual;
-    priorityHeadline.textContent = active
-      ? 'Please let priority riders board first'
-      : 'No priority boarding requested yet';
-    priorityHeadline.classList.toggle('idle', !active);
-    priorityStatus.hidden = !active;
+    priorityBlock.hidden = !(priorityAuto || priorityManual);
   }
 
   function setDetect(on){
@@ -495,11 +558,34 @@
     renderPriority();
   }
 
+  // Bus status (#2b): only ever shown when there's something worth saying
+  // about the next bus specifically — silence is the "everything's fine" signal.
+  function renderBusWarning(){
+    const lines = [];
+    if (rampFault) lines.push('Ramp not working');
+    if (capacity === 'full') lines.push('Full');
+    else if (capacity === 'holding') lines.push('Almost full');
+    if (activeDisruption) lines.push('Route ' + activeDisruption.route + ': ' + activeDisruption.message);
+
+    if (!lines.length){
+      busWarning.hidden = true;
+      return;
+    }
+    busWarningLines.innerHTML = lines.map(l => '<div class="line">' + l + '</div>').join('');
+    busWarningTime.textContent = lastUpdateText;
+    busWarning.hidden = false;
+  }
+
+  function setRampFault(on){
+    rampFault = on;
+    btnRampFault.setAttribute('aria-pressed', String(on));
+    renderBusWarning();
+  }
+
   function setCapacity(state){
     capacity = state;
-    body.setAttribute('data-capacity', state);
     Object.keys(capacityBtns).forEach(k => capacityBtns[k].setAttribute('aria-pressed', k === state));
-    statusFullness.textContent = CAPACITY_TEXT[state];
+    renderBusWarning();
   }
 
   function toggleNeedPicker(){
@@ -512,13 +598,29 @@
     renderPriority();
   }
 
+  // Waiting now (#4): ambient headcount, lowest priority, always visible.
+  function renderWaitingCount(){
+    const total = waitingBase + (waitingManual ? 1 : 0);
+    waitingCountEl.textContent = total;
+    waitingOverflowEl.textContent = '+' + (total - waitingShownAvatars);
+  }
+
+  function setWaiting(state){
+    waitingManual = state;
+    renderWaitingCount();
+    waitingBtn.setAttribute('aria-pressed', String(waitingManual));
+    waitingBtn.textContent = waitingManual ? 'Counted ✓' : "+ I'm here too";
+  }
+
   btnDetectOn.addEventListener('click', () => setDetect(true));
   btnDetectOff.addEventListener('click', () => setDetect(false));
+  btnRampFault.addEventListener('click', () => setRampFault(!rampFault));
   capacityBtns.available.addEventListener('click', () => setCapacity('available'));
   capacityBtns.holding.addEventListener('click', () => setCapacity('holding'));
   capacityBtns.full.addEventListener('click', () => setCapacity('full'));
   addRequestBtn.addEventListener('click', toggleNeedPicker);
   needPicker.querySelectorAll('.need-btn').forEach(b => b.addEventListener('click', chooseNeed));
+  waitingBtn.addEventListener('click', () => setWaiting(!waitingManual));
 
   /* ---- live SEPTA data ---- */
   const STOP_ID = '590'; // Chestnut St & 43rd St — real SEPTA stop, Route 21 only
@@ -535,22 +637,16 @@
       return;
     }
 
-    // Show the next two upcoming buses on the route, not one row per route —
-    // with a single route serving this stop, that reads better than one
-    // lonely row (or a permanently-empty second row for a route that
-    // never stops here).
+    // Row 0 is the bus this whole sign is about; row 1 is shown quietly,
+    // underneath, with no status details of its own.
     for (let i = 0; i < 2; i++){
       const next = data.arrivals[i];
       if (next){
-        incomingRows[i].hidden = false;
         incomingLabels[i].textContent = next.destination || 'On the way';
         incomingMins[i].textContent = Math.max(0, next.etaMinutes);
       } else {
-        incomingRows[i].hidden = (i > 0); // always show row 0, even if empty
-        if (i === 0){
-          incomingLabels[i].textContent = 'No live bus right now';
-          incomingMins[i].textContent = '–';
-        }
+        incomingLabels[i].textContent = 'No live bus right now';
+        incomingMins[i].textContent = '–';
       }
     }
 
@@ -561,15 +657,13 @@
 
     if (data.fetchedAt){
       const t = new Date(data.fetchedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      statusTime.textContent = 'Last update: ' + t + (data.error ? ' (live data unavailable)' : '');
+      lastUpdateText = 'Last update: ' + t + (data.error ? ' (live data unavailable)' : '');
     }
 
-    if (data.disruptions && data.disruptions.length){
-      disruptionLine.innerHTML = '<strong>Route ' + data.disruptions[0].route + ':</strong> ' + data.disruptions[0].message;
-      disruptionLine.hidden = false;
-    } else {
-      disruptionLine.hidden = true;
-    }
+    // A disruption is also "about this exact bus" — folded into the same
+    // warning card rather than a separate box competing for attention.
+    activeDisruption = (data.disruptions && data.disruptions[0]) || null;
+    renderBusWarning();
   }
 
   fetchLiveStatus();
@@ -580,14 +674,15 @@
   let playing = false;
 
   const SEQUENCE = [
-    { t: 0,     run: () => { setDetect(false); priorityManual = false; needPicker.hidden = true; renderPriority(); setCapacity('available'); } },
+    { t: 0,     run: () => { setDetect(false); priorityManual = false; needPicker.hidden = true; renderPriority(); setRampFault(false); setCapacity('available'); setWaiting(false); } },
     { t: 2600,  run: () => setDetect(true) },
     { t: 6600,  run: () => setDetect(false) },
     { t: 8600,  run: () => toggleNeedPicker() },
     { t: 10600, run: () => chooseNeed() },
-    { t: 14000, run: () => setCapacity('holding') },
-    { t: 17500, run: () => setCapacity('full') },
-    { t: 21000, run: () => stopWalkthrough() },
+    { t: 13600, run: () => setRampFault(true) },
+    { t: 17600, run: () => setWaiting(true) },
+    { t: 20600, run: () => setCapacity('full') },
+    { t: 24500, run: () => stopWalkthrough() },
   ];
 
   function stopWalkthrough(){
@@ -610,6 +705,7 @@
 
   setCapacity('available');
   renderPriority();
+  renderWaitingCount();
 })();
 </script>
 </body>
