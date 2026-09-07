@@ -84,6 +84,7 @@
   }
 
   *{box-sizing:border-box;}
+  [hidden]{display:none !important;}
   body{
     background:var(--ground);
     color:var(--ink);
@@ -346,16 +347,16 @@
     <section class="sign" aria-label="Bus stop sign">
 
       <div class="block">
-        <div class="block-label">Incoming — Chestnut St &amp; 30th St</div>
-        <div class="incoming-row">
+        <div class="block-label">Incoming — Chestnut St &amp; 43rd St</div>
+        <div class="incoming-row" id="incoming-row-0">
           <div class="route-badge">21</div>
-          <div class="route-label" id="incoming-21-label">Loading…</div>
-          <div class="eta"><div class="mins num" id="incoming-21-mins">–</div><div class="unit">min away</div></div>
+          <div class="route-label" id="incoming-label-0">Loading…</div>
+          <div class="eta"><div class="mins num" id="incoming-mins-0">–</div><div class="unit">min away</div></div>
         </div>
-        <div class="incoming-row">
-          <div class="route-badge">42</div>
-          <div class="route-label" id="incoming-42-label">Loading…</div>
-          <div class="eta"><div class="mins num" id="incoming-42-mins">–</div><div class="unit">min away</div></div>
+        <div class="incoming-row" id="incoming-row-1" hidden>
+          <div class="route-badge">21</div>
+          <div class="route-label" id="incoming-label-1">Loading…</div>
+          <div class="eta"><div class="mins num" id="incoming-mins-1">–</div><div class="unit">min away</div></div>
         </div>
         <div class="disruption-line" id="disruption-line" hidden></div>
       </div>
@@ -463,8 +464,9 @@
   const statusTime = document.getElementById('status-time');
   const statusFullness = document.getElementById('status-fullness');
   const playBtn = document.getElementById('play-btn');
-  const incomingLabels = { 21: document.getElementById('incoming-21-label'), 42: document.getElementById('incoming-42-label') };
-  const incomingMins = { 21: document.getElementById('incoming-21-mins'), 42: document.getElementById('incoming-42-mins') };
+  const incomingRows = [document.getElementById('incoming-row-0'), document.getElementById('incoming-row-1')];
+  const incomingLabels = [document.getElementById('incoming-label-0'), document.getElementById('incoming-label-1')];
+  const incomingMins = [document.getElementById('incoming-mins-0'), document.getElementById('incoming-mins-1')];
   const disruptionLine = document.getElementById('disruption-line');
 
   let capacity = 'available';
@@ -519,8 +521,8 @@
   needPicker.querySelectorAll('.need-btn').forEach(b => b.addEventListener('click', chooseNeed));
 
   /* ---- live SEPTA data ---- */
-  const STOP_ID = '20976'; // Chestnut St & 30th St — real SEPTA stop, serves both routes below
-  const ROUTES = ['21', '42'];
+  const STOP_ID = '590'; // Chestnut St & 43rd St — real SEPTA stop, Route 21 only
+  const ROUTES = ['21'];
   const POLL_MS = 20000;
 
   async function fetchLiveStatus(){
@@ -533,16 +535,24 @@
       return;
     }
 
-    ROUTES.forEach(route => {
-      const next = data.arrivals.find(a => a.route === route);
+    // Show the next two upcoming buses on the route, not one row per route —
+    // with a single route serving this stop, that reads better than one
+    // lonely row (or a permanently-empty second row for a route that
+    // never stops here).
+    for (let i = 0; i < 2; i++){
+      const next = data.arrivals[i];
       if (next){
-        incomingLabels[route].textContent = next.destination || 'On the way';
-        incomingMins[route].textContent = Math.max(0, next.etaMinutes);
+        incomingRows[i].hidden = false;
+        incomingLabels[i].textContent = next.destination || 'On the way';
+        incomingMins[i].textContent = Math.max(0, next.etaMinutes);
       } else {
-        incomingLabels[route].textContent = 'No live bus right now';
-        incomingMins[route].textContent = '–';
+        incomingRows[i].hidden = (i > 0); // always show row 0, even if empty
+        if (i === 0){
+          incomingLabels[i].textContent = 'No live bus right now';
+          incomingMins[i].textContent = '–';
+        }
       }
-    });
+    }
 
     const soonest = data.arrivals[0];
     if (soonest && soonest.fullness){
