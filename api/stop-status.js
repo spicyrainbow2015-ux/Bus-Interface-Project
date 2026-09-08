@@ -22,6 +22,7 @@
 // stays simulated in the frontend — that's not a gap in this file.
 
 const JSZip = require('jszip');
+const PRECOMPUTED = require('./schedule-cache.json');
 
 const GTFS_ZIP_URL = 'https://www3.septa.org/developer/gtfs_public.zip';
 const TRANSIT_VIEW_URL = 'https://www3.septa.org/api/TransitView/index.php';
@@ -34,6 +35,20 @@ const BUS_DETOURS_URL = 'https://www3.septa.org/api/BusDetours/index.php';
 // should move to a real store (e.g. Vercel KV) — module-scope caching
 // isn't guaranteed to persist between invocations.
 let scheduleCache = null; // { key, tripToSeconds: Map<tripId, secondsSinceMidnight>, builtAt }
+
+// Downloading + unzipping SEPTA's ~21MB GTFS zip on every cold serverless
+// start was slow enough to occasionally blow past the function's execution
+// timeout, which left the live site stuck on "Loading…" forever (the fetch
+// just failed silently). For any stop/route combo precomputed by
+// scripts/build-schedule-cache.js, read the small local JSON instead —
+// near-instant, no network call, no timeout risk. Anything not in that
+// file falls back to the live download below (slower, but still correct).
+function precomputedLookup(routeIds, stopId) {
+  const key = routeIds.slice().sort().join(',') + '|' + stopId;
+  const raw = PRECOMPUTED.cache && PRECOMPUTED.cache[key];
+  if (!raw) return null;
+  return new Map(Object.entries(raw).map(([tripId, seconds]) => [tripId, Number(seconds)]));
+}
 
 function splitCsvLine(line) {
   const out = [];
@@ -56,6 +71,10 @@ function parseTimeToSeconds(hhmmss) {
 
 async function buildScheduleLookup(routeIds, stopId) {
   const key = routeIds.slice().sort().join(',') + '|' + stopId;
+
+  const precomputed = precomputedLookup(routeIds, stopId);
+  if (precomputed) return precomputed;
+
   const isFresh = scheduleCache && scheduleCache.key === key && (Date.now() - scheduleCache.builtAt) < 6 * 60 * 60 * 1000;
   if (isFresh) return scheduleCache.tripToSeconds;
 

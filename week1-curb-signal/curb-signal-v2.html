@@ -634,6 +634,12 @@
       data = await res.json();
     } catch (err) {
       console.error('Live SEPTA fetch failed:', err);
+      // Don't strand the page on its initial "Loading…" text for a full
+      // poll cycle — say so, and try again sooner than the normal 20s.
+      if (incomingLabels[0].textContent === 'Loading…') {
+        incomingLabels[0].textContent = 'Reconnecting…';
+      }
+      setTimeout(fetchLiveStatus, 5000);
       return;
     }
 
