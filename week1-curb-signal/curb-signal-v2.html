@@ -185,6 +185,12 @@
   .eta{text-align:right; flex:0 0 auto;}
   .eta .mins{font-family:"Archivo"; font-weight:900; font-size:30px; line-height:1; color:var(--sg-ink);}
   .eta .unit{font-size:10.5px; color:var(--sg-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
+  .eta .clock{font-size:10px; color:var(--sg-muted); font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums;}
+
+  .route-label .tag{
+    font-weight:600; text-transform:none; letter-spacing:normal;
+    color:var(--sg-muted); font-size:11px;
+  }
 
   /* the following bus: same data, deliberately quieter */
   .next-bus-label{
@@ -198,6 +204,7 @@
   }
   .incoming-row.secondary .route-label{font-size:12px; color:var(--sg-muted);}
   .incoming-row.secondary .eta .mins{font-size:20px; color:var(--sg-muted);}
+  .incoming-row.secondary .eta .clock{font-size:9px;}
 
   /* live bus status: only rendered when there's something to say */
   .bus-warning{
@@ -408,8 +415,12 @@
         <div class="block-label">Incoming — Chestnut St &amp; 43rd St</div>
         <div class="incoming-row" id="incoming-row-0">
           <div class="route-badge">21</div>
-          <div class="route-label" id="incoming-label-0">Loading…</div>
-          <div class="eta"><div class="mins num" id="incoming-mins-0">–</div><div class="unit">min away</div></div>
+          <div class="route-label"><span id="incoming-label-0">Loading…</span><span class="tag" id="incoming-tag-0" hidden> · scheduled</span></div>
+          <div class="eta">
+            <div class="mins num" id="incoming-mins-0">–</div>
+            <div class="unit">min away</div>
+            <div class="clock" id="incoming-clock-0"></div>
+          </div>
         </div>
 
         <div class="bus-warning" id="bus-warning" hidden>
@@ -425,8 +436,12 @@
         <div class="next-bus-label">Next bus</div>
         <div class="incoming-row secondary" id="incoming-row-1">
           <div class="route-badge">21</div>
-          <div class="route-label" id="incoming-label-1">Loading…</div>
-          <div class="eta"><div class="mins num" id="incoming-mins-1">–</div><div class="unit">min away</div></div>
+          <div class="route-label"><span id="incoming-label-1">Loading…</span><span class="tag" id="incoming-tag-1" hidden> · scheduled</span></div>
+          <div class="eta">
+            <div class="mins num" id="incoming-mins-1">–</div>
+            <div class="unit">min away</div>
+            <div class="clock" id="incoming-clock-1"></div>
+          </div>
         </div>
       </div>
 
@@ -525,7 +540,9 @@
   const needPicker = document.getElementById('need-picker');
   const playBtn = document.getElementById('play-btn');
   const incomingLabels = [document.getElementById('incoming-label-0'), document.getElementById('incoming-label-1')];
+  const incomingTags = [document.getElementById('incoming-tag-0'), document.getElementById('incoming-tag-1')];
   const incomingMins = [document.getElementById('incoming-mins-0'), document.getElementById('incoming-mins-1')];
+  const incomingClocks = [document.getElementById('incoming-clock-0'), document.getElementById('incoming-clock-1')];
   const busWarning = document.getElementById('bus-warning');
   const busWarningLines = document.getElementById('bus-warning-lines');
   const busWarningTime = document.getElementById('bus-warning-time');
@@ -644,15 +661,23 @@
     }
 
     // Row 0 is the bus this whole sign is about; row 1 is shown quietly,
-    // underneath, with no status details of its own.
+    // underneath, with no status details of its own. Either can fall back
+    // to a scheduled (not live-tracked) time — tagged as such, since a
+    // timetable guess is a weaker claim than a real-time read.
     for (let i = 0; i < 2; i++){
       const next = data.arrivals[i];
       if (next){
-        incomingLabels[i].textContent = next.destination || 'On the way';
+        incomingLabels[i].textContent = next.destination || ('Route ' + next.route); // the "· scheduled" tag already says the rest
         incomingMins[i].textContent = Math.max(0, next.etaMinutes);
+        incomingTags[i].hidden = !!next.live;
+        incomingClocks[i].textContent = next.arrivalTimeIso
+          ? new Date(next.arrivalTimeIso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          : '';
       } else {
-        incomingLabels[i].textContent = 'No live bus right now';
+        incomingLabels[i].textContent = 'No bus scheduled right now';
         incomingMins[i].textContent = '–';
+        incomingTags[i].hidden = true;
+        incomingClocks[i].textContent = '';
       }
     }
 

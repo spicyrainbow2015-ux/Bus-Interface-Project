@@ -61,27 +61,28 @@ async function main() {
   for (const { stopId, routes } of TARGETS) {
     console.log(`Building lookup for stop ${stopId}, routes ${routes.join(',')}...`);
     const routeIdSet = new Set(routes);
-    const tripIdSet = new Set();
+    const tripIdToRoute = new Map();
     for (let i = 1; i < tripLines.length; i++) {
       const cols = splitCsvLine(tripLines[i]);
-      if (routeIdSet.has(cols[routeIdCol])) tripIdSet.add(cols[tripIdColT]);
+      if (routeIdSet.has(cols[routeIdCol])) tripIdToRoute.set(cols[tripIdColT], cols[routeIdCol]);
     }
 
-    const tripToSeconds = {};
+    const tripToInfo = {};
     const stopNeedle = ',' + stopId + ',';
     for (let i = 1; i < stLines.length; i++) {
       const line = stLines[i];
       if (!line.includes(stopNeedle)) continue;
       const cols = splitCsvLine(line);
       if (cols[stopIdCol] !== stopId) continue;
-      if (!tripIdSet.has(cols[tripIdColS])) continue;
+      const route = tripIdToRoute.get(cols[tripIdColS]);
+      if (!route) continue;
       const [h, m, s] = cols[arrivalCol].split(':').map(Number);
-      tripToSeconds[cols[tripIdColS]] = h * 3600 + m * 60 + s;
+      tripToInfo[cols[tripIdColS]] = { seconds: h * 3600 + m * 60 + s, route };
     }
 
     const key = routes.slice().sort().join(',') + '|' + stopId;
-    cache[key] = tripToSeconds;
-    console.log(`  -> ${Object.keys(tripToSeconds).length} trips found`);
+    cache[key] = tripToInfo;
+    console.log(`  -> ${Object.keys(tripToInfo).length} trips found`);
   }
 
   const out = { generatedAt: new Date().toISOString(), cache };

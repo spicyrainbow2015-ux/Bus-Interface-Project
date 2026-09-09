@@ -34,7 +34,7 @@ const BUS_DETOURS_URL = 'https://www3.septa.org/api/BusDetours/index.php';
 // needs to scale past a handful of routes/stops, this in-memory cache
 // should move to a real store (e.g. Vercel KV) — module-scope caching
 // isn't guaranteed to persist between invocations.
-let scheduleCache = null; // { key, tripToSeconds: Map<tripId, secondsSinceMidnight>, builtAt }
+let scheduleCache = null; // { key, tripToInfo: Map<tripId, {seconds, route}>, builtAt }
 
 // Downloading + unzipping SEPTA's ~21MB GTFS zip on every cold serverless
 // start was slow enough to occasionally blow past the function's execution
@@ -47,7 +47,7 @@ function precomputedLookup(routeIds, stopId) {
   const key = routeIds.slice().sort().join(',') + '|' + stopId;
   const raw = PRECOMPUTED.cache && PRECOMPUTED.cache[key];
   if (!raw) return null;
-  return new Map(Object.entries(raw).map(([tripId, seconds]) => [tripId, Number(seconds)]));
+  return new Map(Object.entries(raw).map(([tripId, info]) => [tripId, { seconds: info.seconds, route: info.route }]));
 }
 
 function splitCsvLine(line) {
@@ -76,7 +76,7 @@ async function buildScheduleLookup(routeIds, stopId) {
   if (precomputed) return precomputed;
 
   const isFresh = scheduleCache && scheduleCache.key === key && (Date.now() - scheduleCache.builtAt) < 6 * 60 * 60 * 1000;
-  if (isFresh) return scheduleCache.tripToSeconds;
+  if (isFresh) return scheduleCache.tripToInfo;
 
   const zipRes = await fetch(GTFS_ZIP_URL);
   if (!zipRes.ok) throw new Error('Could not download GTFS static schedule (' + zipRes.status + ')');
@@ -86,17 +86,17 @@ async function buildScheduleLookup(routeIds, stopId) {
   const busZipBuf = await outerZip.file('google_bus.zip').async('nodebuffer');
   const zip = await JSZip.loadAsync(busZipBuf);
 
-  // 1. trips.txt -> which trip_ids belong to our routes
+  // 1. trips.txt -> which trip_ids belong to our routes, and which route each is
   const tripsText = await zip.file('trips.txt').async('string');
   const tripLines = tripsText.split(/\r?\n/).filter(Boolean);
   const tripsHeader = splitCsvLine(tripLines[0]);
   const routeIdCol = tripsHeader.indexOf('route_id');
   const tripIdColT = tripsHeader.indexOf('trip_id');
   const routeIdSet = new Set(routeIds);
-  const tripIdSet = new Set();
+  const tripIdToRoute = new Map();
   for (let i = 1; i < tripLines.length; i++) {
     const cols = splitCsvLine(tripLines[i]);
-    if (routeIdSet.has(cols[routeIdCol])) tripIdSet.add(cols[tripIdColT]);
+    if (routeIdSet.has(cols[routeIdCol])) tripIdToRoute.set(cols[tripIdColT], cols[routeIdCol]);
   }
 
   // 2. stop_times.txt -> for those trips, what time do they hit our stop
@@ -107,7 +107,7 @@ async function buildScheduleLookup(routeIds, stopId) {
   const stopIdCol = stHeader.indexOf('stop_id');
   const arrivalCol = stHeader.indexOf('arrival_time');
 
-  const tripToSeconds = new Map();
+  const tripToInfo = new Map();
   // Cheap substring pre-check before splitting every line — stop_times.txt
   // covers the whole system and can be large; most lines aren't ours.
   const stopNeedle = ',' + stopId + ',';
@@ -116,12 +116,13 @@ async function buildScheduleLookup(routeIds, stopId) {
     if (!line.includes(stopNeedle)) continue;
     const cols = splitCsvLine(line);
     if (cols[stopIdCol] !== stopId) continue;
-    if (!tripIdSet.has(cols[tripIdColS])) continue;
-    tripToSeconds.set(cols[tripIdColS], parseTimeToSeconds(cols[arrivalCol]));
+    const route = tripIdToRoute.get(cols[tripIdColS]);
+    if (!route) continue;
+    tripToInfo.set(cols[tripIdColS], { seconds: parseTimeToSeconds(cols[arrivalCol]), route });
   }
 
-  scheduleCache = { key, tripToSeconds, builtAt: Date.now() };
-  return tripToSeconds;
+  scheduleCache = { key, tripToInfo, builtAt: Date.now() };
+  return tripToInfo;
 }
 
 // SEPTA's schedule times are wall-clock Eastern time. This finds the UTC
@@ -169,7 +170,7 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 's-maxage=20, stale-while-revalidate=40');
 
   try {
-    const [tripToSeconds, transitViewByRoute, detoursByRoute] = await Promise.all([
+    const [tripToInfo, transitViewByRoute, detoursByRoute] = await Promise.all([
       buildScheduleLookup(routes, stopId),
       Promise.all(routes.map(fetchTransitView)),
       Promise.all(routes.map(fetchDetours)),
@@ -177,24 +178,30 @@ module.exports = async (req, res) => {
 
     const midnightUtcMs = easternMidnightUtcMs();
     const arrivals = [];
+    const matchedTripIds = new Set();
 
+    // Pass 1: buses SEPTA is actively tracking right now — real ETA
+    // (scheduled time + live delay) and real seat availability.
     routes.forEach((route, i) => {
       for (const v of transitViewByRoute[i]) {
         if (!v.VehicleID || v.VehicleID === 'None') continue; // known TransitView placeholder rows
         if (typeof v.late !== 'number' || Math.abs(v.late) > 180) continue;
 
-        const scheduledSeconds = tripToSeconds.get(v.trip);
-        if (scheduledSeconds === undefined) continue; // this trip doesn't serve our stop
+        const info = tripToInfo.get(v.trip);
+        if (!info) continue; // this trip doesn't serve our stop
 
-        const scheduledMs = midnightUtcMs + scheduledSeconds * 1000;
-        const etaMs = scheduledMs + v.late * 60000 - Date.now();
-        const etaMinutes = Math.round(etaMs / 60000);
+        const scheduledMs = midnightUtcMs + info.seconds * 1000;
+        const arrivalMs = scheduledMs + v.late * 60000;
+        const etaMinutes = Math.round((arrivalMs - Date.now()) / 60000);
         if (etaMinutes < -3 || etaMinutes > 90) continue; // already passed, or too far out to trust
 
+        matchedTripIds.add(v.trip);
         arrivals.push({
           route,
           vehicleId: v.VehicleID,
           etaMinutes,
+          arrivalTimeIso: new Date(arrivalMs).toISOString(),
+          live: true,
           direction: v.Direction || null,
           destination: v.destination || null,
           fullness: SEAT_TO_FULLNESS[v.estimated_seat_availability] || null,
@@ -202,6 +209,39 @@ module.exports = async (req, res) => {
         });
       }
     });
+
+    // Pass 2: SEPTA hasn't dispatched/tracked a vehicle for a trip yet
+    // (common for a bus a while out), but the schedule still says it's
+    // coming — show that rather than nothing. No live delay to apply,
+    // so this is the timetable's word, not a real-time read.
+    //
+    // Guard: never let a scheduled guess claim to arrive sooner than a bus
+    // SEPTA is actually tracking right now. A trip that should have been
+    // dispatched by now but isn't live yet is more likely running late (or
+    // skipped) than genuinely "0 min away" — trust the live read over the
+    // timetable whenever both are in play.
+    const liveEtas = arrivals.filter(a => a.live).map(a => a.etaMinutes);
+    const earliestLiveEta = liveEtas.length ? Math.min(...liveEtas) : null;
+
+    for (const [tripId, info] of tripToInfo) {
+      if (matchedTripIds.has(tripId)) continue;
+      const scheduledMs = midnightUtcMs + info.seconds * 1000;
+      const etaMinutes = Math.round((scheduledMs - Date.now()) / 60000);
+      if (etaMinutes < -3 || etaMinutes > 90) continue;
+      if (earliestLiveEta !== null && etaMinutes <= earliestLiveEta) continue;
+
+      arrivals.push({
+        route: info.route,
+        vehicleId: null,
+        etaMinutes,
+        arrivalTimeIso: new Date(scheduledMs).toISOString(),
+        live: false,
+        direction: null,
+        destination: null,
+        fullness: null,
+        seatAvailabilityRaw: null,
+      });
+    }
 
     arrivals.sort((a, b) => a.etaMinutes - b.etaMinutes);
 
