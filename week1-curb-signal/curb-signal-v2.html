@@ -185,7 +185,11 @@
   .eta{text-align:right; flex:0 0 auto;}
   .eta .mins{font-family:"Archivo"; font-weight:900; font-size:30px; line-height:1; color:var(--sg-ink);}
   .eta .unit{font-size:10.5px; color:var(--sg-muted); font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
-  .eta .clock{font-size:10px; color:var(--sg-muted); font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums;}
+  .incoming-clock-line{
+    text-align:right; font-size:10.5px; color:var(--sg-muted); font-weight:600;
+    font-variant-numeric:tabular-nums; margin-bottom:2px;
+  }
+  .incoming-clock-line.secondary{font-size:9px; opacity:0.85;}
 
   .route-label .tag{
     font-weight:600; text-transform:none; letter-spacing:normal;
@@ -195,7 +199,7 @@
   /* the following bus: same data, deliberately quieter */
   .next-bus-label{
     font-size:9.5px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase;
-    color:var(--sg-muted); margin:14px 0 8px;
+    color:var(--sg-muted); margin:14px 0 4px;
   }
   .incoming-row.secondary{padding:9px 0; opacity:0.72;}
   .incoming-row.secondary .route-badge{
@@ -204,46 +208,41 @@
   }
   .incoming-row.secondary .route-label{font-size:12px; color:var(--sg-muted);}
   .incoming-row.secondary .eta .mins{font-size:20px; color:var(--sg-muted);}
-  .incoming-row.secondary .eta .clock{font-size:9px;}
 
-  /* live bus status: only rendered when there's something to say */
-  .bus-warning{
-    display:flex; align-items:flex-start; gap:12px;
-    margin-top:13px; padding:14px 15px; border-radius:10px;
-    background:var(--sg-yellow);
-  }
-  .bus-warning-icon{
-    width:26px; height:26px; border-radius:6px; flex:0 0 auto;
-    background:rgba(10,10,10,0.14); color:#1a1400;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .bus-warning-icon svg{width:15px; height:15px;}
-  .bus-warning-lines{display:flex; flex-direction:column; gap:3px;}
-  .bus-warning-lines .line{font-family:"Archivo"; font-weight:800; font-size:14.5px; color:#1a1400;}
-  .bus-warning-time{margin-top:6px; font-size:11px; font-weight:700; color:rgba(26,20,0,0.65);}
-
-  /* ---- Priority rider notification (hidden entirely when inactive) ---- */
-  .priority-card{
+  /* ---- Bus status: compact color-coded list, only shown when there's something to say ---- */
+  .bus-status-time{font-size:10.5px; color:var(--sg-muted); font-weight:600;}
+  .bus-warning-card{
     background:var(--sg-bg-2); border:1px solid var(--sg-line); border-radius:10px;
-    padding:16px 17px;
+    padding:4px 14px;
   }
-  .priority-headline{
-    font-family:"Archivo"; font-weight:800; font-size:18px; line-height:1.32;
-    color:var(--sg-ink); text-wrap:balance;
+  .warn-item{
+    display:flex; align-items:flex-start; gap:10px;
+    padding:9px 0; border-bottom:1px solid var(--sg-line);
   }
-  .priority-headline.idle{
-    font-weight:600; font-size:14.5px; color:var(--sg-muted);
+  .warn-item:last-child{border-bottom:0;}
+  .warn-dot{width:13px; height:13px; border-radius:3px; flex:0 0 auto; margin-top:2px;}
+  .warn-item.red .warn-dot{background:var(--sg-red);}
+  .warn-item.yellow .warn-dot{background:var(--sg-yellow);}
+  .warn-text{font-size:12.5px; line-height:1.4; color:var(--sg-ink);}
+  .warn-item.red .warn-text{font-weight:800;}
+  .warn-item.yellow .warn-text{font-weight:500; color:var(--sg-muted);}
+
+  /* ---- Boarding: instruction + priority pill + waiting + lane guide, one compact card ---- */
+  .boarding-card{
+    background:var(--sg-bg-2); border:1px solid var(--sg-line); border-radius:12px;
+    padding:14px 15px 15px;
   }
-  .priority-status{
-    display:flex; align-items:center; gap:9px; margin-top:13px;
+  .boarding-instruction{
+    margin:0 0 12px; font-size:13.5px; font-weight:700; color:var(--sg-ink); line-height:1.4;
   }
-  .priority-status-icon{
-    width:22px; height:22px; border-radius:5px; flex:0 0 auto;
-    background:var(--sg-blue); color:var(--sg-white);
-    display:flex; align-items:center; justify-content:center;
+  .hl-blue{color:var(--sg-blue);}
+
+  .priority-pill{
+    background:var(--sg-blue); border-radius:10px;
+    padding:11px 13px; margin-bottom:14px;
   }
-  .priority-status-icon svg{width:12px; height:12px;}
-  .priority-status span{font-size:13px; font-weight:700; color:var(--sg-ink);}
+  .priority-pill-sub{font-size:11px; font-weight:600; color:rgba(255,255,255,0.82); margin-bottom:3px;}
+  .priority-pill-main{font-family:"Archivo"; font-size:14.5px; font-weight:800; color:var(--sg-white); line-height:1.3;}
 
   .add-request-btn{
     display:inline-flex; align-items:center; gap:5px;
@@ -298,33 +297,26 @@
   .waiting-count{font-family:"Archivo"; font-weight:900; font-size:22px; color:var(--sg-ink);}
   .waiting-sub{font-size:11.5px; color:var(--sg-muted); font-weight:500;}
 
-  /* ---- boarding + ground mirror (kept, moved below) ---- */
-  .boarding-note{
-    display:flex; align-items:flex-start; gap:11px;
-    border-radius:8px; padding:13px 15px;
-    background:var(--sg-bg-2); border:1px solid var(--sg-line);
-  }
-  .boarding-note svg{width:19px; height:19px; flex:0 0 auto; color:var(--sg-blue); margin-top:1px;}
-  .boarding-note p{margin:0; font-size:12.5px; color:var(--sg-muted); line-height:1.5;}
-  .boarding-note strong{color:var(--sg-ink); font-weight:700;}
-
+  /* ---- lane guide, inside the boarding card ---- */
   .mini-queue{
-    display:flex; align-items:center; gap:6px;
-    margin-top:10px; padding:10px 12px; border-radius:6px;
-    background:var(--sg-bg-2); border:1px dashed var(--sg-line);
+    display:flex; align-items:center; gap:7px;
+    margin-top:2px; padding:0;
   }
-  .mq-door{display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--sg-muted); flex:0 0 auto; margin-right:2px;}
-  .mq-door svg{width:14px; height:14px;}
-  .mq-door span{font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
+  .mq-door{
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+    flex:1; aspect-ratio:1; max-width:52px; border-radius:6px;
+    border:1.5px solid var(--sg-line); background:var(--sg-bg); color:var(--sg-muted);
+  }
+  .mq-door svg{width:17px; height:17px;}
+  .mq-door span{font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;}
   .mq-lane{
-    flex:1; aspect-ratio:1; border-radius:4px;
+    flex:1; aspect-ratio:1; border-radius:6px; max-width:52px;
     display:flex; align-items:center; justify-content:center;
     border:1.5px solid var(--sg-line); background:var(--sg-bg);
-    color:var(--sg-muted); max-width:32px;
+    color:var(--sg-muted);
   }
-  .mq-lane svg{width:15px; height:15px;}
+  .mq-lane svg{width:20px; height:20px;}
   .mq-priority{border-color:var(--sg-blue); background:var(--sg-blue); color:var(--sg-white);}
-  .mq-caption{margin-top:7px; font-size:11px; color:var(--sg-muted); line-height:1.4;}
 
   .block-bottom{height:18px;}
 
@@ -398,98 +390,88 @@
   <div class="bezel">
     <section class="sign" aria-label="Bus stop sign">
 
-      <div class="block" id="priority-block" hidden>
-        <div class="block-label">Priority rider detected</div>
-        <div class="priority-card">
-          <div class="priority-headline" id="priority-headline">Please let priority riders board first</div>
-          <div class="priority-status" id="priority-status">
-            <div class="priority-status-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      <div class="block">
+        <div class="block-label">Boarding</div>
+        <div class="boarding-card">
+          <p class="boarding-instruction">Please enter the <span class="hl-blue">blue space</span> to be ready for boarding</p>
+
+          <div class="priority-pill" id="priority-block" hidden>
+            <div class="priority-pill-sub" id="priority-status">Priority rider detected, driver notified</div>
+            <div class="priority-pill-main" id="priority-headline">Please let the priority rider board first</div>
+          </div>
+
+          <div class="block-label-row">
+            <div class="block-label">Waiting now</div>
+            <button class="mini-btn" id="waiting-btn" aria-pressed="false">+ I'm here too</button>
+          </div>
+          <div class="waiting-row">
+            <div class="avatars">
+              <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+              <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+              <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+              <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+              <div class="avatar overflow" id="waiting-overflow">+2</div>
             </div>
-            <span>Driver notified</span>
+            <div>
+              <div class="waiting-count num" id="waiting-count">6</div>
+              <div class="waiting-sub">people at this stop</div>
+            </div>
+          </div>
+
+          <div class="mini-queue">
+            <div class="mq-door" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M5 12h14"/></svg>
+              <span>door</span>
+            </div>
+            <div class="mq-lane mq-priority">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+            </div>
+            <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+            <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
+          </div>
+
+          <button class="add-request-btn" id="add-request-btn">+ Add request</button>
+          <div class="need-picker" id="need-picker" hidden>
+            <button class="need-btn" data-need="wheelchair">Wheelchair or mobility device</button>
+            <button class="need-btn" data-need="stroller">Stroller</button>
+            <button class="need-btn" data-need="bike">Bike</button>
           </div>
         </div>
       </div>
 
       <div class="block">
         <div class="block-label">Incoming — Chestnut St &amp; 43rd St</div>
+        <div class="incoming-clock-line" id="incoming-clock-0"></div>
         <div class="incoming-row" id="incoming-row-0">
           <div class="route-badge">21</div>
           <div class="route-label"><span id="incoming-label-0">Loading…</span><span class="tag" id="incoming-tag-0" hidden> · scheduled</span></div>
           <div class="eta">
             <div class="mins num" id="incoming-mins-0">–</div>
             <div class="unit">min away</div>
-            <div class="clock" id="incoming-clock-0"></div>
-          </div>
-        </div>
-
-        <div class="bus-warning" id="bus-warning" hidden>
-          <div class="bus-warning-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L14.1 3.9a2 2 0 0 0-3.8 0Z"/></svg>
-          </div>
-          <div>
-            <div class="bus-warning-lines" id="bus-warning-lines"></div>
-            <div class="bus-warning-time" id="bus-warning-time"></div>
           </div>
         </div>
 
         <div class="next-bus-label">Next bus</div>
+        <div class="incoming-clock-line secondary" id="incoming-clock-1"></div>
         <div class="incoming-row secondary" id="incoming-row-1">
           <div class="route-badge">21</div>
           <div class="route-label"><span id="incoming-label-1">Loading…</span><span class="tag" id="incoming-tag-1" hidden> · scheduled</span></div>
           <div class="eta">
             <div class="mins num" id="incoming-mins-1">–</div>
             <div class="unit">min away</div>
-            <div class="clock" id="incoming-clock-1"></div>
           </div>
         </div>
       </div>
 
-      <div class="block">
+      <div class="block" id="bus-warning" hidden>
         <div class="block-label-row">
-          <div class="block-label">Waiting now</div>
-          <button class="mini-btn" id="waiting-btn" aria-pressed="false">+ I'm here too</button>
+          <div class="block-label">Bus status</div>
+          <div class="bus-status-time" id="bus-warning-time"></div>
         </div>
-        <div class="waiting-row">
-          <div class="avatars">
-            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-            <div class="avatar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-            <div class="avatar overflow" id="waiting-overflow">+2</div>
-          </div>
-          <div>
-            <div class="waiting-count num" id="waiting-count">6</div>
-            <div class="waiting-sub">people at this stop</div>
-          </div>
+        <div class="bus-warning-card">
+          <div class="bus-warning-lines" id="bus-warning-lines"></div>
         </div>
-        <button class="add-request-btn" id="add-request-btn">+ Add request</button>
-        <div class="need-picker" id="need-picker" hidden>
-          <button class="need-btn" data-need="wheelchair">Wheelchair or mobility device</button>
-          <button class="need-btn" data-need="stroller">Stroller</button>
-          <button class="need-btn" data-need="bike">Bike</button>
-        </div>
-      </div>
-
-      <div class="block">
-        <div class="block-label">Boarding</div>
-        <div class="boarding-note">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
-          <p>Please let the <strong>priority rider board first</strong>, then everyone else in line.</p>
-        </div>
-        <div class="mini-queue">
-          <div class="mq-door" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M5 12h14"/></svg>
-            <span>door</span>
-          </div>
-          <div class="mq-lane mq-priority">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
-          </div>
-          <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-          <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-          <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
-        </div>
-        <div class="mq-caption">Matches the lane markings on the ground — priority lane stays closest to the door</div>
       </div>
 
       <div class="block-bottom"></div>
@@ -577,18 +559,22 @@
 
   // Bus status (#2b): only ever shown when there's something worth saying
   // about the next bus specifically — silence is the "everything's fine" signal.
+  // Red = a real boarding blocker (can't get on at all). Yellow = worth
+  // knowing but not blocking (crowded, or a service note).
   function renderBusWarning(){
-    const lines = [];
-    if (rampFault) lines.push('Ramp not working');
-    if (capacity === 'full') lines.push('Full');
-    else if (capacity === 'holding') lines.push('Almost full');
-    if (activeDisruption) lines.push('Route ' + activeDisruption.route + ': ' + activeDisruption.message);
+    const items = [];
+    if (rampFault) items.push({ sev: 'red', text: 'Ramp not working' });
+    if (capacity === 'full') items.push({ sev: 'red', text: 'Full capacity — seat unavailable' });
+    else if (capacity === 'holding') items.push({ sev: 'yellow', text: 'Almost full' });
+    if (activeDisruption) items.push({ sev: 'yellow', text: 'Route ' + activeDisruption.route + ': ' + activeDisruption.message });
 
-    if (!lines.length){
+    if (!items.length){
       busWarning.hidden = true;
       return;
     }
-    busWarningLines.innerHTML = lines.map(l => '<div class="line">' + l + '</div>').join('');
+    busWarningLines.innerHTML = items.map(it =>
+      '<div class="warn-item ' + it.sev + '"><span class="warn-dot"></span><span class="warn-text">' + it.text + '</span></div>'
+    ).join('');
     busWarningTime.textContent = lastUpdateText;
     busWarning.hidden = false;
   }
