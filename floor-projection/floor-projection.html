@@ -121,7 +121,9 @@
   }
 
   .arrow-bar{
-    position:absolute; left:298px; top:590px; width:900px; height:14px;
+    /* top:573 = blue-zone's bottom edge (top:335 + height:238), so the
+       bar sits flush against the blue zone instead of floating below it */
+    position:absolute; left:298px; top:573px; width:900px; height:14px;
     border-radius:7px; background:var(--blue-lt);
     overflow:hidden;
   }
@@ -134,7 +136,7 @@
     from{ left:-120px; }
     to{ left:900px; }
   }
-  .arrow-head{ position:absolute; left:298px; top:574px; }
+  .arrow-head{ position:absolute; left:298px; top:557px; } /* vertically centered on .arrow-bar */
 
   /* ---- 3.6 yellow priority card ----
      Always on stage (not just while a priority rider is detected) so it
@@ -367,11 +369,15 @@
     // When a priority rider is detected, slot 1 is reserved for them —
     // general riders' numbers shift up by one, nothing else changes.
     const offset = state.priorityDetected ? 1 : 0;
+    // Numbering counts from the bus door (right) outward: the rightmost
+    // circle (closest to the door) is always #1 (or #2 with a reserved
+    // priority slot), increasing leftward — position on stage is
+    // unchanged, only the label.
     for (let i = 0; i < state.generalCount; i++){
       const c = document.createElement('div');
       c.className = 'circle' + (i === state.activeIndex ? ' active' : '');
       c.style.left = (CIRCLE_START_LEFT + i * CIRCLE_PITCH) + 'px';
-      c.textContent = i + 1 + offset;
+      c.textContent = (state.generalCount - i) + offset;
       el.circles.appendChild(c);
     }
   }
