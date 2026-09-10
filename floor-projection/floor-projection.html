@@ -61,23 +61,24 @@
     text-align:center; white-space:nowrap;
   }
 
-  /* ---- 3.4 route info header ---- */
+  /* ---- 3.4 route info header ---- left edge (140) matches the widened
+     blue zone below it — see 3.5 */
   .incoming-label{
-    position:absolute; left:295px; top:213px;
+    position:absolute; left:140px; top:213px;
     color:var(--paper); font-size:17px; font-weight:700;
   }
   .route-badge{
-    position:absolute; left:295px; top:250px; width:92px; height:50px;
+    position:absolute; left:140px; top:250px; width:92px; height:50px;
     border-radius:25px; background:var(--red);
     display:flex; align-items:center; justify-content:center;
     color:var(--paper); font-size:26px; font-weight:700;
   }
   .scheduled-time{
-    position:absolute; left:400px; top:246px;
+    position:absolute; left:245px; top:246px;
     color:var(--paper); font-size:15px; font-weight:700;
   }
   .destination{
-    position:absolute; left:400px; top:264px;
+    position:absolute; left:245px; top:264px;
     color:var(--paper); font-size:28px; font-weight:700;
   }
   .countdown{
@@ -94,9 +95,13 @@
     color:var(--paper); font-size:34px; font-weight:700; line-height:1;
   }
 
-  /* ---- 3.5 blue queue zone ---- */
+  /* ---- 3.5 blue queue zone ----
+     Widened (140 to 1240, was 296 to 1240) so the queue circles can be
+     genuinely foot-sized with real spacing between them — the right
+     edge stays put (that's the boundary against the priority card), all
+     the extra room comes from the left, right after the site label. */
   .blue-zone{
-    position:absolute; left:296px; top:335px; width:944px; height:238px;
+    position:absolute; left:140px; top:335px; width:1100px; height:238px;
     background:var(--blue);
   }
   .blue-label{
@@ -105,12 +110,12 @@
   }
   .circles{ position:absolute; left:0; top:0; width:100%; height:100%; }
   .circle{
-    position:absolute; top:130px; width:108px; height:108px;
-    margin-top:-54px; /* vertical-center on zone-relative y:130 */
+    position:absolute; top:130px; width:134px; height:134px;
+    margin-top:-67px; /* vertical-center on zone-relative y:130 */
     border-radius:50%; border:2px solid rgba(255,255,255,.85);
     background:var(--circle-off);
     display:flex; align-items:center; justify-content:center;
-    color:var(--paper); font-size:19px; font-weight:700;
+    color:var(--paper); font-size:24px; font-weight:700;
     transition: background-color .3s ease;
     animation: circle-in .25s ease both;
   }
@@ -120,17 +125,17 @@
     to{ opacity:1; transform:scale(1); }
   }
 
-  /* A 10px track spanning the blue zone's width (296 to 1240), flush
-     under it (top:573 = blue-zone's bottom edge), with a row of chevrons
-     centered on the track pulsing left-to-right toward the door — reads
-     as a lit rail rather than a plain painted arrow. */
+  /* A 32px track spanning the blue zone's width (140 to 1240), flush
+     under it (top:573 = blue-zone's bottom edge). The chevrons are sized
+     to fit entirely within the track's height (not overflowing above/
+     below it) and pulse left-to-right toward the door. */
   .direction-bar{
-    position:absolute; left:296px; top:573px; width:944px; height:10px;
-    border-radius:5px; background:var(--blue-lt); opacity:.35;
+    position:absolute; left:140px; top:573px; width:1100px; height:32px;
+    border-radius:16px; background:var(--blue-lt); opacity:.4;
   }
-  .chevron-flow{ position:absolute; left:296px; top:555px; width:944px; height:46px; }
+  .chevron-flow{ position:absolute; left:140px; top:573px; width:1100px; height:32px; }
   .chevron{
-    fill:none; stroke:var(--blue-lt); stroke-width:8;
+    fill:none; stroke:var(--blue-lt); stroke-width:6;
     stroke-linecap:round; stroke-linejoin:round;
     transform-box:fill-box; transform-origin:center;
     animation: chevron-pulse 1.4s ease-in-out infinite;
@@ -180,7 +185,7 @@
 
   /* ---- 3.7 bottom instruction ---- */
   .instruction{
-    position:absolute; left:296px; top:645px;
+    position:absolute; left:140px; top:645px;
     color:var(--ink); font-size:24px; font-weight:700;
   }
 
@@ -251,14 +256,14 @@
       <div class="circles" id="circles"></div>
     </div>
     <div class="direction-bar"></div>
-    <svg class="chevron-flow" viewBox="0 0 944 46">
-      <path class="chevron" d="M108,3 L128,23 L108,43" style="animation-delay:0s"></path>
-      <path class="chevron" d="M226,3 L246,23 L226,43" style="animation-delay:.12s"></path>
-      <path class="chevron" d="M344,3 L364,23 L344,43" style="animation-delay:.24s"></path>
-      <path class="chevron" d="M462,3 L482,23 L462,43" style="animation-delay:.36s"></path>
-      <path class="chevron" d="M580,3 L600,23 L580,43" style="animation-delay:.48s"></path>
-      <path class="chevron" d="M698,3 L718,23 L698,43" style="animation-delay:.6s"></path>
-      <path class="chevron" d="M816,3 L836,23 L816,43" style="animation-delay:.72s"></path>
+    <svg class="chevron-flow" viewBox="0 0 1100 32">
+      <path class="chevron" d="M130,4 L146,16 L130,28" style="animation-delay:0s"></path>
+      <path class="chevron" d="M267,4 L283,16 L267,28" style="animation-delay:.12s"></path>
+      <path class="chevron" d="M405,4 L421,16 L405,28" style="animation-delay:.24s"></path>
+      <path class="chevron" d="M542,4 L558,16 L542,28" style="animation-delay:.36s"></path>
+      <path class="chevron" d="M680,4 L696,16 L680,28" style="animation-delay:.48s"></path>
+      <path class="chevron" d="M817,4 L833,16 L817,28" style="animation-delay:.6s"></path>
+      <path class="chevron" d="M955,4 L971,16 L955,28" style="animation-delay:.72s"></path>
     </svg>
 
     <div class="priority-card" id="priorityCard">
@@ -364,14 +369,15 @@
 
   const SHOW_PRIORITY_SPOT = false; // flip to true to reveal the marked standing spot + wheelchair glyph
 
-  // Circle positions are relative to .blue-zone (944px wide) and right-
-  // anchored next to the priority card, which is always on stage at
-  // stage-x 958 (blue-zone-relative x 662) — RIGHTMOST_LEFT leaves a 24px
-  // gap to the card. Queue grows leftward as riders are added. See Known
-  // Gap #2 below for why the count is capped instead of the pitch
-  // shrinking to fit indefinitely more.
-  const RIGHTMOST_LEFT = 530;
-  const CIRCLE_PITCH = 126;
+  // Circle positions are relative to .blue-zone (1100px wide, widened
+  // from the header's left edge to leave real foot-sized circles with
+  // real spacing) and right-anchored next to the priority card, which is
+  // always on stage at stage-x 958 (blue-zone-relative x 818) —
+  // RIGHTMOST_LEFT leaves a 24px gap to the card. Queue grows leftward as
+  // riders are added. See Known Gap #2 below for why the count is capped
+  // instead of the pitch shrinking to fit indefinitely more.
+  const RIGHTMOST_LEFT = 660;
+  const CIRCLE_PITCH = 160;
   const MAX_GENERAL_COUNT = 5;
 
   function renderCircles(){
