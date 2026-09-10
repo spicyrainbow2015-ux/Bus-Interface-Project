@@ -568,6 +568,23 @@
     renderPriority();
   }
 
+  // "Nothing detected" is a demo control, not a real camera feed — as a
+  // testing tool it should mean "clear priority state", full stop. In the
+  // real system a rider's own manual request would rightly outlive the
+  // camera saying it sees no one (that's the whole point of the fallback),
+  // but here that distinction just traps testers in a state they can't
+  // click their way out of. So this also cancels a manual "+ Add request",
+  // closes the picker if it's open, and un-presses "Priority rider
+  // detected" — a clean, obvious reset to baseline.
+  function clearPriorityDemo(){
+    priorityAuto = false;
+    priorityManual = false;
+    needPicker.hidden = true;
+    btnDetectOn.setAttribute('aria-pressed', 'false');
+    btnDetectOff.setAttribute('aria-pressed', 'true');
+    renderPriority();
+  }
+
   // Bus status (#2b): only ever shown when there's something worth saying
   // about the next bus specifically — silence is the "everything's fine" signal.
   // Red = a real boarding blocker (can't get on at all). Yellow = worth
@@ -629,7 +646,7 @@
   }
 
   btnDetectOn.addEventListener('click', () => setDetect(true));
-  btnDetectOff.addEventListener('click', () => setDetect(false));
+  btnDetectOff.addEventListener('click', clearPriorityDemo);
   btnRampFault.addEventListener('click', () => setRampFault(!rampFault));
   capacityBtns.available.addEventListener('click', () => setCapacity('available'));
   capacityBtns.holding.addEventListener('click', () => setCapacity('holding'));
