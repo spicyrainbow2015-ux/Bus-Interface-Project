@@ -120,11 +120,13 @@
     to{ opacity:1; transform:scale(1); }
   }
 
+  /* Shaft + head together span exactly the blue zone's width (296 to
+     1240) so the arrow reads as one shape the same length as the blue
+     area, ending in a real point at the door end (right). top:573 =
+     blue-zone's bottom edge (top:335 + height:238), flush underneath it. */
   .arrow-bar{
-    /* top:573 = blue-zone's bottom edge (top:335 + height:238), so the
-       bar sits flush against the blue zone instead of floating below it */
-    position:absolute; left:298px; top:573px; width:900px; height:14px;
-    border-radius:7px; background:var(--blue-lt);
+    position:absolute; left:296px; top:573px; width:812px; height:14px;
+    border-radius:7px 0 0 7px; background:var(--blue-lt);
     overflow:hidden;
   }
   .arrow-bar .shimmer{
@@ -134,9 +136,12 @@
   }
   @keyframes shimmer{
     from{ left:-120px; }
-    to{ left:900px; }
+    to{ left:812px; }
   }
-  .arrow-head{ position:absolute; left:298px; top:557px; } /* vertically centered on .arrow-bar */
+  /* arrow-head svg is 132x46 — flush against the shaft's right end
+     (296 + 812 = 1108), so shaft+head together span 296 to 1240,
+     exactly the blue zone's width, vertically centered on the shaft */
+  .arrow-head{ position:absolute; left:1108px; top:557px; }
 
   /* ---- 3.6 yellow priority card ----
      Always on stage (not just while a priority rider is detected) so it
@@ -356,28 +361,31 @@
 
   const SHOW_PRIORITY_SPOT = false; // flip to true to reveal the marked standing spot + wheelchair glyph
 
-  // Circle positions are relative to .blue-zone (944px wide) and must stay
-  // clear of the priority card, which is always on stage at stage-x 958
-  // (blue-zone-relative x 662) — see Known Gap #2 below for why the count
-  // is capped rather than the pitch shrinking to fit indefinitely more.
-  const CIRCLE_START_LEFT = 20;
+  // Circle positions are relative to .blue-zone (944px wide) and right-
+  // anchored next to the priority card, which is always on stage at
+  // stage-x 958 (blue-zone-relative x 662) — RIGHTMOST_LEFT leaves a 24px
+  // gap to the card. Queue grows leftward as riders are added. See Known
+  // Gap #2 below for why the count is capped instead of the pitch
+  // shrinking to fit indefinitely more.
+  const RIGHTMOST_LEFT = 530;
   const CIRCLE_PITCH = 126;
   const MAX_GENERAL_COUNT = 5;
 
   function renderCircles(){
     el.circles.innerHTML = '';
-    // When a priority rider is detected, slot 1 is reserved for them —
-    // general riders' numbers shift up by one, nothing else changes.
+    // When a priority rider is detected, slot 0 (rightmost, nearest the
+    // door) is reserved for them — general riders' numbers shift up by
+    // one, nothing else changes.
     const offset = state.priorityDetected ? 1 : 0;
-    // Numbering counts from the bus door (right) outward: the rightmost
-    // circle (closest to the door) is always #1 (or #2 with a reserved
-    // priority slot), increasing leftward — position on stage is
-    // unchanged, only the label.
-    for (let i = 0; i < state.generalCount; i++){
+    // Numbering counts from the bus door (right) outward: slot 0 (right-
+    // most, nearest the door) is always #1 (or #2 with a reserved
+    // priority slot), increasing leftward as the queue extends away
+    // from the door.
+    for (let slot = 0; slot < state.generalCount; slot++){
       const c = document.createElement('div');
-      c.className = 'circle' + (i === state.activeIndex ? ' active' : '');
-      c.style.left = (CIRCLE_START_LEFT + i * CIRCLE_PITCH) + 'px';
-      c.textContent = (state.generalCount - i) + offset;
+      c.className = 'circle' + (slot === state.activeIndex ? ' active' : '');
+      c.style.left = (RIGHTMOST_LEFT - slot * CIRCLE_PITCH) + 'px';
+      c.textContent = slot + 1 + offset;
       el.circles.appendChild(c);
     }
   }
