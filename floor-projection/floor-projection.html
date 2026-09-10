@@ -105,12 +105,12 @@
   }
   .circles{ position:absolute; left:0; top:0; width:100%; height:100%; }
   .circle{
-    position:absolute; top:130px; width:130px; height:130px;
-    margin-top:-65px; /* vertical-center on zone-relative y:130 */
+    position:absolute; top:130px; width:108px; height:108px;
+    margin-top:-54px; /* vertical-center on zone-relative y:130 */
     border-radius:50%; border:2px solid rgba(255,255,255,.85);
     background:var(--circle-off);
     display:flex; align-items:center; justify-content:center;
-    color:var(--paper); font-size:22px; font-weight:700;
+    color:var(--paper); font-size:19px; font-weight:700;
     transition: background-color .3s ease;
     animation: circle-in .25s ease both;
   }
@@ -187,25 +187,41 @@
     .circle{ animation:none; }
   }
 
-  /* ---- dev control strip: scaffolding, not part of the projection ---- */
+  /* ---- dev control strip: scaffolding, not part of the projection.
+     Styled to match the demo bar in week1-curb-signal/curb-signal-v2.html
+     (same accent color + pill-button pattern) since that's the look the
+     project has settled on for "very clear demo of different modes." ---- */
   #devstrip{
     position:fixed; left:14px; bottom:14px; z-index:10;
-    background:rgba(255,255,255,.92); border:1px solid #ccc; border-radius:6px;
-    padding:10px 12px; display:flex; flex-direction:column; gap:8px;
-    font-family:ui-monospace, "SF Mono", Menlo, monospace;
-    font-size:13px; color:#555; max-width:340px;
+    width:380px;
+    border:1.5px dashed #dbe2dc; border-radius:14px;
+    padding:14px 16px; display:flex; flex-direction:column; gap:12px;
+    background:#eef1ec;
+    font-family:"Helvetica Neue", Helvetica, Arial, sans-serif;
   }
-  #devstrip .row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-  #devstrip button{
-    font-family:inherit; font-size:12px; color:#333;
-    background:#f4f4f4; border:1px solid #bbb; border-radius:3px;
-    padding:4px 8px; cursor:pointer;
+  #devstrip .row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  #devstrip .group-label{
+    font-size:11px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
+    color:#8a978f; white-space:nowrap;
   }
-  #devstrip button:hover{ background:#e8e8e8; }
-  #devstrip button[aria-pressed="true"]{ background:#333; color:#fff; border-color:#333; }
-  #devstrip .hint{ color:#999; font-size:11px; }
-  #devstrip .live{ color:#2a7a4a; }
-  #devstrip .stale{ color:#a05a00; }
+  #devstrip .play-btn{
+    align-self:flex-start;
+    font-size:14px; font-weight:700;
+    padding:9px 18px; border-radius:999px; border:none;
+    background:#2f6f68; color:#fff; cursor:pointer;
+  }
+  #devstrip .play-btn:hover{ opacity:.88; }
+  #devstrip .play-btn[aria-pressed="true"]{ background:#b8482a; }
+  #devstrip .demo-btn{
+    font-size:13px; font-weight:600;
+    padding:7px 13px; border-radius:999px; border:1.5px solid #dbe2dc;
+    background:#fff; color:#52645d; cursor:pointer;
+  }
+  #devstrip .demo-btn:hover{ border-color:#2f6f68; }
+  #devstrip .demo-btn[aria-pressed="true"]{ background:#2f6f68; color:#fff; border-color:#2f6f68; }
+  #devstrip .hint{ color:#8a978f; font-size:11.5px; line-height:1.45; }
+  #devstrip .live{ color:#347a52; }
+  #devstrip .stale{ color:#b8862c; }
 </style>
 </head>
 <body>
@@ -248,21 +264,20 @@
 
 <div id="devstrip">
   <div class="row">
-    <strong>phase</strong>
-    <button data-phase="idle">1 idle</button>
-    <button data-phase="detecting">2 detecting</button>
-    <button data-phase="priority">3 priority</button>
-    <button data-phase="boarding">4 boarding</button>
-    <button data-phase="departed">5 departed</button>
+    <button id="playWalkthrough" class="play-btn" aria-pressed="false">&#9654; Play walkthrough</button>
   </div>
   <div class="row">
-    <button id="riderMinus">&minus;1 rider</button>
-    <button id="riderPlus">+1 rider</button>
-    <button id="priorityToggle" aria-pressed="false">toggle priority rider</button>
+    <span class="group-label">Camera (simulated)</span>
+    <button class="demo-btn" data-priority="true" aria-pressed="true">Priority rider detected</button>
+    <button class="demo-btn" data-priority="false" aria-pressed="false">Nothing detected</button>
   </div>
   <div class="row">
-    <button id="playPause" aria-pressed="true">&#10073;&#10073; pause (space)</button>
-    <span class="hint">keys 1&ndash;5 = phase, space = play/pause</span>
+    <span class="group-label">Rider count (simulated)</span>
+    <button class="demo-btn" data-count="2" aria-pressed="true">2 riders detected</button>
+    <button class="demo-btn" data-count="5" aria-pressed="false">5 riders detected</button>
+  </div>
+  <div class="row">
+    <span class="hint">Space bar plays/stops the walkthrough. Camera and rider-count picks hold through it.</span>
   </div>
   <div class="row">
     <span id="dataSource" class="hint">checking SEPTA data&hellip;</span>
@@ -276,10 +291,11 @@
    * 1. No alighting path: riders exiting the bus walk through the head
    *    of the queue and the priority card's footprint. A future phase
    *    should project an exit corridor while the door is open.
-   * 2. Circle count is capped at MAX_GENERAL_COUNT (4) rather than the
-   *    pitch shrinking to fit more, since the physical queue area is a
-   *    fixed size in the floor projection — a longer real-world line
-   *    isn't representable with this layout yet.
+   * 2. Circle count is capped at MAX_GENERAL_COUNT (5, matching the
+   *    "5 riders detected" demo button) rather than the pitch shrinking
+   *    to fit more, since the physical queue area is a fixed size in the
+   *    floor projection — a longer real-world line isn't representable
+   *    with this layout yet.
    * 3. No ramp/kneel state for the priority rider beyond "Informing
    *    driver…" — matches the driver-report gap noted elsewhere in this
    *    project (SEPTA publishes no live ramp/lift status anywhere).
@@ -305,7 +321,7 @@
     route: '21',
     destination: 'Columbus–dock',
     scheduled: '5:59 pm',
-    generalCount: 4,      // no. of general-rider circles shown
+    generalCount: 2,      // no. of general-rider circles shown — matches the default "2 riders detected" demo button
     activeIndex: 0,
     priorityDetected: true,
     driverNotified: false,
@@ -341,10 +357,10 @@
   // Circle positions are relative to .blue-zone (944px wide) and must stay
   // clear of the priority card, which is always on stage at stage-x 958
   // (blue-zone-relative x 662) — see Known Gap #2 below for why the count
-  // is capped rather than the pitch shrinking to fit more.
+  // is capped rather than the pitch shrinking to fit indefinitely more.
   const CIRCLE_START_LEFT = 20;
-  const CIRCLE_PITCH = 162;
-  const MAX_GENERAL_COUNT = 4;
+  const CIRCLE_PITCH = 126;
+  const MAX_GENERAL_COUNT = 5;
 
   function renderCircles(){
     el.circles.innerHTML = '';
@@ -445,83 +461,89 @@
   pollLiveData();
   setInterval(pollLiveData, POLL_MS);
 
-  /* ---- auto-run phase cycle ---- */
+  /* ---- phase display + walkthrough playback ----
+     `phase` only drives header/countdown text — it no longer touches
+     priorityDetected or generalCount, so whatever camera/rider-count demo
+     mode is picked holds steady through the whole walkthrough instead of
+     getting silently overwritten mid-sequence. */
   const PHASE_ORDER = ['idle', 'detecting', 'priority', 'boarding', 'departed'];
   const PHASE_MS = { idle: 4000, detecting: 4000, priority: 6000, boarding: 6000, departed: 3000 };
-  let playing = true;
+  let walking = false;
   let phaseTimer = null;
   let tickTimer = null;
 
   function setPhase(name){
     state.phase = name;
-    if (name === 'priority') state.priorityDetected = true;
     if (name === 'departed') state.minutes = 8;
+    if (name === 'priority') state.minutes = 2;
     render();
-    document.querySelectorAll('#devstrip [data-phase]').forEach(b =>
-      b.setAttribute('aria-pressed', String(b.dataset.phase === name))
-    );
-  }
-
-  function scheduleNextPhase(){
-    clearTimeout(phaseTimer);
-    if (!playing) return;
-    phaseTimer = setTimeout(() => {
-      const i = PHASE_ORDER.indexOf(state.phase);
-      setPhase(PHASE_ORDER[(i + 1) % PHASE_ORDER.length]);
-      scheduleNextPhase();
-    }, PHASE_MS[state.phase]);
   }
 
   function startTicking(){
     clearInterval(tickTimer);
     tickTimer = setInterval(() => {
-      if (!playing) return;
       if (state.minutes > 0 && state.phase !== 'boarding'){
         state.minutes -= 1;
         render();
       }
     }, 1000);
   }
+  startTicking();
 
-  function setPlaying(on){
-    playing = on;
-    const btn = document.getElementById('playPause');
-    btn.textContent = on ? '⏸ pause (space)' : '▶ play (space)';
-    btn.setAttribute('aria-pressed', String(on));
-    if (on) scheduleNextPhase();
-    else clearTimeout(phaseTimer);
+  const walkBtn = document.getElementById('playWalkthrough');
+
+  function stepWalkthrough(){
+    phaseTimer = setTimeout(() => {
+      const i = PHASE_ORDER.indexOf(state.phase);
+      if (i === PHASE_ORDER.length - 1){ stopWalkthrough(); return; }
+      setPhase(PHASE_ORDER[i + 1]);
+      stepWalkthrough();
+    }, PHASE_MS[state.phase]);
   }
 
-  startTicking();
-  scheduleNextPhase();
+  function startWalkthrough(){
+    walking = true;
+    walkBtn.textContent = '■ Stop walkthrough';
+    walkBtn.setAttribute('aria-pressed', 'true');
+    setPhase('idle');
+    stepWalkthrough();
+  }
+
+  function stopWalkthrough(){
+    walking = false;
+    clearTimeout(phaseTimer);
+    walkBtn.textContent = '▶ Play walkthrough';
+    walkBtn.setAttribute('aria-pressed', 'false');
+  }
 
   /* ---- dev strip wiring ---- */
-  document.querySelectorAll('#devstrip [data-phase]').forEach(btn => {
-    btn.addEventListener('click', () => { setPhase(btn.dataset.phase); scheduleNextPhase(); });
+  walkBtn.addEventListener('click', () => { walking ? stopWalkthrough() : startWalkthrough(); });
+
+  document.querySelectorAll('#devstrip [data-priority]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.priorityDetected = btn.dataset.priority === 'true';
+      document.querySelectorAll('#devstrip [data-priority]').forEach(b =>
+        b.setAttribute('aria-pressed', String(b === btn))
+      );
+      render();
+    });
   });
-  document.getElementById('riderPlus').addEventListener('click', () => {
-    state.generalCount = Math.min(MAX_GENERAL_COUNT, state.generalCount + 1);
-    render();
+
+  document.querySelectorAll('#devstrip [data-count]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.generalCount = Math.min(MAX_GENERAL_COUNT, Number(btn.dataset.count));
+      document.querySelectorAll('#devstrip [data-count]').forEach(b =>
+        b.setAttribute('aria-pressed', String(b === btn))
+      );
+      render();
+    });
   });
-  document.getElementById('riderMinus').addEventListener('click', () => {
-    state.generalCount = Math.max(0, state.generalCount - 1);
-    render();
-  });
-  document.getElementById('priorityToggle').addEventListener('click', (e) => {
-    state.priorityDetected = !state.priorityDetected;
-    e.target.setAttribute('aria-pressed', String(state.priorityDetected));
-    render();
-  });
-  document.getElementById('playPause').addEventListener('click', () => setPlaying(!playing));
 
   /* ---- keyboard ---- */
   window.addEventListener('keydown', (e) => {
-    if (e.key >= '1' && e.key <= '5'){
-      setPhase(PHASE_ORDER[Number(e.key) - 1]);
-      scheduleNextPhase();
-    } else if (e.code === 'Space'){
+    if (e.code === 'Space'){
       e.preventDefault();
-      setPlaying(!playing);
+      walking ? stopWalkthrough() : startWalkthrough();
     }
   });
 
