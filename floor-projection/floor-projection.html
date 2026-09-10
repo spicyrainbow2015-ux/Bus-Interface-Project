@@ -120,11 +120,15 @@
     to{ opacity:1; transform:scale(1); }
   }
 
-  /* A row of chevrons spanning the blue zone's width (296 to 1240),
-     pulsing left-to-right toward the door — reads as a moving current
-     rather than a static bar. top:557/height:46 keeps the same footprint
-     the old bar+head occupied, flush under the blue zone. */
-  .chevron-flow{ position:absolute; left:296px; top:557px; width:944px; height:46px; }
+  /* A 10px track spanning the blue zone's width (296 to 1240), flush
+     under it (top:573 = blue-zone's bottom edge), with a row of chevrons
+     centered on the track pulsing left-to-right toward the door — reads
+     as a lit rail rather than a plain painted arrow. */
+  .direction-bar{
+    position:absolute; left:296px; top:573px; width:944px; height:10px;
+    border-radius:5px; background:var(--blue-lt); opacity:.35;
+  }
+  .chevron-flow{ position:absolute; left:296px; top:555px; width:944px; height:46px; }
   .chevron{
     fill:none; stroke:var(--blue-lt); stroke-width:8;
     stroke-linecap:round; stroke-linejoin:round;
@@ -246,6 +250,7 @@
       <div class="blue-label" id="blueLabel">Detecting no. of riders …</div>
       <div class="circles" id="circles"></div>
     </div>
+    <div class="direction-bar"></div>
     <svg class="chevron-flow" viewBox="0 0 944 46">
       <path class="chevron" d="M108,3 L128,23 L108,43" style="animation-delay:0s"></path>
       <path class="chevron" d="M226,3 L246,23 L226,43" style="animation-delay:.12s"></path>
