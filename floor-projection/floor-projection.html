@@ -96,7 +96,7 @@
   }
 
   /* ---- 3.5 blue queue zone ----
-     Widened (140 to 1240, was 296 to 1240) so the queue circles can be
+     Widened (140 to 1240, was 296 to 1240) so the queue spots can be
      genuinely foot-sized with real spacing between them — the right
      edge stays put (that's the boundary against the priority card), all
      the extra room comes from the left, right after the site label. */
@@ -108,19 +108,16 @@
     position:absolute; left:22px; top:14px;
     color:var(--paper); font-size:16px; font-weight:700;
   }
+  /* Queue spots are plain footprint pictograms rather than numbered
+     circles — exact headcount isn't the point, a clear "stand here, in
+     this order" cue is. Each spot is a pair of feet pointing right
+     (toward the door), matching the chevron flow's direction. The next
+     spot in line is filled brighter; the rest sit at a muted "open" fill. */
   .circles{ position:absolute; left:0; top:0; width:100%; height:100%; }
-  .circle{
-    position:absolute; top:130px; width:134px; height:134px;
-    margin-top:-67px; /* vertical-center on zone-relative y:130 */
-    border-radius:50%; border:2px solid rgba(255,255,255,.85);
-    background:var(--circle-off);
-    display:flex; align-items:center; justify-content:center;
-    color:var(--paper); font-size:24px; font-weight:700;
-    transition: background-color .3s ease;
-    animation: circle-in .25s ease both;
-  }
-  .circle.active{ background:var(--circle-on); }
-  @keyframes circle-in{
+  .footprint-pair{ animation: spot-in .25s ease both; }
+  .footprint{ fill:var(--circle-off); transition: fill .3s ease; }
+  .footprint-pair.active .footprint{ fill:var(--circle-on); }
+  @keyframes spot-in{
     from{ opacity:0; transform:scale(.9); }
     to{ opacity:1; transform:scale(1); }
   }
@@ -149,15 +146,21 @@
      Always on stage (not just while a priority rider is detected) so it
      never pops in on top of the queue circles — see render() for the
      "calm" vs "detected" content/emphasis swap. */
+  /* Calm (not detected) is a neutral card — color is reserved for when
+     something actually needs a rider's attention, per the same
+     prominence-ladder principle used elsewhere in this project. Detected
+     switches the whole card to yellow, not just a glow/lift, so the two
+     states read as unmistakably different at a glance. */
   .priority-card{
     position:absolute; left:958px; top:176px; width:276px; height:340px;
-    background:var(--yellow); border:3px solid var(--yellow-br); border-radius:12px;
-    box-shadow: 0 0 40px 10px rgba(224,193,65,.12);
+    background:#f3f2ee; border:3px solid #d9d7cf; border-radius:12px;
+    box-shadow:none;
     padding:22px; display:flex; flex-direction:column; gap:14px;
     z-index:2; /* above the blue zone */
-    transition: transform .4s ease, box-shadow .4s ease;
+    transition: transform .4s ease, box-shadow .4s ease, background-color .4s ease, border-color .4s ease;
   }
   .priority-card.detected{
+    background:var(--yellow); border-color:var(--yellow-br);
     transform: translateY(-14px);
     box-shadow: 0 0 70px 18px rgba(224,193,65,.28);
   }
@@ -193,7 +196,7 @@
     .status-dot{ animation:none; }
     .chevron{ animation:none; opacity:.85; }
     .priority-card{ transition:none; }
-    .circle{ animation:none; }
+    .footprint-pair{ animation:none; }
   }
 
   /* ---- dev control strip: scaffolding, not part of the projection.
@@ -253,7 +256,7 @@
 
     <div class="blue-zone">
       <div class="blue-label" id="blueLabel">Detecting no. of riders …</div>
-      <div class="circles" id="circles"></div>
+      <svg class="circles" id="circles" viewBox="0 0 1100 238"></svg>
     </div>
     <div class="direction-bar"></div>
     <svg class="chevron-flow" viewBox="0 0 1100 32">
@@ -306,7 +309,7 @@
    * 1. No alighting path: riders exiting the bus walk through the head
    *    of the queue and the priority card's footprint. A future phase
    *    should project an exit corridor while the door is open.
-   * 2. Circle count is capped at MAX_GENERAL_COUNT (5, matching the
+   * 2. Spot count is capped at MAX_GENERAL_COUNT (5, matching the
    *    "5 riders detected" demo button) rather than the pitch shrinking
    *    to fit more, since the physical queue area is a fixed size in the
    *    floor projection — a longer real-world line isn't representable
@@ -369,33 +372,58 @@
 
   const SHOW_PRIORITY_SPOT = false; // flip to true to reveal the marked standing spot + wheelchair glyph
 
-  // Circle positions are relative to .blue-zone (1100px wide, widened
-  // from the header's left edge to leave real foot-sized circles with
-  // real spacing) and right-anchored next to the priority card, which is
-  // always on stage at stage-x 958 (blue-zone-relative x 818) —
-  // RIGHTMOST_LEFT leaves a 24px gap to the card. Queue grows leftward as
-  // riders are added. See Known Gap #2 below for why the count is capped
-  // instead of the pitch shrinking to fit indefinitely more.
-  const RIGHTMOST_LEFT = 660;
+  // Spot centers are in .circles' own viewBox coordinates (1100x238,
+  // matching .blue-zone 1:1) and right-anchored next to the priority
+  // card, which is always on stage at stage-x 958 (blue-zone-relative
+  // x 818) — RIGHTMOST_CENTER leaves a 24px gap to the card. Queue grows
+  // leftward as riders are added. See Known Gap #2 below for why the
+  // count is capped instead of the pitch shrinking to fit indefinitely
+  // more. The priority rider has their own marked area (the card) now,
+  // not a reserved slot in this lane, so these spots don't shift for it.
+  const RIGHTMOST_CENTER = 727;
   const CIRCLE_PITCH = 160;
   const MAX_GENERAL_COUNT = 5;
 
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function svgEl(tag, attrs){
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const key in attrs) node.setAttribute(key, attrs[key]);
+    return node;
+  }
+
+  // One foot: a sole + toe ellipse, pointing right (toward the door).
+  function footEl(offsetX, offsetY){
+    const foot = svgEl('g', { transform: `translate(${offsetX},${offsetY})` });
+    foot.appendChild(svgEl('ellipse', { class: 'footprint', cx: -8, cy: 0, rx: 16, ry: 13 }));
+    foot.appendChild(svgEl('ellipse', { class: 'footprint', cx: 14, cy: 0, rx: 11, ry: 10 }));
+    return foot;
+  }
+
+  // A single "stand here" spot: two feet, both pointing right (toward
+  // the door), matching the chevron flow's direction.
+  //
+  // Position (translate) lives on an outer <g> as a plain SVG attribute;
+  // the "spot-in" CSS animation (which sets transform:scale via
+  // keyframes) is applied to an inner <g> instead of this one — CSS
+  // `transform` overrides an SVG `transform` *attribute* on the same
+  // element entirely (not composing with it), so animating the outer,
+  // positioned group silently discarded its translate and collapsed
+  // every spot onto the origin.
+  function footprintPair(cx, cy, active){
+    const outer = svgEl('g', { transform: `translate(${cx},${cy})` });
+    const inner = svgEl('g', { class: 'footprint-pair' + (active ? ' active' : '') });
+    inner.appendChild(footEl(-6, -18));
+    inner.appendChild(footEl(6, 18));
+    outer.appendChild(inner);
+    return outer;
+  }
+
   function renderCircles(){
     el.circles.innerHTML = '';
-    // When a priority rider is detected, slot 0 (rightmost, nearest the
-    // door) is reserved for them — general riders' numbers shift up by
-    // one, nothing else changes.
-    const offset = state.priorityDetected ? 1 : 0;
-    // Numbering counts from the bus door (right) outward: slot 0 (right-
-    // most, nearest the door) is always #1 (or #2 with a reserved
-    // priority slot), increasing leftward as the queue extends away
-    // from the door.
     for (let slot = 0; slot < state.generalCount; slot++){
-      const c = document.createElement('div');
-      c.className = 'circle' + (slot === state.activeIndex ? ' active' : '');
-      c.style.left = (RIGHTMOST_LEFT - slot * CIRCLE_PITCH) + 'px';
-      c.textContent = slot + 1 + offset;
-      el.circles.appendChild(c);
+      const cx = RIGHTMOST_CENTER - slot * CIRCLE_PITCH;
+      el.circles.appendChild(footprintPair(cx, 130, slot === state.activeIndex));
     }
   }
 
