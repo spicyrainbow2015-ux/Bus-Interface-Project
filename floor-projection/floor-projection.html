@@ -336,6 +336,7 @@
   const state = {
     phase: 'priority',   // 'idle' | 'detecting' | 'priority' | 'boarding' | 'departed'
     minutes: 2,
+    arrivalTime: null,   // ms epoch of the real arrival, when minutes is live/scheduled data (not a demo override) — see startTicking()
     route: '21',
     destination: 'Columbus–dock',
     scheduled: '5:59 pm',
@@ -483,6 +484,11 @@
       const data = await res.json();
       const next = data.arrivals && data.arrivals[0];
       if (next){
+        // Store the real arrival instant, not a one-shot minute count — the
+        // countdown is recomputed from this every second in startTicking(),
+        // so it's always the exact live difference, never independently
+        // decremented (that was ticking a whole minute off every second).
+        state.arrivalTime = next.arrivalTimeIso ? new Date(next.arrivalTimeIso).getTime() : null;
         state.minutes = Math.max(0, next.etaMinutes);
         state.route = next.route;
         state.destination = next.destination || ('Route ' + next.route);
@@ -492,6 +498,7 @@
         dataSourceEl.textContent = (next.live ? 'live' : 'scheduled') + ' data · SEPTA route ' + next.route;
         dataSourceEl.className = 'hint ' + (next.live ? 'live' : 'stale');
       } else if (data.nextService){
+        state.arrivalTime = new Date(data.nextService.arrivalTimeIso).getTime();
         state.minutes = data.nextService.etaMinutes;
         state.destination = data.nextService.destination || state.destination;
         state.scheduled = new Date(data.nextService.arrivalTimeIso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
@@ -525,16 +532,24 @@
 
   function setPhase(name){
     state.phase = name;
-    if (name === 'departed') state.minutes = 8;
-    if (name === 'priority') state.minutes = 2;
+    // These are demo-only snapshots (initial page load before live data
+    // arrives, or a walkthrough step) — not tied to a real arrival, so
+    // clear arrivalTime to stop startTicking() from recomputing over them.
+    if (name === 'departed'){ state.minutes = 8; state.arrivalTime = null; }
+    if (name === 'priority'){ state.minutes = 2; state.arrivalTime = null; }
     render();
   }
 
   function startTicking(){
     clearInterval(tickTimer);
     tickTimer = setInterval(() => {
-      if (state.minutes > 0 && state.phase !== 'boarding'){
-        state.minutes -= 1;
+      // Recompute from the real arrival instant rather than decrementing a
+      // counter — the display is always the exact live difference this
+      // way, not an independent countdown that can drift or (as before,
+      // when it decremented a whole minute every second) blow straight
+      // through the real value down to 0 in seconds.
+      if (state.arrivalTime != null && state.phase !== 'boarding'){
+        state.minutes = Math.max(0, Math.round((state.arrivalTime - Date.now()) / 60000));
         render();
       }
     }, 1000);
