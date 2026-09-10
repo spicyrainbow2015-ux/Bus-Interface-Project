@@ -136,22 +136,28 @@
   }
   .arrow-head{ position:absolute; left:298px; top:574px; }
 
-  /* ---- 3.6 yellow priority card ---- */
+  /* ---- 3.6 yellow priority card ----
+     Always on stage (not just while a priority rider is detected) so it
+     never pops in on top of the queue circles — see render() for the
+     "calm" vs "detected" content/emphasis swap. */
   .priority-card{
     position:absolute; left:958px; top:176px; width:276px; height:340px;
     background:var(--yellow); border:3px solid var(--yellow-br); border-radius:12px;
-    box-shadow: 0 0 70px 18px rgba(224,193,65,.22);
+    box-shadow: 0 0 40px 10px rgba(224,193,65,.12);
     padding:22px; display:flex; flex-direction:column; gap:14px;
     z-index:2; /* above the blue zone */
-    animation: card-in .4s ease both;
+    transition: transform .4s ease, box-shadow .4s ease;
   }
-  @keyframes card-in{
-    from{ opacity:0; transform:translateY(12px); }
-    to{ opacity:1; transform:translateY(0); }
+  .priority-card.detected{
+    transform: translateY(-14px);
+    box-shadow: 0 0 70px 18px rgba(224,193,65,.28);
   }
   .status-row{ display:flex; align-items:center; gap:9px; }
   .status-dot{
-    width:11px; height:11px; border-radius:50%; background:var(--ink); flex:0 0 auto;
+    width:11px; height:11px; border-radius:50%; background:var(--ink);
+    flex:0 0 auto; opacity:.35;
+  }
+  .priority-card.detected .status-dot{
     animation: dot-pulse 1.6s ease-in-out infinite;
   }
   .status-row span.label{ color:var(--ink); font-size:15px; font-weight:700; }
@@ -177,7 +183,7 @@
   @media (prefers-reduced-motion: reduce){
     .status-dot{ animation:none; }
     .arrow-bar .shimmer{ display:none; }
-    .priority-card{ animation:none; }
+    .priority-card{ transition:none; }
     .circle{ animation:none; }
   }
 
@@ -229,10 +235,10 @@
       <polygon points="0,0 132,23 0,46" fill="var(--blue-lt)"></polygon>
     </svg>
 
-    <div class="priority-card" id="priorityCard" hidden>
-      <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
-      <div class="headline">Please let the priority rider board first</div>
-      <div class="substatus" id="substatus">Informing driver…</div>
+    <div class="priority-card" id="priorityCard">
+      <div class="status-row"><span class="status-dot"></span><span class="label" id="cardLabel">Priority rider zone</span></div>
+      <div class="headline" id="cardHeadline">Space for wheelchair, mobility aid, or other priority riders</div>
+      <div class="substatus" id="substatus" hidden>Informing driver…</div>
       <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
     </div>
 
@@ -270,12 +276,10 @@
    * 1. No alighting path: riders exiting the bus walk through the head
    *    of the queue and the priority card's footprint. A future phase
    *    should project an exit corridor while the door is open.
-   * 2. Queue numbering direction is ambiguous (arrow points toward the
-   *    door / increasing x, but the shipped numbers count DOWN left to
-   *    right with no "1" — see the design-spec note). Kept exactly as
-   *    specified/drawn; queue is array-driven (see `queue` in state) so
-   *    the numbering can be flipped in one place if the design owner
-   *    decides "1 nearest the door" instead.
+   * 2. Circle count is capped at MAX_GENERAL_COUNT (4) rather than the
+   *    pitch shrinking to fit more, since the physical queue area is a
+   *    fixed size in the floor projection — a longer real-world line
+   *    isn't representable with this layout yet.
    * 3. No ramp/kneel state for the priority rider beyond "Informing
    *    driver…" — matches the driver-report gap noted elsewhere in this
    *    project (SEPTA publishes no live ramp/lift status anywhere).
@@ -301,7 +305,7 @@
     route: '21',
     destination: 'Columbus–dock',
     scheduled: '5:59 pm',
-    queue: [5, 4, 3, 2],  // array-driven — see Known Gap #2 above
+    generalCount: 4,      // no. of general-rider circles shown
     activeIndex: 0,
     priorityDetected: true,
     driverNotified: false,
@@ -326,25 +330,34 @@
     blueLabel: document.getElementById('blueLabel'),
     circles: document.getElementById('circles'),
     priorityCard: document.getElementById('priorityCard'),
+    cardLabel: document.getElementById('cardLabel'),
+    cardHeadline: document.getElementById('cardHeadline'),
     substatus: document.getElementById('substatus'),
     prioritySpot: document.getElementById('prioritySpot'),
   };
 
   const SHOW_PRIORITY_SPOT = false; // flip to true to reveal the marked standing spot + wheelchair glyph
 
-  const CIRCLE_DIAM = 130;
-  const CIRCLE_START_LEFT = 318;
+  // Circle positions are relative to .blue-zone (944px wide) and must stay
+  // clear of the priority card, which is always on stage at stage-x 958
+  // (blue-zone-relative x 662) — see Known Gap #2 below for why the count
+  // is capped rather than the pitch shrinking to fit more.
+  const CIRCLE_START_LEFT = 20;
   const CIRCLE_PITCH = 162;
+  const MAX_GENERAL_COUNT = 4;
 
   function renderCircles(){
     el.circles.innerHTML = '';
-    state.queue.forEach((n, i) => {
+    // When a priority rider is detected, slot 1 is reserved for them —
+    // general riders' numbers shift up by one, nothing else changes.
+    const offset = state.priorityDetected ? 1 : 0;
+    for (let i = 0; i < state.generalCount; i++){
       const c = document.createElement('div');
       c.className = 'circle' + (i === state.activeIndex ? ' active' : '');
       c.style.left = (CIRCLE_START_LEFT + i * CIRCLE_PITCH) + 'px';
-      c.textContent = n;
+      c.textContent = i + 1 + offset;
       el.circles.appendChild(c);
-    });
+    }
   }
 
   function render(){
@@ -365,11 +378,20 @@
         '<div class="countdown-unit">min</div>';
     }
 
-    const showPriority = state.phase === 'priority' || state.phase === 'boarding';
-    el.priorityCard.hidden = !(showPriority && state.priorityDetected);
-    el.substatus.textContent = state.phase === 'boarding'
-      ? 'Driver notified · ramp ready'
-      : 'Informing driver…';
+    // The card is always on stage; only its emphasis/content changes.
+    el.priorityCard.classList.toggle('detected', state.priorityDetected);
+    if (state.priorityDetected){
+      el.cardLabel.textContent = 'Priority rider detected';
+      el.cardHeadline.textContent = 'Please let the priority rider board first';
+      el.substatus.hidden = false;
+      el.substatus.textContent = state.phase === 'boarding'
+        ? 'Driver notified · ramp ready'
+        : 'Informing driver…';
+    } else {
+      el.cardLabel.textContent = 'Priority rider zone';
+      el.cardHeadline.textContent = 'Space for wheelchair, mobility aid, or other priority riders';
+      el.substatus.hidden = true;
+    }
     el.prioritySpot.hidden = !SHOW_PRIORITY_SPOT;
 
     renderCircles();
@@ -478,12 +500,11 @@
     btn.addEventListener('click', () => { setPhase(btn.dataset.phase); scheduleNextPhase(); });
   });
   document.getElementById('riderPlus').addEventListener('click', () => {
-    const nextVal = (state.queue[0] || 1) + 1;
-    state.queue = [nextVal, ...state.queue];
+    state.generalCount = Math.min(MAX_GENERAL_COUNT, state.generalCount + 1);
     render();
   });
   document.getElementById('riderMinus').addEventListener('click', () => {
-    if (state.queue.length > 0) state.queue = state.queue.slice(1);
+    state.generalCount = Math.max(0, state.generalCount - 1);
     render();
   });
   document.getElementById('priorityToggle').addEventListener('click', (e) => {
