@@ -270,10 +270,17 @@ module.exports = async (req, res) => {
     // as-is, that reads as the same bus listed twice rather than two real
     // options, so collapse anything within 2 minutes of the one before it —
     // riders care about materially different choices, not every trip_id.
+    //
+    // Exception: never collapse two entries that are BOTH live. Each live
+    // entry is a SEPTA-confirmed distinct vehicle (different VehicleID) —
+    // if two separate buses' schedule+delay math happens to converge on
+    // close arrival times (bus bunching), that's real and worth showing,
+    // not a data artifact to hide.
     const collapsed = [];
     for (const a of arrivals) {
       const prev = collapsed[collapsed.length - 1];
-      if (prev && prev.route === a.route && a.etaMinutes - prev.etaMinutes < 2) continue;
+      const bothLive = prev && prev.live && a.live;
+      if (prev && !bothLive && prev.route === a.route && a.etaMinutes - prev.etaMinutes < 2) continue;
       collapsed.push(a);
     }
     arrivals.length = 0;
