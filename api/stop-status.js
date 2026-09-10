@@ -47,7 +47,7 @@ function precomputedLookup(routeIds, stopId) {
   const key = routeIds.slice().sort().join(',') + '|' + stopId;
   const raw = PRECOMPUTED.cache && PRECOMPUTED.cache[key];
   if (!raw) return null;
-  return new Map(Object.entries(raw).map(([tripId, info]) => [tripId, { seconds: info.seconds, route: info.route }]));
+  return new Map(Object.entries(raw).map(([tripId, info]) => [tripId, { seconds: info.seconds, route: info.route, headsign: info.headsign || null }]));
 }
 
 function splitCsvLine(line) {
@@ -86,17 +86,24 @@ async function buildScheduleLookup(routeIds, stopId) {
   const busZipBuf = await outerZip.file('google_bus.zip').async('nodebuffer');
   const zip = await JSZip.loadAsync(busZipBuf);
 
-  // 1. trips.txt -> which trip_ids belong to our routes, and which route each is
+  // 1. trips.txt -> which trip_ids belong to our routes, which route each is,
+  //    and its headsign (the destination text SEPTA prints on the bus itself —
+  //    static data, so we can show a real destination even with no live vehicle)
   const tripsText = await zip.file('trips.txt').async('string');
   const tripLines = tripsText.split(/\r?\n/).filter(Boolean);
   const tripsHeader = splitCsvLine(tripLines[0]);
   const routeIdCol = tripsHeader.indexOf('route_id');
   const tripIdColT = tripsHeader.indexOf('trip_id');
+  const headsignCol = tripsHeader.indexOf('trip_headsign');
   const routeIdSet = new Set(routeIds);
   const tripIdToRoute = new Map();
+  const tripIdToHeadsign = new Map();
   for (let i = 1; i < tripLines.length; i++) {
     const cols = splitCsvLine(tripLines[i]);
-    if (routeIdSet.has(cols[routeIdCol])) tripIdToRoute.set(cols[tripIdColT], cols[routeIdCol]);
+    if (routeIdSet.has(cols[routeIdCol])) {
+      tripIdToRoute.set(cols[tripIdColT], cols[routeIdCol]);
+      if (headsignCol >= 0 && cols[headsignCol]) tripIdToHeadsign.set(cols[tripIdColT], cols[headsignCol]);
+    }
   }
 
   // 2. stop_times.txt -> for those trips, what time do they hit our stop
@@ -118,7 +125,11 @@ async function buildScheduleLookup(routeIds, stopId) {
     if (cols[stopIdCol] !== stopId) continue;
     const route = tripIdToRoute.get(cols[tripIdColS]);
     if (!route) continue;
-    tripToInfo.set(cols[tripIdColS], { seconds: parseTimeToSeconds(cols[arrivalCol]), route });
+    tripToInfo.set(cols[tripIdColS], {
+      seconds: parseTimeToSeconds(cols[arrivalCol]),
+      route,
+      headsign: tripIdToHeadsign.get(cols[tripIdColS]) || null,
+    });
   }
 
   scheduleCache = { key, tripToInfo, builtAt: Date.now() };
@@ -227,7 +238,11 @@ module.exports = async (req, res) => {
       if (matchedTripIds.has(tripId)) continue;
       const scheduledMs = midnightUtcMs + info.seconds * 1000;
       const etaMinutes = Math.round((scheduledMs - Date.now()) / 60000);
-      if (etaMinutes < -3 || etaMinutes > 90) continue;
+      // Unlike live entries (which get a few minutes of slack either way —
+      // a bus really can be "arriving now"), a scheduled guess with no live
+      // confirmation and a time already in the past isn't useful: we have no
+      // way to know if it actually ran. Only show these looking forward.
+      if (etaMinutes < 0 || etaMinutes > 90) continue;
       if (earliestLiveEta !== null && etaMinutes <= earliestLiveEta) continue;
 
       arrivals.push({
@@ -237,13 +252,28 @@ module.exports = async (req, res) => {
         arrivalTimeIso: new Date(scheduledMs).toISOString(),
         live: false,
         direction: null,
-        destination: null,
+        destination: info.headsign,
         fullness: null,
         seatAvailabilityRaw: null,
       });
     }
 
     arrivals.sort((a, b) => a.etaMinutes - b.etaMinutes);
+
+    // SEPTA's own schedule data isn't free of near-duplicates — we found two
+    // different trip_ids scheduled 15 seconds apart for the same route/stop/
+    // headsign (likely overlapping service calendars we don't check). Shown
+    // as-is, that reads as the same bus listed twice rather than two real
+    // options, so collapse anything within 2 minutes of the one before it —
+    // riders care about materially different choices, not every trip_id.
+    const collapsed = [];
+    for (const a of arrivals) {
+      const prev = collapsed[collapsed.length - 1];
+      if (prev && prev.route === a.route && a.etaMinutes - prev.etaMinutes < 2) continue;
+      collapsed.push(a);
+    }
+    arrivals.length = 0;
+    arrivals.push(...collapsed);
 
     const disruptions = detoursByRoute.flat();
 

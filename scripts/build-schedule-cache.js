@@ -48,6 +48,7 @@ async function main() {
   const tripsHeader = splitCsvLine(tripLines[0]);
   const routeIdCol = tripsHeader.indexOf('route_id');
   const tripIdColT = tripsHeader.indexOf('trip_id');
+  const headsignCol = tripsHeader.indexOf('trip_headsign');
 
   const stopTimesText = await zip.file('stop_times.txt').async('string');
   const stLines = stopTimesText.split(/\r?\n/).filter(Boolean);
@@ -62,9 +63,13 @@ async function main() {
     console.log(`Building lookup for stop ${stopId}, routes ${routes.join(',')}...`);
     const routeIdSet = new Set(routes);
     const tripIdToRoute = new Map();
+    const tripIdToHeadsign = new Map();
     for (let i = 1; i < tripLines.length; i++) {
       const cols = splitCsvLine(tripLines[i]);
-      if (routeIdSet.has(cols[routeIdCol])) tripIdToRoute.set(cols[tripIdColT], cols[routeIdCol]);
+      if (routeIdSet.has(cols[routeIdCol])) {
+        tripIdToRoute.set(cols[tripIdColT], cols[routeIdCol]);
+        if (headsignCol >= 0 && cols[headsignCol]) tripIdToHeadsign.set(cols[tripIdColT], cols[headsignCol]);
+      }
     }
 
     const tripToInfo = {};
@@ -77,7 +82,11 @@ async function main() {
       const route = tripIdToRoute.get(cols[tripIdColS]);
       if (!route) continue;
       const [h, m, s] = cols[arrivalCol].split(':').map(Number);
-      tripToInfo[cols[tripIdColS]] = { seconds: h * 3600 + m * 60 + s, route };
+      tripToInfo[cols[tripIdColS]] = {
+        seconds: h * 3600 + m * 60 + s,
+        route,
+        headsign: tripIdToHeadsign.get(cols[tripIdColS]) || null,
+      };
     }
 
     const key = routes.slice().sort().join(',') + '|' + stopId;
