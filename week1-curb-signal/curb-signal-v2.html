@@ -220,9 +220,9 @@
     padding:9px 0; border-bottom:1px solid var(--sg-line);
   }
   .warn-item:last-child{border-bottom:0;}
-  .warn-dot{width:13px; height:13px; border-radius:3px; flex:0 0 auto; margin-top:2px;}
-  .warn-item.red .warn-dot{background:var(--sg-red);}
-  .warn-item.yellow .warn-dot{background:var(--sg-yellow);}
+  .warn-icon{width:17px; height:17px; flex:0 0 auto; margin-top:1px;}
+  .warn-item.red .warn-icon{color:var(--sg-red);}
+  .warn-item.yellow .warn-icon{color:var(--sg-yellow);}
   .warn-text{font-size:12.5px; line-height:1.4; color:var(--sg-ink);}
   .warn-item.red .warn-text{font-weight:800;}
   .warn-item.yellow .warn-text{font-weight:500; color:var(--sg-muted);}
@@ -573,7 +573,9 @@
       return;
     }
     busWarningLines.innerHTML = items.map(it =>
-      '<div class="warn-item ' + it.sev + '"><span class="warn-dot"></span><span class="warn-text">' + it.text + '</span></div>'
+      '<div class="warn-item ' + it.sev + '">' +
+      '<svg class="warn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L14.1 3.9a2 2 0 0 0-3.8 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' +
+      '<span class="warn-text">' + it.text + '</span></div>'
     ).join('');
     busWarningTime.textContent = lastUpdateText;
     busWarning.hidden = false;
