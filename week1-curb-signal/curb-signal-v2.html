@@ -672,6 +672,17 @@
         incomingClocks[i].textContent = next.arrivalTimeIso
           ? new Date(next.arrivalTimeIso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
           : '';
+      } else if (i === 0 && data.nextService){
+        // Nothing in the normal window doesn't have to mean something's
+        // wrong — an overnight service gap is real and worth saying
+        // plainly, with the actual time service picks back up.
+        const ns = data.nextService;
+        incomingLabels[i].textContent = 'No service — next bus ' + (ns.destination ? 'to ' + ns.destination : '');
+        incomingMins[i].textContent = '–';
+        incomingTags[i].hidden = true;
+        incomingClocks[i].textContent = ns.arrivalTimeIso
+          ? new Date(ns.arrivalTimeIso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+          : '';
       } else {
         incomingLabels[i].textContent = 'No bus scheduled right now';
         incomingMins[i].textContent = '–';

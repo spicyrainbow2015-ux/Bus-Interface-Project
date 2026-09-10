@@ -275,12 +275,37 @@ module.exports = async (req, res) => {
     arrivals.length = 0;
     arrivals.push(...collapsed);
 
+    // If nothing turned up within the normal 90-minute window, that can
+    // honestly mean "no service right now" (e.g. an overnight gap) rather
+    // than a data problem. Look further out for the actual next trip,
+    // however far away, so the rider gets "service resumes at 5:26 AM"
+    // instead of a blank, alarming-sounding "no bus scheduled".
+    // Known simplification: this compares against today's Eastern midnight
+    // only, so it doesn't reach across a midnight rollover — asking "what's
+    // next" at, say, 11:58 PM could miss an early-morning trip. Not an
+    // issue for the gap we actually hit (just after midnight), but worth
+    // knowing if this ever gets exercised right before midnight instead.
+    let nextService = null;
+    if (arrivals.length === 0) {
+      let best = null;
+      for (const [, info] of tripToInfo) {
+        const scheduledMs = midnightUtcMs + info.seconds * 1000;
+        const etaMinutes = Math.round((scheduledMs - Date.now()) / 60000);
+        if (etaMinutes < 0) continue;
+        if (!best || etaMinutes < best.etaMinutes) {
+          best = { route: info.route, etaMinutes, arrivalTimeIso: new Date(scheduledMs).toISOString(), destination: info.headsign };
+        }
+      }
+      nextService = best;
+    }
+
     const disruptions = detoursByRoute.flat();
 
     res.status(200).json({
       stopId,
       fetchedAt: new Date().toISOString(),
       arrivals,
+      nextService,
       disruptions,
     });
   } catch (err) {
