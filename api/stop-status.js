@@ -179,6 +179,10 @@ module.exports = async (req, res) => {
   const routes = String(req.query.routes || '21,42').split(',').map(s => s.trim()).filter(Boolean);
 
   res.setHeader('Cache-Control', 's-maxage=20, stale-while-revalidate=40');
+  // Public, read-only transit data — safe to allow any origin. Lets a
+  // standalone prototype (opened directly as a file, not served by this
+  // project) still pull live data by calling the deployed URL directly.
+  res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
     const [tripToInfo, transitViewByRoute, detoursByRoute] = await Promise.all([

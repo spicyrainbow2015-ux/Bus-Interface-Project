@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bus Stop Floor Projection</title>
+<style>
+  :root{
+    --ink:        #111111;
+    --paper:      #ffffff;
+    --pavement:   #767676;
+    --bus:        #000000;
+    --blue:       #4b8bb0;
+    --blue-lt:    #a8d4f0;
+    --circle-on:  #a9dcf7;
+    --circle-off: #94b6ca;
+    --yellow:     #e0c141;
+    --yellow-br:  #f2d658;
+    --red:        #d92b2b;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%; background:#f2f2f2; overflow:hidden;
+    font-family:"Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  [hidden]{display:none !important;}
+
+  #viewport{
+    width:100%; height:100%;
+    display:flex; align-items:flex-start; justify-content:center;
+  }
+  #stage{
+    position:relative;
+    width:1440px; height:728px;
+    flex:0 0 auto;
+    transform-origin: top center;
+    transform: scale(var(--fit, 1));
+  }
+
+  /* ---- 3.1 bus door bar ---- */
+  .bus-door{
+    position:absolute; left:868px; top:88px; width:380px; height:54px;
+    background:var(--bus);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--paper); font-size:22px; font-weight:700;
+  }
+
+  /* ---- 3.2 pavement ---- */
+  .pavement{
+    position:absolute; left:44px; top:155px; width:1352px; height:548px;
+    background:var(--pavement);
+    background-image: repeating-linear-gradient(38deg, rgba(255,255,255,.02) 0 3px, transparent 3px 9px);
+  }
+
+  /* ---- 3.3 rotated site label ---- */
+  .site-label{
+    position:absolute; left:60px; top:180px; width:70px; height:380px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--ink); font-size:34px; font-weight:700; line-height:1.05;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    text-align:center; white-space:nowrap;
+  }
+
+  /* ---- 3.4 route info header ---- */
+  .incoming-label{
+    position:absolute; left:295px; top:213px;
+    color:var(--paper); font-size:17px; font-weight:700;
+  }
+  .route-badge{
+    position:absolute; left:295px; top:250px; width:92px; height:50px;
+    border-radius:25px; background:var(--red);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--paper); font-size:26px; font-weight:700;
+  }
+  .scheduled-time{
+    position:absolute; left:400px; top:246px;
+    color:var(--paper); font-size:15px; font-weight:700;
+  }
+  .destination{
+    position:absolute; left:400px; top:264px;
+    color:var(--paper); font-size:28px; font-weight:700;
+  }
+  .countdown{
+    position:absolute; left:860px; top:240px;
+    display:flex; flex-direction:column; align-items:flex-start;
+  }
+  .countdown-num{
+    color:var(--paper); font-size:40px; font-weight:700; line-height:1;
+  }
+  .countdown-unit{
+    color:var(--paper); font-size:14px; font-weight:700;
+  }
+  .countdown-now{
+    color:var(--paper); font-size:34px; font-weight:700; line-height:1;
+  }
+
+  /* ---- 3.5 blue queue zone ---- */
+  .blue-zone{
+    position:absolute; left:296px; top:335px; width:944px; height:238px;
+    background:var(--blue);
+  }
+  .blue-label{
+    position:absolute; left:22px; top:14px;
+    color:var(--paper); font-size:16px; font-weight:700;
+  }
+  .circles{ position:absolute; left:0; top:0; width:100%; height:100%; }
+  .circle{
+    position:absolute; top:130px; width:130px; height:130px;
+    margin-top:-65px; /* vertical-center on zone-relative y:130 */
+    border-radius:50%; border:2px solid rgba(255,255,255,.85);
+    background:var(--circle-off);
+    display:flex; align-items:center; justify-content:center;
+    color:var(--paper); font-size:22px; font-weight:700;
+    transition: background-color .3s ease;
+    animation: circle-in .25s ease both;
+  }
+  .circle.active{ background:var(--circle-on); }
+  @keyframes circle-in{
+    from{ opacity:0; transform:scale(.9); }
+    to{ opacity:1; transform:scale(1); }
+  }
+
+  .arrow-bar{
+    position:absolute; left:298px; top:590px; width:900px; height:14px;
+    border-radius:7px; background:var(--blue-lt);
+    overflow:hidden;
+  }
+  .arrow-bar .shimmer{
+    position:absolute; top:0; left:-120px; width:120px; height:100%;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+    animation: shimmer 3s linear infinite;
+  }
+  @keyframes shimmer{
+    from{ left:-120px; }
+    to{ left:900px; }
+  }
+  .arrow-head{ position:absolute; left:298px; top:574px; }
+
+  /* ---- 3.6 yellow priority card ---- */
+  .priority-card{
+    position:absolute; left:958px; top:176px; width:276px; height:340px;
+    background:var(--yellow); border:3px solid var(--yellow-br); border-radius:12px;
+    box-shadow: 0 0 70px 18px rgba(224,193,65,.22);
+    padding:22px; display:flex; flex-direction:column; gap:14px;
+    z-index:2; /* above the blue zone */
+    animation: card-in .4s ease both;
+  }
+  @keyframes card-in{
+    from{ opacity:0; transform:translateY(12px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+  .status-row{ display:flex; align-items:center; gap:9px; }
+  .status-dot{
+    width:11px; height:11px; border-radius:50%; background:var(--ink); flex:0 0 auto;
+    animation: dot-pulse 1.6s ease-in-out infinite;
+  }
+  .status-row span.label{ color:var(--ink); font-size:15px; font-weight:700; }
+  @keyframes dot-pulse{
+    0%,100%{ opacity:1; } 50%{ opacity:.35; }
+  }
+  .headline{ color:var(--ink); font-size:25px; font-weight:700; line-height:1.15; }
+  .substatus{ color:#3a3320; font-size:17px; font-weight:500; }
+  .priority-spot{
+    margin-top:auto; align-self:center;
+    width:150px; height:150px; border-radius:50%;
+    border:3px dashed rgba(17,17,17,.5); background:transparent;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--ink); font-size:44px;
+  }
+
+  /* ---- 3.7 bottom instruction ---- */
+  .instruction{
+    position:absolute; left:296px; top:645px;
+    color:var(--ink); font-size:24px; font-weight:700;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .status-dot{ animation:none; }
+    .arrow-bar .shimmer{ display:none; }
+    .priority-card{ animation:none; }
+    .circle{ animation:none; }
+  }
+
+  /* ---- dev control strip: scaffolding, not part of the projection ---- */
+  #devstrip{
+    position:fixed; left:14px; bottom:14px; z-index:10;
+    background:rgba(255,255,255,.92); border:1px solid #ccc; border-radius:6px;
+    padding:10px 12px; display:flex; flex-direction:column; gap:8px;
+    font-family:ui-monospace, "SF Mono", Menlo, monospace;
+    font-size:13px; color:#555; max-width:340px;
+  }
+  #devstrip .row{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  #devstrip button{
+    font-family:inherit; font-size:12px; color:#333;
+    background:#f4f4f4; border:1px solid #bbb; border-radius:3px;
+    padding:4px 8px; cursor:pointer;
+  }
+  #devstrip button:hover{ background:#e8e8e8; }
+  #devstrip button[aria-pressed="true"]{ background:#333; color:#fff; border-color:#333; }
+  #devstrip .hint{ color:#999; font-size:11px; }
+  #devstrip .live{ color:#2a7a4a; }
+  #devstrip .stale{ color:#a05a00; }
+</style>
+</head>
+<body>
+
+<div id="viewport">
+  <div id="stage">
+    <div class="bus-door">Bus door</div>
+    <div class="pavement"></div>
+
+    <div class="site-label"><span>Bus stop space</span></div>
+
+    <div class="incoming-label" id="incomingLabel">Incoming</div>
+    <div class="route-badge" id="routeBadge">21</div>
+    <div class="scheduled-time" id="scheduledTime">5:59 pm</div>
+    <div class="destination" id="destination">Columbus–dock</div>
+    <div class="countdown" id="countdown">
+      <div class="countdown-num" id="countdownNum">2</div>
+      <div class="countdown-unit" id="countdownUnit">min</div>
+    </div>
+
+    <div class="blue-zone">
+      <div class="blue-label" id="blueLabel">Detecting no. of riders …</div>
+      <div class="circles" id="circles"></div>
+    </div>
+    <div class="arrow-bar"><div class="shimmer"></div></div>
+    <svg class="arrow-head" width="132" height="46" viewBox="0 0 132 46">
+      <polygon points="0,0 132,23 0,46" fill="var(--blue-lt)"></polygon>
+    </svg>
+
+    <div class="priority-card" id="priorityCard" hidden>
+      <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
+      <div class="headline">Please let the priority rider board first</div>
+      <div class="substatus" id="substatus">Informing driver…</div>
+      <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
+    </div>
+
+    <div class="instruction">Enter blue zone to get ready for boarding</div>
+  </div>
+</div>
+
+<div id="devstrip">
+  <div class="row">
+    <strong>phase</strong>
+    <button data-phase="idle">1 idle</button>
+    <button data-phase="detecting">2 detecting</button>
+    <button data-phase="priority">3 priority</button>
+    <button data-phase="boarding">4 boarding</button>
+    <button data-phase="departed">5 departed</button>
+  </div>
+  <div class="row">
+    <button id="riderMinus">&minus;1 rider</button>
+    <button id="riderPlus">+1 rider</button>
+    <button id="priorityToggle" aria-pressed="false">toggle priority rider</button>
+  </div>
+  <div class="row">
+    <button id="playPause" aria-pressed="true">&#10073;&#10073; pause (space)</button>
+    <span class="hint">keys 1&ndash;5 = phase, space = play/pause</span>
+  </div>
+  <div class="row">
+    <span id="dataSource" class="hint">checking SEPTA data&hellip;</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  /* -------------------------------------------------------------------
+   * KNOWN GAPS — implemented as drawn/specified, left visible on purpose:
+   * 1. No alighting path: riders exiting the bus walk through the head
+   *    of the queue and the priority card's footprint. A future phase
+   *    should project an exit corridor while the door is open.
+   * 2. Queue numbering direction is ambiguous (arrow points toward the
+   *    door / increasing x, but the shipped numbers count DOWN left to
+   *    right with no "1" — see the design-spec note). Kept exactly as
+   *    specified/drawn; queue is array-driven (see `queue` in state) so
+   *    the numbering can be flipped in one place if the design owner
+   *    decides "1 nearest the door" instead.
+   * 3. No ramp/kneel state for the priority rider beyond "Informing
+   *    driver…" — matches the driver-report gap noted elsewhere in this
+   *    project (SEPTA publishes no live ramp/lift status anywhere).
+   * 4. No onboard crowding indicator, so riders can't tell whether to
+   *    queue at all before the bus arrives.
+   * 5. No service-alert display (e.g. stop relocation) — there's room
+   *    for it in the left pavement strip if it's needed later.
+   * ------------------------------------------------------------------- */
+
+  /* ---- stage scaling ---- */
+  const stage = document.getElementById('stage');
+  function fit(){
+    const f = Math.min(window.innerWidth / 1440, window.innerHeight / 728);
+    stage.style.setProperty('--fit', f);
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  /* ---- state ---- */
+  const state = {
+    phase: 'priority',   // 'idle' | 'detecting' | 'priority' | 'boarding' | 'departed'
+    minutes: 2,
+    route: '21',
+    destination: 'Columbus–dock',
+    scheduled: '5:59 pm',
+    queue: [5, 4, 3, 2],  // array-driven — see Known Gap #2 above
+    activeIndex: 0,
+    priorityDetected: true,
+    driverNotified: false,
+  };
+
+  const PHASE_TEXT = {
+    idle:      { header: 'Next',         blueLabel: 'Wait anywhere' },
+    detecting: { header: 'Incoming',     blueLabel: 'Detecting no. of riders …' },
+    priority:  { header: 'Incoming',     blueLabel: 'Line up here' },
+    boarding:  { header: 'Now boarding', blueLabel: 'Priority rider boards first' },
+    departed:  { header: 'Next',         blueLabel: 'Wait anywhere' },
+  };
+
+  const el = {
+    incomingLabel: document.getElementById('incomingLabel'),
+    routeBadge: document.getElementById('routeBadge'),
+    scheduledTime: document.getElementById('scheduledTime'),
+    destination: document.getElementById('destination'),
+    countdown: document.getElementById('countdown'),
+    countdownNum: document.getElementById('countdownNum'),
+    countdownUnit: document.getElementById('countdownUnit'),
+    blueLabel: document.getElementById('blueLabel'),
+    circles: document.getElementById('circles'),
+    priorityCard: document.getElementById('priorityCard'),
+    substatus: document.getElementById('substatus'),
+    prioritySpot: document.getElementById('prioritySpot'),
+  };
+
+  const SHOW_PRIORITY_SPOT = false; // flip to true to reveal the marked standing spot + wheelchair glyph
+
+  const CIRCLE_DIAM = 130;
+  const CIRCLE_START_LEFT = 318;
+  const CIRCLE_PITCH = 162;
+
+  function renderCircles(){
+    el.circles.innerHTML = '';
+    state.queue.forEach((n, i) => {
+      const c = document.createElement('div');
+      c.className = 'circle' + (i === state.activeIndex ? ' active' : '');
+      c.style.left = (CIRCLE_START_LEFT + i * CIRCLE_PITCH) + 'px';
+      c.textContent = n;
+      el.circles.appendChild(c);
+    });
+  }
+
+  function render(){
+    const text = PHASE_TEXT[state.phase];
+    el.incomingLabel.textContent = text.header;
+    el.blueLabel.textContent = text.blueLabel;
+
+    el.routeBadge.textContent = state.route;
+    el.scheduledTime.textContent = state.scheduled;
+    el.destination.textContent = state.destination;
+
+    // "Now boarding" and a minutes countdown must never show together.
+    if (state.phase === 'boarding'){
+      el.countdown.innerHTML = '<div class="countdown-now">Now</div>';
+    } else {
+      el.countdown.innerHTML =
+        '<div class="countdown-num">' + Math.max(0, state.minutes) + '</div>' +
+        '<div class="countdown-unit">min</div>';
+    }
+
+    const showPriority = state.phase === 'priority' || state.phase === 'boarding';
+    el.priorityCard.hidden = !(showPriority && state.priorityDetected);
+    el.substatus.textContent = state.phase === 'boarding'
+      ? 'Driver notified · ramp ready'
+      : 'Informing driver…';
+    el.prioritySpot.hidden = !SHOW_PRIORITY_SPOT;
+
+    renderCircles();
+  }
+
+  render();
+
+  /* ---- live SEPTA data: same stop/route/API as the rest of this project.
+     Calls the deployed URL directly (not a relative path) so this file
+     still pulls live data even when opened standalone, not served — and
+     falls back to the static defaults above (matching the reference mock)
+     if the fetch ever fails, so it always opens correctly either way. ---- */
+  const API_BASE = 'https://bus-interface-project.vercel.app';
+  const STOP_ID = '590';
+  const ROUTES = ['21'];
+  const POLL_MS = 20000;
+  const dataSourceEl = document.getElementById('dataSource');
+
+  async function pollLiveData(){
+    try {
+      const res = await fetch(`${API_BASE}/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
+      const data = await res.json();
+      const next = data.arrivals && data.arrivals[0];
+      if (next){
+        state.minutes = Math.max(0, next.etaMinutes);
+        state.route = next.route;
+        state.destination = next.destination || ('Route ' + next.route);
+        state.scheduled = next.arrivalTimeIso
+          ? new Date(next.arrivalTimeIso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+          : state.scheduled;
+        dataSourceEl.textContent = (next.live ? 'live' : 'scheduled') + ' data · SEPTA route ' + next.route;
+        dataSourceEl.className = 'hint ' + (next.live ? 'live' : 'stale');
+      } else if (data.nextService){
+        state.minutes = data.nextService.etaMinutes;
+        state.destination = data.nextService.destination || state.destination;
+        state.scheduled = new Date(data.nextService.arrivalTimeIso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+        dataSourceEl.textContent = 'no service until ' + state.scheduled;
+        dataSourceEl.className = 'hint stale';
+      } else {
+        dataSourceEl.textContent = 'no live/scheduled data — showing demo values';
+        dataSourceEl.className = 'hint stale';
+      }
+    } catch (err) {
+      console.error('Live SEPTA fetch failed, using demo values:', err);
+      dataSourceEl.textContent = 'offline — showing demo values';
+      dataSourceEl.className = 'hint stale';
+    }
+    render();
+  }
+
+  pollLiveData();
+  setInterval(pollLiveData, POLL_MS);
+
+  /* ---- auto-run phase cycle ---- */
+  const PHASE_ORDER = ['idle', 'detecting', 'priority', 'boarding', 'departed'];
+  const PHASE_MS = { idle: 4000, detecting: 4000, priority: 6000, boarding: 6000, departed: 3000 };
+  let playing = true;
+  let phaseTimer = null;
+  let tickTimer = null;
+
+  function setPhase(name){
+    state.phase = name;
+    if (name === 'priority') state.priorityDetected = true;
+    if (name === 'departed') state.minutes = 8;
+    render();
+    document.querySelectorAll('#devstrip [data-phase]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.phase === name))
+    );
+  }
+
+  function scheduleNextPhase(){
+    clearTimeout(phaseTimer);
+    if (!playing) return;
+    phaseTimer = setTimeout(() => {
+      const i = PHASE_ORDER.indexOf(state.phase);
+      setPhase(PHASE_ORDER[(i + 1) % PHASE_ORDER.length]);
+      scheduleNextPhase();
+    }, PHASE_MS[state.phase]);
+  }
+
+  function startTicking(){
+    clearInterval(tickTimer);
+    tickTimer = setInterval(() => {
+      if (!playing) return;
+      if (state.minutes > 0 && state.phase !== 'boarding'){
+        state.minutes -= 1;
+        render();
+      }
+    }, 1000);
+  }
+
+  function setPlaying(on){
+    playing = on;
+    const btn = document.getElementById('playPause');
+    btn.textContent = on ? '⏸ pause (space)' : '▶ play (space)';
+    btn.setAttribute('aria-pressed', String(on));
+    if (on) scheduleNextPhase();
+    else clearTimeout(phaseTimer);
+  }
+
+  startTicking();
+  scheduleNextPhase();
+
+  /* ---- dev strip wiring ---- */
+  document.querySelectorAll('#devstrip [data-phase]').forEach(btn => {
+    btn.addEventListener('click', () => { setPhase(btn.dataset.phase); scheduleNextPhase(); });
+  });
+  document.getElementById('riderPlus').addEventListener('click', () => {
+    const nextVal = (state.queue[0] || 1) + 1;
+    state.queue = [nextVal, ...state.queue];
+    render();
+  });
+  document.getElementById('riderMinus').addEventListener('click', () => {
+    if (state.queue.length > 0) state.queue = state.queue.slice(1);
+    render();
+  });
+  document.getElementById('priorityToggle').addEventListener('click', (e) => {
+    state.priorityDetected = !state.priorityDetected;
+    e.target.setAttribute('aria-pressed', String(state.priorityDetected));
+    render();
+  });
+  document.getElementById('playPause').addEventListener('click', () => setPlaying(!playing));
+
+  /* ---- keyboard ---- */
+  window.addEventListener('keydown', (e) => {
+    if (e.key >= '1' && e.key <= '5'){
+      setPhase(PHASE_ORDER[Number(e.key) - 1]);
+      scheduleNextPhase();
+    } else if (e.code === 'Space'){
+      e.preventDefault();
+      setPlaying(!playing);
+    }
+  });
+
+  setPhase('priority'); // matches the reference screenshot as the default state
+})();
+</script>
+</body>
+</html>
