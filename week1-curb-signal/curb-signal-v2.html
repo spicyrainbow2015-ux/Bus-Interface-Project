@@ -703,8 +703,22 @@
   let walkTimers = [];
   let playing = false;
 
+  // Shared by the sequence's first step and by stopping the walkthrough
+  // (whether it finishes on its own or is stopped early) — either way,
+  // the demo should always let go of whatever state it left behind
+  // rather than leaving e.g. a manually-added priority rider stuck "on".
+  function resetDemoState(){
+    setDetect(false);
+    priorityManual = false;
+    needPicker.hidden = true;
+    renderPriority();
+    setRampFault(false);
+    setCapacity('available');
+    setWaiting(false);
+  }
+
   const SEQUENCE = [
-    { t: 0,     run: () => { setDetect(false); priorityManual = false; needPicker.hidden = true; renderPriority(); setRampFault(false); setCapacity('available'); setWaiting(false); } },
+    { t: 0,     run: () => resetDemoState() },
     { t: 2600,  run: () => setDetect(true) },
     { t: 6600,  run: () => setDetect(false) },
     { t: 8600,  run: () => toggleNeedPicker() },
@@ -721,6 +735,7 @@
     playing = false;
     playBtn.textContent = '▶ Play walkthrough';
     playBtn.setAttribute('aria-pressed', 'false');
+    resetDemoState();
   }
 
   function playWalkthrough(){
