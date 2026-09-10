@@ -245,11 +245,11 @@
   .priority-pill-main{font-family:"Archivo"; font-size:14.5px; font-weight:800; color:var(--sg-white); line-height:1.3;}
 
   .add-request-btn{
-    display:inline-flex; align-items:center; gap:6px;
-    margin:0 0 12px; padding:8px 13px;
-    border:1.5px solid var(--sg-blue); border-radius:8px;
+    display:inline-flex; align-items:center; gap:5px;
+    margin:12px 0; padding:6px 11px;
+    border:1.5px solid var(--sg-blue); border-radius:7px;
     background:transparent;
-    font-family:"Archivo"; font-weight:700; font-size:12.5px;
+    font-family:"Archivo"; font-weight:700; font-size:11.5px;
     color:var(--sg-blue); cursor:pointer;
   }
   .add-request-btn:hover{background:rgba(30,111,168,0.08);}
@@ -398,13 +398,6 @@
         <div class="boarding-card">
           <p class="boarding-instruction">Please enter the <span class="hl-blue">blue space</span> to be ready for boarding</p>
 
-          <button class="add-request-btn" id="add-request-btn">Request special accommodation</button>
-          <div class="need-picker" id="need-picker" hidden>
-            <button class="need-btn" data-need="wheelchair">Wheelchair or mobility device</button>
-            <button class="need-btn" data-need="stroller">Stroller</button>
-            <button class="need-btn" data-need="bike">Bike</button>
-          </div>
-
           <div class="priority-pill" id="priority-block" hidden>
             <div class="priority-pill-sub" id="priority-status">Priority rider detected, driver notified</div>
             <div class="priority-pill-main" id="priority-headline">Please let the priority rider board first</div>
@@ -426,13 +419,21 @@
             </div>
           </div>
 
+          <button class="add-request-btn" id="add-request-btn">Request special accommodation</button>
+          <div class="need-picker" id="need-picker" hidden>
+            <button class="need-btn" data-need="wheelchair">Wheelchair or mobility device</button>
+            <button class="need-btn" data-need="stroller">Stroller</button>
+            <button class="need-btn" data-need="bike">Bike</button>
+          </div>
+
           <div class="mini-queue">
             <div class="mq-door" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M5 12h14"/></svg>
               <span>door</span>
             </div>
-            <div class="mq-lane mq-priority">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
+            <div class="mq-lane" id="mq-priority-lane">
+              <svg class="icon-generic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg>
+              <svg class="icon-priority" hidden viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="18" r="1.1"/><path d="M8 18V8h2l4 6h4"/><path d="M6 8h4"/></svg>
             </div>
             <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
             <div class="mq-lane"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg></div>
@@ -519,6 +520,9 @@
   };
 
   const priorityBlock = document.getElementById('priority-block');
+  const mqPriorityLane = document.getElementById('mq-priority-lane');
+  const mqIconGeneric = mqPriorityLane.querySelector('.icon-generic');
+  const mqIconPriority = mqPriorityLane.querySelector('.icon-priority');
   const addRequestBtn = document.getElementById('add-request-btn');
   const needPicker = document.getElementById('need-picker');
   const playBtn = document.getElementById('play-btn');
@@ -548,7 +552,13 @@
   // Priority section (#1): the whole block is either fully present or fully
   // absent — this is status the stop is broadcasting, not something to soften.
   function renderPriority(){
-    priorityBlock.hidden = !(priorityAuto || priorityManual);
+    const active = priorityAuto || priorityManual;
+    priorityBlock.hidden = !active;
+    // The lane-guide preview mirrors the same state: only marked as the
+    // reserved space once someone actually needs it, not by default.
+    mqPriorityLane.classList.toggle('mq-priority', active);
+    mqIconGeneric.hidden = active;
+    mqIconPriority.hidden = !active;
   }
 
   function setDetect(on){
