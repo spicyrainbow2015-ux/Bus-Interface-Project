@@ -18,6 +18,8 @@
     --yellow-br:  #f2d658;
     --red:        #d92b2b;
     --field-green: #afe57c;
+    --card-border-green: #6fb43f;
+    --card-brown: #5b4430;
   }
   *{box-sizing:border-box;}
   html,body{
@@ -160,16 +162,16 @@
   /* ---- 3.6 priority rider card ----
      This is a reserved SPOT, not a persistent status panel — it only
      exists on stage while a priority rider is actually detected (see
-     render(), which sets [hidden] rather than just restyling). Flat
-     --field-green plus a single sideways flower graphic is the "this
-     space is saved" visual. */
-  /* Same top/height as .blue-zone (335/238) so the two read as a matched
-     pair of aligned rectangles rather than the card floating taller. */
+     render(), which sets [hidden] rather than just restyling). A green-
+     bordered outer shell (matching the field) with a brown inset panel,
+     flower, and rotated copy is the "this space is saved" visual —
+     positioned starting a bit above the lane, not flush with it. */
   .priority-card{
-    position:absolute; left:958px; top:335px; width:276px; height:238px;
-    border-radius:12px; border:3px solid var(--yellow-br);
-    box-shadow: 0 0 70px 18px rgba(224,193,65,.28);
-    overflow:hidden;
+    position:absolute; left:958px; top:287px; width:276px; height:238px;
+    border-radius:14px; border:5px solid var(--card-border-green);
+    background:var(--field-green);
+    box-shadow: 0 0 50px 14px rgba(111,180,63,.22);
+    overflow:visible; /* badges are allowed to peek past the corner */
     z-index:2; /* above the blue zone */
     animation: card-in .4s ease both;
   }
@@ -178,46 +180,45 @@
     to{ opacity:1; transform:translateY(0) scale(1); }
   }
   .priority-card-field{
-    position:absolute; inset:0;
-    background-color:var(--field-green);
+    position:absolute; inset:12px;
+    border-radius:10px;
+    background-color:var(--card-brown);
+    overflow:hidden;
   }
   .priority-card-flower{
-    position:absolute; left:30%; top:64%; width:96px; height:96px;
+    position:absolute; left:30%; top:64%; width:92px; height:92px;
     object-fit:contain;
     transform:translate(-50%,-50%) rotate(90deg); /* "sideways" per the reference */
   }
-  /* Text reads bottom-to-top as one rotated column on the card's right
-     side, next to the flower — rotate the whole content block as a
-     rigid unit rather than using writing-mode, since it's simpler to
-     get a multi-element block (dot + label + headline + substatus)
-     rotating together predictably. */
+  /* Copy reads bottom-to-top as one rotated column on the card's right
+     side, next to the flower — rotate the whole block as a rigid unit
+     rather than using writing-mode, since that's more predictable for a
+     multi-line block than getting nested children to inherit vertical
+     text flow correctly. */
   .priority-card-text-wrap{
-    position:absolute; top:16px; bottom:16px; right:14px; width:150px;
+    position:absolute; top:24px; bottom:24px; right:22px; width:140px;
   }
   .priority-card-content{
     position:absolute; top:50%; left:50%;
-    width:206px; /* = wrap height, so the rotated block fills it */
+    width:190px; /* = wrap height, so the rotated block fills it */
     transform: translate(-50%,-50%) rotate(-90deg);
-    display:flex; flex-direction:column; gap:8px; justify-content:center; align-items:flex-start;
+    display:flex; flex-direction:column; gap:6px; justify-content:center; align-items:flex-start;
   }
-  .status-row{ display:flex; align-items:center; gap:9px; }
-  .status-dot{
-    width:11px; height:11px; border-radius:50%; background:var(--ink);
-    flex:0 0 auto;
-    animation: dot-pulse 1.6s ease-in-out infinite;
+  .card-title{ color:#fff; font-size:20px; font-weight:800; letter-spacing:.02em; line-height:1.15; white-space:nowrap; }
+  .card-body{ color:#fff; font-size:14px; font-weight:500; line-height:1.3; }
+  /* Barrier-free icon badges, peeking out of the card's top-right corner */
+  .priority-card-badges{
+    position:absolute; top:-14px; right:-14px;
+    display:flex; flex-direction:column; gap:6px;
+    z-index:3;
   }
-  .status-row span.label{ color:var(--ink); font-size:14px; font-weight:700; }
-  @keyframes dot-pulse{
-    0%,100%{ opacity:1; } 50%{ opacity:.35; }
-  }
-  .headline{ color:var(--ink); font-size:19px; font-weight:700; line-height:1.2; }
-  .substatus{ color:#33501f; font-size:14px; font-weight:500; }
+  .priority-card-badges img{ width:34px; height:34px; border-radius:8px; display:block; box-shadow:0 2px 6px rgba(0,0,0,.25); }
   .priority-spot{
     margin-top:auto; align-self:center;
-    width:110px; height:110px; border-radius:50%;
-    border:3px dashed rgba(17,17,17,.5); background:transparent;
+    width:90px; height:90px; border-radius:50%;
+    border:3px dashed rgba(255,255,255,.6); background:transparent;
     display:flex; align-items:center; justify-content:center;
-    color:var(--ink); font-size:36px;
+    color:#fff; font-size:30px;
   }
 
   /* ---- 3.7 bottom instruction ---- */
@@ -227,7 +228,6 @@
   }
 
   @media (prefers-reduced-motion: reduce){
-    .status-dot{ animation:none; }
     .chevron{ animation:none; opacity:.85; }
     .priority-card{ animation:none; }
     .footprint-pair{ animation:none; }
@@ -316,11 +316,15 @@
     <div class="priority-card" id="priorityCard" hidden>
       <div class="priority-card-field"></div>
       <img class="priority-card-flower" src="assets/flower.gif" alt="">
+      <div class="priority-card-badges" aria-hidden="true">
+        <img src="assets/icon-stroller.png" alt="">
+        <img src="assets/icon-wheelchair.png" alt="">
+        <img src="assets/icon-bicycle.png" alt="">
+      </div>
       <div class="priority-card-text-wrap">
         <div class="priority-card-content">
-          <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
-          <div class="headline">Please let the priority rider board first</div>
-          <div class="substatus" id="substatus">Informing driver…</div>
+          <div class="card-title">PRIORITY RIDER</div>
+          <div class="card-body">Please let the priority rider board first</div>
           <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
         </div>
       </div>
@@ -364,9 +368,9 @@
    *    to fit more, since the physical queue area is a fixed size in the
    *    floor projection — a longer real-world line isn't representable
    *    with this layout yet.
-   * 3. No ramp/kneel state for the priority rider beyond "Informing
-   *    driver…" — matches the driver-report gap noted elsewhere in this
-   *    project (SEPTA publishes no live ramp/lift status anywhere).
+   * 3. No ramp/kneel state for the priority rider at all — matches the
+   *    driver-report gap noted elsewhere in this project (SEPTA
+   *    publishes no live ramp/lift status anywhere).
    * 4. No onboard crowding indicator, so riders can't tell whether to
    *    queue at all before the bus arrives.
    * 5. No service-alert display (e.g. stop relocation) — there's room
@@ -415,7 +419,6 @@
     blueLabel: document.getElementById('blueLabel'),
     circles: document.getElementById('circles'),
     priorityCard: document.getElementById('priorityCard'),
-    substatus: document.getElementById('substatus'),
     prioritySpot: document.getElementById('prioritySpot'),
   };
 
@@ -497,11 +500,6 @@
     // The card is a reserved spot, not a status panel — it only exists
     // on stage while a priority rider is actually detected.
     el.priorityCard.hidden = !state.priorityDetected;
-    if (state.priorityDetected){
-      el.substatus.textContent = state.phase === 'boarding'
-        ? 'Driver notified · ramp ready'
-        : 'Informing driver…';
-    }
     el.prioritySpot.hidden = !SHOW_PRIORITY_SPOT;
 
     renderCircles();
