@@ -180,13 +180,16 @@
     to{ opacity:1; transform:translateY(0) scale(1); }
   }
   .priority-card-field{
-    position:absolute; inset:12px;
-    border-radius:10px;
+    /* inset:0 so the brown fill runs right up to the inside edge of the
+       card's own 5px border — a single clean 5px green stroke, not a
+       border plus a separate pale-green margin layered on top of it. */
+    position:absolute; inset:0;
+    border-radius:9px;
     background-color:var(--card-brown);
     overflow:hidden;
   }
   .priority-card-flower{
-    position:absolute; left:30%; top:64%; width:92px; height:92px;
+    position:absolute; left:50%; top:50%; width:150px; height:150px;
     object-fit:contain;
     transform:translate(-50%,-50%) rotate(90deg); /* "sideways" per the reference */
   }
@@ -201,14 +204,14 @@
   .priority-card-content{
     position:absolute; top:50%; left:50%;
     width:190px; /* = wrap height, so the rotated block fills it */
-    transform: translate(-50%,-50%) rotate(-90deg);
+    transform: translate(-50%,-50%) rotate(90deg);
     display:flex; flex-direction:column; gap:6px; justify-content:center; align-items:flex-start;
   }
   .card-title{ color:#fff; font-size:20px; font-weight:800; letter-spacing:.02em; line-height:1.15; white-space:nowrap; }
   .card-body{ color:#fff; font-size:14px; font-weight:500; line-height:1.3; }
-  /* Barrier-free icon badges, peeking out of the card's top-right corner */
+  /* Barrier-free icon badges, peeking out of the card's top-left corner */
   .priority-card-badges{
-    position:absolute; top:-14px; right:-14px;
+    position:absolute; top:-14px; left:-14px;
     display:flex; flex-direction:column; gap:6px;
     z-index:3;
   }
