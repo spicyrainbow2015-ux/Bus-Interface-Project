@@ -12,8 +12,8 @@
     --bus:        #000000;
     --blue:       #4b8bb0;
     --blue-lt:    #a8d4f0;
-    --circle-on:  #ffffff;
-    --circle-off: rgba(255,255,255,.65);
+    --circle-on:  #1f3221;
+    --circle-off: rgba(31,50,33,.6);
     --yellow:     #e0c141;
     --yellow-br:  #f2d658;
     --red:        #d92b2b;
@@ -128,10 +128,10 @@
   .circles{ position:absolute; left:0; top:0; width:100%; height:100%; }
   .footprint-pair{ animation: spot-in .25s ease both; }
   .footprint{
-    fill:var(--circle-off); stroke:rgba(17,17,17,.35); stroke-width:1.5;
+    fill:var(--circle-off); stroke:#ffffff; stroke-width:2;
     transition: fill .3s ease;
   }
-  .footprint-pair.active .footprint{ fill:var(--circle-on); stroke:rgba(17,17,17,.5); }
+  .footprint-pair.active .footprint{ fill:var(--circle-on); stroke:#ffffff; }
   @keyframes spot-in{
     from{ opacity:0; transform:scale(.9); }
     to{ opacity:1; transform:scale(1); }
@@ -163,8 +163,10 @@
      render(), which sets [hidden] rather than just restyling). Flat
      --field-green plus a single sideways flower graphic is the "this
      space is saved" visual. */
+  /* Same top/height as .blue-zone (335/238) so the two read as a matched
+     pair of aligned rectangles rather than the card floating taller. */
   .priority-card{
-    position:absolute; left:958px; top:176px; width:276px; height:340px;
+    position:absolute; left:958px; top:335px; width:276px; height:238px;
     border-radius:12px; border:3px solid var(--yellow-br);
     box-shadow: 0 0 70px 18px rgba(224,193,65,.28);
     overflow:hidden;
@@ -180,13 +182,23 @@
     background-color:var(--field-green);
   }
   .priority-card-flower{
-    position:absolute; left:50%; top:24%; width:130px; height:130px;
+    position:absolute; left:30%; top:64%; width:96px; height:96px;
     object-fit:contain;
     transform:translate(-50%,-50%) rotate(90deg); /* "sideways" per the reference */
   }
+  /* Text reads bottom-to-top as one rotated column on the card's right
+     side, next to the flower — rotate the whole content block as a
+     rigid unit rather than using writing-mode, since it's simpler to
+     get a multi-element block (dot + label + headline + substatus)
+     rotating together predictably. */
+  .priority-card-text-wrap{
+    position:absolute; top:16px; bottom:16px; right:14px; width:150px;
+  }
   .priority-card-content{
-    position:relative; z-index:1; height:100%;
-    padding:22px; display:flex; flex-direction:column; gap:14px; justify-content:flex-end;
+    position:absolute; top:50%; left:50%;
+    width:206px; /* = wrap height, so the rotated block fills it */
+    transform: translate(-50%,-50%) rotate(-90deg);
+    display:flex; flex-direction:column; gap:8px; justify-content:center; align-items:flex-start;
   }
   .status-row{ display:flex; align-items:center; gap:9px; }
   .status-dot{
@@ -194,18 +206,18 @@
     flex:0 0 auto;
     animation: dot-pulse 1.6s ease-in-out infinite;
   }
-  .status-row span.label{ color:var(--ink); font-size:15px; font-weight:700; }
+  .status-row span.label{ color:var(--ink); font-size:14px; font-weight:700; }
   @keyframes dot-pulse{
     0%,100%{ opacity:1; } 50%{ opacity:.35; }
   }
-  .headline{ color:var(--ink); font-size:25px; font-weight:700; line-height:1.15; }
-  .substatus{ color:#33501f; font-size:17px; font-weight:500; }
+  .headline{ color:var(--ink); font-size:19px; font-weight:700; line-height:1.2; }
+  .substatus{ color:#33501f; font-size:14px; font-weight:500; }
   .priority-spot{
     margin-top:auto; align-self:center;
-    width:150px; height:150px; border-radius:50%;
+    width:110px; height:110px; border-radius:50%;
     border:3px dashed rgba(17,17,17,.5); background:transparent;
     display:flex; align-items:center; justify-content:center;
-    color:var(--ink); font-size:44px;
+    color:var(--ink); font-size:36px;
   }
 
   /* ---- 3.7 bottom instruction ---- */
@@ -304,11 +316,13 @@
     <div class="priority-card" id="priorityCard" hidden>
       <div class="priority-card-field"></div>
       <img class="priority-card-flower" src="assets/flower.gif" alt="">
-      <div class="priority-card-content">
-        <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
-        <div class="headline">Please let the priority rider board first</div>
-        <div class="substatus" id="substatus">Informing driver…</div>
-        <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
+      <div class="priority-card-text-wrap">
+        <div class="priority-card-content">
+          <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
+          <div class="headline">Please let the priority rider board first</div>
+          <div class="substatus" id="substatus">Informing driver…</div>
+          <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
+        </div>
       </div>
     </div>
 
