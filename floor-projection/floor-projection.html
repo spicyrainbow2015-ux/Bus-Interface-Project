@@ -142,48 +142,56 @@
     50%{ opacity:1; transform:scale(1.12); }
   }
 
-  /* ---- 3.6 yellow priority card ----
-     Always on stage (not just while a priority rider is detected) so it
-     never pops in on top of the queue circles — see render() for the
-     "calm" vs "detected" content/emphasis swap. */
-  /* Calm (not detected) is a neutral card — color is reserved for when
-     something actually needs a rider's attention, per the same
-     prominence-ladder principle used elsewhere in this project. Detected
-     switches the whole card to yellow, not just a glow/lift, so the two
-     states read as unmistakably different at a glance. */
+  /* ---- 3.6 priority rider card ----
+     This is a reserved SPOT, not a persistent status panel — it only
+     exists on stage while a priority rider is actually detected (see
+     render(), which sets [hidden] rather than just restyling). The GIF
+     is the "this space is saved" signal; text is layered over it with a
+     dark scrim at the bottom for legibility, since the animation itself
+     varies too much in brightness to guarantee contrast on its own. */
   .priority-card{
     position:absolute; left:958px; top:176px; width:276px; height:340px;
-    background:#f3f2ee; border:3px solid #d9d7cf; border-radius:12px;
-    box-shadow:none;
-    padding:22px; display:flex; flex-direction:column; gap:14px;
-    z-index:2; /* above the blue zone */
-    transition: transform .4s ease, box-shadow .4s ease, background-color .4s ease, border-color .4s ease;
-  }
-  .priority-card.detected{
-    background:var(--yellow); border-color:var(--yellow-br);
-    transform: translateY(-14px);
+    border-radius:12px; border:3px solid var(--yellow-br);
     box-shadow: 0 0 70px 18px rgba(224,193,65,.28);
+    overflow:hidden;
+    z-index:2; /* above the blue zone */
+    animation: card-in .4s ease both;
+  }
+  @keyframes card-in{
+    from{ opacity:0; transform:translateY(12px) scale(.96); }
+    to{ opacity:1; transform:translateY(0) scale(1); }
+  }
+  .priority-card-gif{
+    position:absolute; inset:0;
+    background-image:url('assets/priority-spot.gif');
+    background-size:cover; background-position:center;
+  }
+  .priority-card-scrim{
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(0,0,0,.1) 0%, rgba(0,0,0,.05) 30%, rgba(0,0,0,.6) 100%);
+  }
+  .priority-card-content{
+    position:relative; z-index:1; height:100%;
+    padding:22px; display:flex; flex-direction:column; gap:14px; justify-content:flex-end;
   }
   .status-row{ display:flex; align-items:center; gap:9px; }
   .status-dot{
-    width:11px; height:11px; border-radius:50%; background:var(--ink);
-    flex:0 0 auto; opacity:.35;
-  }
-  .priority-card.detected .status-dot{
+    width:11px; height:11px; border-radius:50%; background:#fff;
+    flex:0 0 auto;
     animation: dot-pulse 1.6s ease-in-out infinite;
   }
-  .status-row span.label{ color:var(--ink); font-size:15px; font-weight:700; }
+  .status-row span.label{ color:#fff; font-size:15px; font-weight:700; text-shadow:0 1px 3px rgba(0,0,0,.45); }
   @keyframes dot-pulse{
     0%,100%{ opacity:1; } 50%{ opacity:.35; }
   }
-  .headline{ color:var(--ink); font-size:25px; font-weight:700; line-height:1.15; }
-  .substatus{ color:#3a3320; font-size:17px; font-weight:500; }
+  .headline{ color:#fff; font-size:25px; font-weight:700; line-height:1.15; text-shadow:0 1px 4px rgba(0,0,0,.5); }
+  .substatus{ color:rgba(255,255,255,.88); font-size:17px; font-weight:500; text-shadow:0 1px 3px rgba(0,0,0,.45); }
   .priority-spot{
     margin-top:auto; align-self:center;
     width:150px; height:150px; border-radius:50%;
-    border:3px dashed rgba(17,17,17,.5); background:transparent;
+    border:3px dashed rgba(255,255,255,.6); background:transparent;
     display:flex; align-items:center; justify-content:center;
-    color:var(--ink); font-size:44px;
+    color:#fff; font-size:44px;
   }
 
   /* ---- 3.7 bottom instruction ---- */
@@ -195,7 +203,7 @@
   @media (prefers-reduced-motion: reduce){
     .status-dot{ animation:none; }
     .chevron{ animation:none; opacity:.85; }
-    .priority-card{ transition:none; }
+    .priority-card{ animation:none; }
     .footprint-pair{ animation:none; }
   }
 
@@ -269,11 +277,15 @@
       <path class="chevron" d="M955,4 L971,16 L955,28" style="animation-delay:.72s"></path>
     </svg>
 
-    <div class="priority-card" id="priorityCard">
-      <div class="status-row"><span class="status-dot"></span><span class="label" id="cardLabel">Priority rider zone</span></div>
-      <div class="headline" id="cardHeadline">Space for wheelchair, mobility aid, or other priority riders</div>
-      <div class="substatus" id="substatus" hidden>Informing driver…</div>
-      <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
+    <div class="priority-card" id="priorityCard" hidden>
+      <div class="priority-card-gif"></div>
+      <div class="priority-card-scrim"></div>
+      <div class="priority-card-content">
+        <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
+        <div class="headline">Please let the priority rider board first</div>
+        <div class="substatus" id="substatus">Informing driver…</div>
+        <div class="priority-spot" id="prioritySpot" hidden><span>&#9855;</span></div>
+      </div>
     </div>
 
     <div class="instruction">Enter blue zone to get ready for boarding</div>
@@ -365,8 +377,6 @@
     blueLabel: document.getElementById('blueLabel'),
     circles: document.getElementById('circles'),
     priorityCard: document.getElementById('priorityCard'),
-    cardLabel: document.getElementById('cardLabel'),
-    cardHeadline: document.getElementById('cardHeadline'),
     substatus: document.getElementById('substatus'),
     prioritySpot: document.getElementById('prioritySpot'),
   };
@@ -446,19 +456,13 @@
         '<div class="countdown-unit">min</div>';
     }
 
-    // The card is always on stage; only its emphasis/content changes.
-    el.priorityCard.classList.toggle('detected', state.priorityDetected);
+    // The card is a reserved spot, not a status panel — it only exists
+    // on stage while a priority rider is actually detected.
+    el.priorityCard.hidden = !state.priorityDetected;
     if (state.priorityDetected){
-      el.cardLabel.textContent = 'Priority rider detected';
-      el.cardHeadline.textContent = 'Please let the priority rider board first';
-      el.substatus.hidden = false;
       el.substatus.textContent = state.phase === 'boarding'
         ? 'Driver notified · ramp ready'
         : 'Informing driver…';
-    } else {
-      el.cardLabel.textContent = 'Priority rider zone';
-      el.cardHeadline.textContent = 'Space for wheelchair, mobility aid, or other priority riders';
-      el.substatus.hidden = true;
     }
     el.prioritySpot.hidden = !SHOW_PRIORITY_SPOT;
 
