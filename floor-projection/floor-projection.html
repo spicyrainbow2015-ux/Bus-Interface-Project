@@ -12,22 +12,12 @@
     --bus:        #000000;
     --blue:       #4b8bb0;
     --blue-lt:    #a8d4f0;
-    --circle-on:  #a9dcf7;
-    --circle-off: #94b6ca;
+    --circle-on:  #ffffff;
+    --circle-off: rgba(255,255,255,.65);
     --yellow:     #e0c141;
     --yellow-br:  #f2d658;
     --red:        #d92b2b;
-    --grass-base:  #4f8a4a;
-    --grass-mid:   #5f9d56;
-    --grass-light: #78b46a;
-    --grass-dark:  #3c6e39;
-    --flower-petal: #ffffff;
-    --flower-center: #f2c94c;
-    /* A tiny (~330 byte) inline SVG tile, not an image request — a few
-       blade shapes repeated as a CSS background, used for both the
-       queue lane and the priority card so there's no image asset to
-       load/cache for the field texture. */
-    --grass-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%234f8a4a'/%3E%3Cpath d='M4 40 Q5 26 6 14 Q7 26 8 40Z' fill='%2378b46a'/%3E%3Cpath d='M13 40 Q14 22 16 8 Q18 22 19 40Z' fill='%233c6e39'/%3E%3Cpath d='M23 40 Q24 28 25 16 Q26 28 27 40Z' fill='%235f9d56'/%3E%3Cpath d='M32 40 Q33 24 34 10 Q35 24 36 40Z' fill='%233c6e39'/%3E%3C/svg%3E");
+    --field-green: #afe57c;
   }
   *{box-sizing:border-box;}
   html,body{
@@ -113,13 +103,19 @@
      the extra room comes from the left, right after the site label. */
   .blue-zone{
     /* Still named .blue-zone (JS/comments reference it as the layout
-       anchor) but now a grassland field, not a blue lane — swapped to
-       the shared --grass-tile background. */
+       anchor) but now a grassland field, not a blue lane — flat
+       --field-green with scattered grass clumps (see .grass-scatter),
+       not a tiled texture. */
     position:absolute; left:140px; top:335px; width:1100px; height:238px;
-    background-color:var(--grass-base);
-    background-image:var(--grass-tile);
-    background-repeat:repeat;
+    background-color:var(--field-green);
+    overflow:hidden;
   }
+  /* One small PNG (grass.png, ~21KB), reused via plain <img> tags at a
+     handful of fixed positions/sizes/rotations — the browser fetches it
+     once and every instance after that is a cache hit, so scattering it
+     eight times costs one request, not eight. */
+  .grass-scatter{ position:absolute; inset:0; pointer-events:none; }
+  .grass-clump{ position:absolute; }
   .blue-label{
     position:absolute; left:22px; top:14px;
     color:var(--paper); font-size:16px; font-weight:700;
@@ -131,8 +127,11 @@
      spot in line is filled brighter; the rest sit at a muted "open" fill. */
   .circles{ position:absolute; left:0; top:0; width:100%; height:100%; }
   .footprint-pair{ animation: spot-in .25s ease both; }
-  .footprint{ fill:var(--circle-off); transition: fill .3s ease; }
-  .footprint-pair.active .footprint{ fill:var(--circle-on); }
+  .footprint{
+    fill:var(--circle-off); stroke:rgba(17,17,17,.35); stroke-width:1.5;
+    transition: fill .3s ease;
+  }
+  .footprint-pair.active .footprint{ fill:var(--circle-on); stroke:rgba(17,17,17,.5); }
   @keyframes spot-in{
     from{ opacity:0; transform:scale(.9); }
     to{ opacity:1; transform:scale(1); }
@@ -161,10 +160,9 @@
   /* ---- 3.6 priority rider card ----
      This is a reserved SPOT, not a persistent status panel — it only
      exists on stage while a priority rider is actually detected (see
-     render(), which sets [hidden] rather than just restyling). A patch
-     of the same grass tile as the queue lane, plus a flower, is the
-     "this space is saved" visual; text is layered over it with a dark
-     scrim at the bottom for legibility. */
+     render(), which sets [hidden] rather than just restyling). Flat
+     --field-green plus a single sideways flower graphic is the "this
+     space is saved" visual. */
   .priority-card{
     position:absolute; left:958px; top:176px; width:276px; height:340px;
     border-radius:12px; border:3px solid var(--yellow-br);
@@ -179,19 +177,12 @@
   }
   .priority-card-field{
     position:absolute; inset:0;
-    background-color:var(--grass-base);
-    background-image:var(--grass-tile);
-    background-repeat:repeat;
+    background-color:var(--field-green);
   }
   .priority-card-flower{
-    position:absolute; left:50%; top:38%; width:130px; height:130px;
-    transform:translate(-50%,-50%);
-  }
-  .flower-petal{ fill:var(--flower-petal); }
-  .flower-center{ fill:var(--flower-center); }
-  .priority-card-scrim{
-    position:absolute; inset:0;
-    background:linear-gradient(180deg, rgba(20,45,20,.08) 0%, rgba(20,45,20,.05) 30%, rgba(15,35,15,.62) 100%);
+    position:absolute; left:50%; top:24%; width:130px; height:130px;
+    object-fit:contain;
+    transform:translate(-50%,-50%) rotate(90deg); /* "sideways" per the reference */
   }
   .priority-card-content{
     position:relative; z-index:1; height:100%;
@@ -199,22 +190,22 @@
   }
   .status-row{ display:flex; align-items:center; gap:9px; }
   .status-dot{
-    width:11px; height:11px; border-radius:50%; background:#fff;
+    width:11px; height:11px; border-radius:50%; background:var(--ink);
     flex:0 0 auto;
     animation: dot-pulse 1.6s ease-in-out infinite;
   }
-  .status-row span.label{ color:#fff; font-size:15px; font-weight:700; text-shadow:0 1px 3px rgba(0,0,0,.45); }
+  .status-row span.label{ color:var(--ink); font-size:15px; font-weight:700; }
   @keyframes dot-pulse{
     0%,100%{ opacity:1; } 50%{ opacity:.35; }
   }
-  .headline{ color:#fff; font-size:25px; font-weight:700; line-height:1.15; text-shadow:0 1px 4px rgba(0,0,0,.5); }
-  .substatus{ color:rgba(255,255,255,.88); font-size:17px; font-weight:500; text-shadow:0 1px 3px rgba(0,0,0,.45); }
+  .headline{ color:var(--ink); font-size:25px; font-weight:700; line-height:1.15; }
+  .substatus{ color:#33501f; font-size:17px; font-weight:500; }
   .priority-spot{
     margin-top:auto; align-self:center;
     width:150px; height:150px; border-radius:50%;
-    border:3px dashed rgba(255,255,255,.6); background:transparent;
+    border:3px dashed rgba(17,17,17,.5); background:transparent;
     display:flex; align-items:center; justify-content:center;
-    color:#fff; font-size:44px;
+    color:var(--ink); font-size:44px;
   }
 
   /* ---- 3.7 bottom instruction ---- */
@@ -286,6 +277,16 @@
     </div>
 
     <div class="blue-zone">
+      <div class="grass-scatter" aria-hidden="true">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:40px;  top:110px; width:90px;  transform:rotate(-6deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:170px; top:30px;  width:70px;  transform:rotate(4deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:330px; top:130px; width:85px;  transform:rotate(-3deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:470px; top:20px;  width:75px;  transform:rotate(7deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:620px; top:120px; width:95px;  transform:rotate(-5deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:790px; top:15px;  width:70px;  transform:rotate(5deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:940px; top:115px; width:80px;  transform:rotate(-4deg);">
+        <img class="grass-clump" src="assets/grass.png" alt="" style="left:1010px; top:20px; width:60px;  transform:rotate(8deg);">
+      </div>
       <div class="blue-label" id="blueLabel">Detecting no. of riders …</div>
       <svg class="circles" id="circles" viewBox="0 0 1100 238"></svg>
     </div>
@@ -302,17 +303,7 @@
 
     <div class="priority-card" id="priorityCard" hidden>
       <div class="priority-card-field"></div>
-      <svg class="priority-card-flower" viewBox="0 0 100 100" aria-hidden="true">
-        <g>
-          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17"></ellipse>
-          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(72 50 50)"></ellipse>
-          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(144 50 50)"></ellipse>
-          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(216 50 50)"></ellipse>
-          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(288 50 50)"></ellipse>
-          <circle class="flower-center" cx="50" cy="50" r="13"></circle>
-        </g>
-      </svg>
-      <div class="priority-card-scrim"></div>
+      <img class="priority-card-flower" src="assets/flower.gif" alt="">
       <div class="priority-card-content">
         <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
         <div class="headline">Please let the priority rider board first</div>
