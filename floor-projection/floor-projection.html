@@ -17,6 +17,17 @@
     --yellow:     #e0c141;
     --yellow-br:  #f2d658;
     --red:        #d92b2b;
+    --grass-base:  #4f8a4a;
+    --grass-mid:   #5f9d56;
+    --grass-light: #78b46a;
+    --grass-dark:  #3c6e39;
+    --flower-petal: #ffffff;
+    --flower-center: #f2c94c;
+    /* A tiny (~330 byte) inline SVG tile, not an image request — a few
+       blade shapes repeated as a CSS background, used for both the
+       queue lane and the priority card so there's no image asset to
+       load/cache for the field texture. */
+    --grass-tile: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='40' height='40' fill='%234f8a4a'/%3E%3Cpath d='M4 40 Q5 26 6 14 Q7 26 8 40Z' fill='%2378b46a'/%3E%3Cpath d='M13 40 Q14 22 16 8 Q18 22 19 40Z' fill='%233c6e39'/%3E%3Cpath d='M23 40 Q24 28 25 16 Q26 28 27 40Z' fill='%235f9d56'/%3E%3Cpath d='M32 40 Q33 24 34 10 Q35 24 36 40Z' fill='%233c6e39'/%3E%3C/svg%3E");
   }
   *{box-sizing:border-box;}
   html,body{
@@ -101,8 +112,13 @@
      edge stays put (that's the boundary against the priority card), all
      the extra room comes from the left, right after the site label. */
   .blue-zone{
+    /* Still named .blue-zone (JS/comments reference it as the layout
+       anchor) but now a grassland field, not a blue lane — swapped to
+       the shared --grass-tile background. */
     position:absolute; left:140px; top:335px; width:1100px; height:238px;
-    background:var(--blue);
+    background-color:var(--grass-base);
+    background-image:var(--grass-tile);
+    background-repeat:repeat;
   }
   .blue-label{
     position:absolute; left:22px; top:14px;
@@ -145,10 +161,10 @@
   /* ---- 3.6 priority rider card ----
      This is a reserved SPOT, not a persistent status panel — it only
      exists on stage while a priority rider is actually detected (see
-     render(), which sets [hidden] rather than just restyling). The GIF
-     is the "this space is saved" signal; text is layered over it with a
-     dark scrim at the bottom for legibility, since the animation itself
-     varies too much in brightness to guarantee contrast on its own. */
+     render(), which sets [hidden] rather than just restyling). A patch
+     of the same grass tile as the queue lane, plus a flower, is the
+     "this space is saved" visual; text is layered over it with a dark
+     scrim at the bottom for legibility. */
   .priority-card{
     position:absolute; left:958px; top:176px; width:276px; height:340px;
     border-radius:12px; border:3px solid var(--yellow-br);
@@ -161,14 +177,21 @@
     from{ opacity:0; transform:translateY(12px) scale(.96); }
     to{ opacity:1; transform:translateY(0) scale(1); }
   }
-  .priority-card-gif{
+  .priority-card-field{
     position:absolute; inset:0;
-    background-image:url('assets/priority-spot.gif');
-    background-size:cover; background-position:center;
+    background-color:var(--grass-base);
+    background-image:var(--grass-tile);
+    background-repeat:repeat;
   }
+  .priority-card-flower{
+    position:absolute; left:50%; top:38%; width:130px; height:130px;
+    transform:translate(-50%,-50%);
+  }
+  .flower-petal{ fill:var(--flower-petal); }
+  .flower-center{ fill:var(--flower-center); }
   .priority-card-scrim{
     position:absolute; inset:0;
-    background:linear-gradient(180deg, rgba(0,0,0,.1) 0%, rgba(0,0,0,.05) 30%, rgba(0,0,0,.6) 100%);
+    background:linear-gradient(180deg, rgba(20,45,20,.08) 0%, rgba(20,45,20,.05) 30%, rgba(15,35,15,.62) 100%);
   }
   .priority-card-content{
     position:relative; z-index:1; height:100%;
@@ -278,7 +301,17 @@
     </svg>
 
     <div class="priority-card" id="priorityCard" hidden>
-      <div class="priority-card-gif"></div>
+      <div class="priority-card-field"></div>
+      <svg class="priority-card-flower" viewBox="0 0 100 100" aria-hidden="true">
+        <g>
+          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17"></ellipse>
+          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(72 50 50)"></ellipse>
+          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(144 50 50)"></ellipse>
+          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(216 50 50)"></ellipse>
+          <ellipse class="flower-petal" cx="50" cy="28" rx="11" ry="17" transform="rotate(288 50 50)"></ellipse>
+          <circle class="flower-center" cx="50" cy="50" r="13"></circle>
+        </g>
+      </svg>
       <div class="priority-card-scrim"></div>
       <div class="priority-card-content">
         <div class="status-row"><span class="status-dot"></span><span class="label">Priority rider detected</span></div>
