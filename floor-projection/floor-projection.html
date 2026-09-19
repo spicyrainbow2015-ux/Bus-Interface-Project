@@ -166,8 +166,16 @@
      bordered outer shell (matching the field) with a brown inset panel,
      flower, and rotated copy is the "this space is saved" visual —
      positioned starting a bit above the lane, not flush with it. */
+  /* Real-world scale for this stage: 60px = 1ft (checked against the bus
+     door bar, 380px = 6.3ft, a plausible accessible-door width). The
+     priority zone is sized 300x300px = 5x5ft, matching the ADA 60"x60"
+     wheelchair turning-space benchmark — also roomy enough for a bike
+     laid at an angle or a stroller, rather than the tighter 30"x48"
+     minimum clear-floor spec. It shares the lane's bottom edge (573,
+     the curb/boarding line) and extends further back for its larger
+     footprint, rather than matching the lane's shallower depth. */
   .priority-card{
-    position:absolute; left:958px; top:287px; width:276px; height:238px;
+    position:absolute; left:958px; top:273px; width:300px; height:300px;
     border-radius:14px; border:5px solid var(--card-border-green);
     background:var(--field-green);
     box-shadow: 0 0 50px 14px rgba(111,180,63,.22);
@@ -347,7 +355,7 @@
   <div class="row">
     <span class="group-label">Rider count (simulated)</span>
     <button class="demo-btn" data-count="2" aria-pressed="true">2 riders detected</button>
-    <button class="demo-btn" data-count="5" aria-pressed="false">5 riders detected</button>
+    <button class="demo-btn" data-count="6" aria-pressed="false">6 riders detected</button>
   </div>
   <div class="row">
     <span class="hint">Space bar plays/stops the walkthrough. Camera and rider-count picks hold through it.</span>
@@ -364,11 +372,11 @@
    * 1. No alighting path: riders exiting the bus walk through the head
    *    of the queue and the priority card's footprint. A future phase
    *    should project an exit corridor while the door is open.
-   * 2. Spot count is capped at MAX_GENERAL_COUNT (5, matching the
-   *    "5 riders detected" demo button) rather than the pitch shrinking
-   *    to fit more, since the physical queue area is a fixed size in the
-   *    floor projection — a longer real-world line isn't representable
-   *    with this layout yet.
+   * 2. Spot count is capped at MAX_GENERAL_COUNT (6, matching the
+   *    "6 riders detected" demo button and the real 2.25ft-spacing
+   *    capacity of this lane at this stage's scale) rather than the
+   *    pitch shrinking to fit more — a longer real-world line isn't
+   *    representable with this layout yet.
    * 3. No ramp/kneel state for the priority rider at all — matches the
    *    driver-report gap noted elsewhere in this project (SEPTA
    *    publishes no live ramp/lift status anywhere).
@@ -433,9 +441,15 @@
   // count is capped instead of the pitch shrinking to fit indefinitely
   // more. The priority rider has their own marked area (the card) now,
   // not a reserved slot in this lane, so these spots don't shift for it.
-  const RIGHTMOST_CENTER = 727;
-  const CIRCLE_PITCH = 160;
-  const MAX_GENERAL_COUNT = 5;
+  //
+  // CIRCLE_PITCH (135px = 2.25ft at this stage's 60px/ft scale — see the
+  // .priority-card comment) is a standard comfortable-but-orderly
+  // transit-queue spacing, not an arbitrary UI gap. MAX_GENERAL_COUNT is
+  // 6 to match that same real-world sizing exercise: 6 people at 2.25ft
+  // spacing is what actually fits in this lane's real floor length.
+  const RIGHTMOST_CENTER = 735;
+  const CIRCLE_PITCH = 135;
+  const MAX_GENERAL_COUNT = 6;
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
