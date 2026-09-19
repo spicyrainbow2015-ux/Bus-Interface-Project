@@ -486,7 +486,17 @@
     return outer;
   }
 
+  // render() runs every second (the countdown tick) regardless of
+  // whether the footprints themselves changed. Rebuilding this DOM from
+  // scratch each time retriggered the spot-in entrance animation every
+  // second, reading as a constant blink — so skip the rebuild unless
+  // the count or active spot actually moved.
+  let lastRenderedCount = null;
+  let lastRenderedActive = null;
   function renderCircles(){
+    if (state.generalCount === lastRenderedCount && state.activeIndex === lastRenderedActive) return;
+    lastRenderedCount = state.generalCount;
+    lastRenderedActive = state.activeIndex;
     el.circles.innerHTML = '';
     for (let slot = 0; slot < state.generalCount; slot++){
       const cx = RIGHTMOST_CENTER - slot * CIRCLE_PITCH;
