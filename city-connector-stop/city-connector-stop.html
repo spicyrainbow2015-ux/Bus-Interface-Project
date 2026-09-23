@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>City Connector — Bus Stop (data test)</title>
+</head>
+<body>
+
+<!--
+  STRUCTURE-ONLY TEST PAGE — no styling yet.
+
+  Purpose: verify the live-SEPTA data plumbing (same stop as the other
+  prototypes: Chestnut St & 43rd St, stop 590, route 21) before any
+  visual work starts on the City Connector bus-stop interface. Once
+  this is confirmed working, the CSS/layout pass reuses this same data
+  layer — nothing here should need to change functionally.
+
+  Same pattern as floor-projection.html:
+  - Calls the deployed production API by absolute URL (not a relative
+    path) so this file works even opened directly (file://), not just
+    when served.
+  - Live data preferred; falls back to scheduled time when SEPTA isn't
+    actively tracking a vehicle for a trip yet.
+  - Shows the next 2-3 arrivals, each as "<N> min · <clock time>".
+-->
+
+<h1>Next buses — Chestnut St &amp; 43rd St (Route 21)</h1>
+<div id="status">Loading…</div>
+<ol id="arrivals"></ol>
+
+<script>
+  const API_BASE = 'https://bus-interface-project.vercel.app';
+  const STOP_ID = '590';
+  const ROUTES = ['21'];
+  const ARRIVALS_TO_SHOW = 3;
+  const POLL_MS = 20000;
+
+  const statusEl = document.getElementById('status');
+  const listEl = document.getElementById('arrivals');
+
+  function formatClockTime(iso){
+    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  }
+
+  function renderArrivals(items){
+    listEl.innerHTML = '';
+    items.forEach(a => {
+      const li = document.createElement('li');
+      li.textContent =
+        a.route + ' to ' + (a.destination || '?') + ' — ' +
+        Math.max(0, a.etaMinutes) + ' min · ' + formatClockTime(a.arrivalTimeIso) +
+        ' (' + (a.live ? 'live' : 'scheduled') + ')';
+      listEl.appendChild(li);
+    });
+  }
+
+  async function pollLiveData(){
+    try {
+      const res = await fetch(`${API_BASE}/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
+      const data = await res.json();
+
+      if (data.arrivals && data.arrivals.length){
+        const next = data.arrivals.slice(0, ARRIVALS_TO_SHOW);
+        renderArrivals(next);
+        const liveCount = next.filter(a => a.live).length;
+        statusEl.textContent = `${liveCount}/${next.length} live · SEPTA route 21 · last updated ${new Date().toLocaleTimeString()}`;
+      } else if (data.nextService){
+        renderArrivals([data.nextService]);
+        statusEl.textContent = 'No service right now — showing next scheduled trip';
+      } else {
+        listEl.innerHTML = '';
+        statusEl.textContent = 'No live or scheduled data returned.';
+      }
+    } catch (err) {
+      console.error('Live SEPTA fetch failed:', err);
+      statusEl.textContent = 'Fetch failed — see console. Retrying in 5s…';
+      setTimeout(pollLiveData, 5000);
+      return;
+    }
+  }
+
+  pollLiveData();
+  setInterval(pollLiveData, POLL_MS);
+</script>
+</body>
+</html>
