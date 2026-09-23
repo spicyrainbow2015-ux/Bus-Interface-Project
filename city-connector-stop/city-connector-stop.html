@@ -3,31 +3,143 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>City Connector — Bus Stop (data test)</title>
+<title>City Connector — Bus Stop</title>
+<style>
+  :root{
+    --bg-page:      #efefef;
+    --ink:          #111111;
+    --panel-bezel:  #050505;
+    --screen-bg:    #141414;
+    --screen-bg-2:  #1e1e1e;
+    --white:        #ffffff;
+    --muted:        rgba(255,255,255,0.56);
+    --line:         rgba(255,255,255,0.12);
+    --accent:       #d6ff3b; /* City Connector's signature lime — same family as the mailbox's glow */
+    --accent-ink:   #10130a; /* dark text for on-accent surfaces */
+    --route-red:    #d1332f; /* kept from the other prototypes' SEPTA-red badge convention */
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 20px 44px -20px rgba(0,0,0,0.6);
+  }
+  *{box-sizing:border-box;}
+  [hidden]{display:none !important;}
+  body{
+    margin:0; min-height:100%; background:var(--bg-page); color:var(--ink);
+    font-family:"Helvetica Neue", Helvetica, Arial, sans-serif;
+    padding:32px 16px 60px;
+    display:flex; flex-direction:column; align-items:center; gap:18px;
+  }
+
+  /* ---- Step 1: bezel/panel skeleton — same portrait-screen system as
+     Curb Signal (black frame, 360px, rounded inner screen), recolored
+     to City Connector's dark + lime language. ---- */
+  .bezel{
+    background:var(--panel-bezel);
+    border-radius:20px;
+    padding:14px;
+    box-shadow:var(--shadow);
+    width:360px; max-width:100%;
+  }
+  .sign{
+    background:var(--screen-bg);
+    border-radius:10px;
+    overflow:hidden;
+    display:flex; flex-direction:column;
+    box-shadow:0 0 0 1px var(--line);
+  }
+
+  .brand-row{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:16px 18px 12px; border-bottom:1px solid var(--line);
+  }
+  .brand-name{ font-size:14px; font-weight:800; letter-spacing:.01em; color:var(--white); }
+  .brand-name .dot{ color:var(--accent); }
+  .brand-loc{ font-size:10.5px; color:var(--muted); font-weight:600; }
+
+  .block{ padding:16px 18px; border-bottom:1px solid var(--line); }
+  .block:last-child{ border-bottom:0; }
+  .block-label{
+    font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:10px;
+  }
+
+  /* ---- Step 2: incoming board, styled (reuses the data layer already
+     verified in the previous pass — fetch/fallback logic unchanged). ---- */
+  .incoming-row{
+    display:flex; align-items:center; gap:12px;
+    padding:11px 0; border-bottom:1px solid var(--line);
+  }
+  .incoming-row:last-child{ border-bottom:0; }
+  .route-badge{
+    background:var(--route-red); color:var(--white);
+    font-weight:800; font-size:16px;
+    padding:5px 13px; border-radius:999px; line-height:1; flex:0 0 auto;
+  }
+  .route-dest{
+    flex:1; min-width:0;
+    color:var(--white); font-size:13px; font-weight:700;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .route-tag{
+    display:inline-block; margin-left:7px;
+    font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    padding:2px 6px; border-radius:5px;
+  }
+  .route-tag.live{ background:rgba(214,255,59,0.16); color:var(--accent); }
+  .route-tag.scheduled{ background:rgba(255,255,255,0.1); color:var(--muted); }
+  .eta{ text-align:right; flex:0 0 auto; }
+  .eta .mins{ font-weight:900; font-size:24px; line-height:1; color:var(--accent); }
+  .eta .unit{ font-size:9.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+  .eta .clock{ font-size:10px; color:var(--muted); font-weight:600; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .incoming-status{
+    margin-top:10px; font-size:10px; color:var(--muted); font-weight:600;
+  }
+
+  /* ---- Placeholders for everything not built yet — deliberately
+     plain/undesigned so it's obvious what's scaffolding vs finished. ---- */
+  .placeholder{
+    border:1.5px dashed var(--line); border-radius:8px;
+    padding:18px; text-align:center;
+    color:var(--muted); font-size:11.5px; line-height:1.5;
+  }
+  .placeholder strong{ display:block; color:rgba(255,255,255,0.75); font-size:12.5px; margin-bottom:4px; }
+</style>
 </head>
 <body>
 
-<!--
-  STRUCTURE-ONLY TEST PAGE — no styling yet.
+<div class="bezel">
+  <div class="sign">
+    <div class="brand-row">
+      <span class="brand-name">City Connector<span class="dot">.</span></span>
+      <span class="brand-loc">Chestnut St &amp; 43rd St</span>
+    </div>
 
-  Purpose: verify the live-SEPTA data plumbing (same stop as the other
-  prototypes: Chestnut St & 43rd St, stop 590, route 21) before any
-  visual work starts on the City Connector bus-stop interface. Once
-  this is confirmed working, the CSS/layout pass reuses this same data
-  layer — nothing here should need to change functionally.
+    <div class="block">
+      <div class="block-label">Incoming — Route 21</div>
+      <div id="arrivals"></div>
+      <div class="incoming-status" id="status">Loading…</div>
+    </div>
 
-  Same pattern as floor-projection.html:
-  - Calls the deployed production API by absolute URL (not a relative
-    path) so this file works even opened directly (file://), not just
-    when served.
-  - Live data preferred; falls back to scheduled time when SEPTA isn't
-    actively tracking a vehicle for a trip yet.
-  - Shows the next 2-3 arrivals, each as "<N> min · <clock time>".
--->
+    <div class="block">
+      <div class="placeholder">
+        <strong>Featured quote + image</strong>
+        one submitted perspective on this area, shown large — coming next
+      </div>
+    </div>
 
-<h1>Next buses — Chestnut St &amp; 43rd St (Route 21)</h1>
-<div id="status">Loading…</div>
-<ol id="arrivals"></ol>
+    <div class="block">
+      <div class="placeholder">
+        <strong>Keyword bubbles</strong>
+        sized by how often each theme comes up across submissions — coming next
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="placeholder">
+        <strong>Share your perspective</strong>
+        invitation to submit (no form yet) — coming next
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
   const API_BASE = 'https://bus-interface-project.vercel.app';
@@ -46,12 +158,16 @@
   function renderArrivals(items){
     listEl.innerHTML = '';
     items.forEach(a => {
-      const li = document.createElement('li');
-      li.textContent =
-        a.route + ' to ' + (a.destination || '?') + ' — ' +
-        Math.max(0, a.etaMinutes) + ' min · ' + formatClockTime(a.arrivalTimeIso) +
-        ' (' + (a.live ? 'live' : 'scheduled') + ')';
-      listEl.appendChild(li);
+      const row = document.createElement('div');
+      row.className = 'incoming-row';
+      row.innerHTML = `
+        <span class="route-badge">${a.route}</span>
+        <span class="route-dest">${a.destination || '—'}<span class="route-tag ${a.live ? 'live' : 'scheduled'}">${a.live ? 'Live' : 'Scheduled'}</span></span>
+        <span class="eta">
+          <div class="mins">${Math.max(0, a.etaMinutes)} <span class="unit">min</span></div>
+          <div class="clock">${formatClockTime(a.arrivalTimeIso)}</div>
+        </span>`;
+      listEl.appendChild(row);
     });
   }
 
@@ -64,17 +180,17 @@
         const next = data.arrivals.slice(0, ARRIVALS_TO_SHOW);
         renderArrivals(next);
         const liveCount = next.filter(a => a.live).length;
-        statusEl.textContent = `${liveCount}/${next.length} live · SEPTA route 21 · last updated ${new Date().toLocaleTimeString()}`;
+        statusEl.textContent = `${liveCount}/${next.length} live · updated ${new Date().toLocaleTimeString()}`;
       } else if (data.nextService){
         renderArrivals([data.nextService]);
-        statusEl.textContent = 'No service right now — showing next scheduled trip';
+        statusEl.textContent = 'No service right now — next scheduled trip shown';
       } else {
         listEl.innerHTML = '';
         statusEl.textContent = 'No live or scheduled data returned.';
       }
     } catch (err) {
       console.error('Live SEPTA fetch failed:', err);
-      statusEl.textContent = 'Fetch failed — see console. Retrying in 5s…';
+      statusEl.textContent = 'Fetch failed — retrying in 5s…';
       setTimeout(pollLiveData, 5000);
       return;
     }
