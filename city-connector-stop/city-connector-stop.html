@@ -42,6 +42,20 @@
     </div>
   </section>
 
+  <!-- Following bus — hidden by JS whenever there's no second confirmed
+       arrival to show (never filled with placeholder dashes). -->
+  <section class="cc-bus2" id="bus2" aria-label="Following bus" hidden>
+    <div class="cc-bus2__left">
+      <span class="cc-route-pill" data-bind="route2">21</span>
+      <span class="cc-bus2__dest" data-bind="destination2">Columbus-Dock</span>
+      <span class="cc-bus2__note" data-bind="arrivalNote2">arrives 12:10 am</span>
+    </div>
+    <div class="cc-bus2__eta" id="eta2">
+      <span class="cc-bus2__eta-num" data-bind="minutes2">26</span>
+      <span class="cc-bus2__eta-unit">MIN</span>
+    </div>
+  </section>
+
   <section class="cc-chamber" aria-label="What people feel at this stop">
     <svg class="cc-route-line" viewBox="0 0 516 700" preserveAspectRatio="none" aria-hidden="true">
       <path d="M-10 170 C 60 150 120 190 170 140 S 300 20 380 120 S 520 150 520 300"/>
@@ -119,6 +133,10 @@ function render(data) {
     const v = data[el.dataset.bindSrc]; if (v) el.src = v;
   });
   document.getElementById('eta').classList.toggle('cc-eta--scheduled', !data.isLive);
+  if (data.hasSecond){
+    document.getElementById('eta2').classList.toggle('cc-bus2__eta--scheduled', !data.isLive2);
+  }
+  document.getElementById('bus2').hidden = !data.hasSecond;
   renderBubbles(data.keywords);
 }
 
@@ -156,19 +174,32 @@ function formatArrivalNote(iso){
 }
 
 async function pollLiveData(){
-  let busData = { route: '21', destination: '—', minutes: '—', isLive: false, arrivalNote: 'no data' };
+  let busData = { route: '21', destination: '—', minutes: '—', isLive: false, arrivalNote: 'no data', hasSecond: false };
   try {
     const res = await fetch(`${API_BASE}/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
     const data = await res.json();
-    const next = (data.arrivals && data.arrivals[0]) || data.nextService;
-    if (next){
-      busData = {
-        route: next.route,
-        destination: next.destination || '—',
-        minutes: Math.max(0, next.etaMinutes),
-        isLive: !!next.live,
-        arrivalNote: formatArrivalNote(next.arrivalTimeIso),
-      };
+    // data.arrivals is already the accurate list per the rules established
+    // earlier in this project — live buses first, at most one scheduled
+    // guess allowed through on a disrupted route, none of the phantom
+    // entries that once didn't match Google Maps. nextService only ever
+    // provides a single entry (a genuine overnight-style gap), so there's
+    // no second bus to show in that case.
+    const list = (data.arrivals && data.arrivals.length) ? data.arrivals : (data.nextService ? [data.nextService] : []);
+    const [first, second] = list;
+    if (first){
+      busData.route = first.route;
+      busData.destination = first.destination || '—';
+      busData.minutes = Math.max(0, first.etaMinutes);
+      busData.isLive = !!first.live;
+      busData.arrivalNote = formatArrivalNote(first.arrivalTimeIso);
+    }
+    if (second){
+      busData.hasSecond = true;
+      busData.route2 = second.route;
+      busData.destination2 = second.destination || '—';
+      busData.minutes2 = Math.max(0, second.etaMinutes);
+      busData.isLive2 = !!second.live;
+      busData.arrivalNote2 = formatArrivalNote(second.arrivalTimeIso);
     }
   } catch (err) {
     console.error('Live SEPTA fetch failed, keeping last known values:', err);
@@ -177,7 +208,7 @@ async function pollLiveData(){
   render({ ...SAMPLE_DATA, ...busData });
 }
 
-render({ ...SAMPLE_DATA, route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…' });
+render({ ...SAMPLE_DATA, route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…', hasSecond: false });
 pollLiveData();
 setInterval(pollLiveData, POLL_MS);
 </script>

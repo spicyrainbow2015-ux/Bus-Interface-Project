@@ -129,6 +129,34 @@
 /* when there is no live data, add .cc-eta--scheduled */
 .cc-eta--scheduled .cc-eta__num { color: var(--cc-paper); opacity: 0.85; }
 
+/* ---------- Following bus (second row) ------------------------------------
+   Deliberately smaller/quieter than .cc-bus — the next bus is the hero,
+   this is a secondary glance. Hidden entirely via [hidden] rather than
+   shown with placeholder dashes when there isn't a second confirmed
+   arrival (same "don't display if it's unconfirmed" rule as the rest of
+   this project's bus-data handling). ---------------------------------- */
+.cc-bus2 {
+  flex-shrink: 0;
+  margin: 0 calc(28px * var(--s));
+  padding: calc(10px * var(--s)) 0 calc(14px * var(--s));
+  border-top: calc(1px * var(--s)) solid var(--cc-rule);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(12px * var(--s));
+}
+.cc-bus2__left { display: flex; align-items: center; gap: calc(10px * var(--s)); min-width: 0; }
+.cc-bus2 .cc-route-pill { min-width: calc(38px * var(--s)); height: calc(26px * var(--s)); font-size: calc(13px * var(--s)); flex-shrink: 0; }
+.cc-bus2__dest {
+  font-weight: 800; font-size: calc(15px * var(--s)); letter-spacing: -0.01em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--cc-muted-2);
+}
+.cc-bus2__note { font-family: var(--cc-font-label); font-size: calc(10px * var(--s)); color: var(--cc-muted); flex-shrink: 0; }
+.cc-bus2__eta { display: flex; align-items: baseline; gap: calc(4px * var(--s)); flex-shrink: 0; }
+.cc-bus2__eta-num { font-size: calc(26px * var(--s)); font-weight: 800; letter-spacing: -0.02em; color: var(--cc-lime); font-variant-numeric: tabular-nums; }
+.cc-bus2__eta-unit { font-size: calc(11px * var(--s)); font-weight: 800; color: var(--cc-muted-2); }
+.cc-bus2__eta--scheduled .cc-bus2__eta-num { color: var(--cc-paper); opacity: 0.85; }
+
 /* ---------- Chamber (bubbles + postcard) ---------------------------------- */
 .cc-chamber {
   position: relative;
