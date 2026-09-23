@@ -94,6 +94,16 @@
 
 </main>
 
+<!-- Testing scaffolding, not part of the projection design — fixed so it
+     doesn't disturb the .cc-screen grid centering. Sends real sample text
+     through the real AI pipeline so the keyword-extraction/matching logic
+     can be watched working before there's a public-facing submission
+     form. -->
+<div id="devstrip" style="position:fixed; left:12px; bottom:12px; z-index:10; background:rgba(255,255,255,.94); border:1px dashed #999; border-radius:8px; padding:10px 12px; font:12px/1.4 system-ui, sans-serif; max-width:320px; color:#222;">
+  <button id="simulateBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Simulate submission (real AI call)</button>
+  <div id="simulateStatus" style="margin-top:6px; color:#555;"></div>
+</div>
+
 <script>
 /* ---------------------------------------------------------------------------
    Minimal wiring, as shipped in the design — kept as-is.
@@ -144,8 +154,10 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Keyword/postcard content — kept exactly as designed (not wired to a real
-// backend yet, per plan). Only the bus-arrival fields below are live.
+// Fallback only now — used if the live /api/perspectives fetch fails
+// before ever succeeding. Once that endpoint is reachable, it returns
+// this exact same seed content on its first call (see api/perspectives.js),
+// so there's no visible jump between "fallback" and "live" on a normal load.
 const SAMPLE_DATA = {
   stopName: 'Chestnut St & 43rd St',
   peopleCount: 121,
@@ -173,8 +185,18 @@ function formatArrivalNote(iso){
   return `arrives ${t}`;
 }
 
+// perspectivesData and busData are tracked separately (they update on
+// different schedules/triggers) and merged into one render() call so
+// neither fetch ever stomps on the other's fields.
+let perspectivesData = { ...SAMPLE_DATA };
+let busData = { route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…', hasSecond: false };
+
+function renderAll(){
+  render({ ...perspectivesData, ...busData });
+}
+
 async function pollLiveData(){
-  let busData = { route: '21', destination: '—', minutes: '—', isLive: false, arrivalNote: 'no data', hasSecond: false };
+  const next = { route: '21', destination: '—', minutes: '—', isLive: false, arrivalNote: 'no data', hasSecond: false };
   try {
     const res = await fetch(`${API_BASE}/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
     const data = await res.json();
@@ -187,30 +209,108 @@ async function pollLiveData(){
     const list = (data.arrivals && data.arrivals.length) ? data.arrivals : (data.nextService ? [data.nextService] : []);
     const [first, second] = list;
     if (first){
-      busData.route = first.route;
-      busData.destination = first.destination || '—';
-      busData.minutes = Math.max(0, first.etaMinutes);
-      busData.isLive = !!first.live;
-      busData.arrivalNote = formatArrivalNote(first.arrivalTimeIso);
+      next.route = first.route;
+      next.destination = first.destination || '—';
+      next.minutes = Math.max(0, first.etaMinutes);
+      next.isLive = !!first.live;
+      next.arrivalNote = formatArrivalNote(first.arrivalTimeIso);
     }
     if (second){
-      busData.hasSecond = true;
-      busData.route2 = second.route;
-      busData.destination2 = second.destination || '—';
-      busData.minutes2 = Math.max(0, second.etaMinutes);
-      busData.isLive2 = !!second.live;
-      busData.arrivalNote2 = formatArrivalNote(second.arrivalTimeIso);
+      next.hasSecond = true;
+      next.route2 = second.route;
+      next.destination2 = second.destination || '—';
+      next.minutes2 = Math.max(0, second.etaMinutes);
+      next.isLive2 = !!second.live;
+      next.arrivalNote2 = formatArrivalNote(second.arrivalTimeIso);
     }
   } catch (err) {
     console.error('Live SEPTA fetch failed, keeping last known values:', err);
     return; // don't stomp the screen with placeholder dashes on a transient failure
   }
-  render({ ...SAMPLE_DATA, ...busData });
+  busData = next;
+  renderAll();
 }
 
-render({ ...SAMPLE_DATA, route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…', hasSecond: false });
+// ---------------------------------------------------------------------------
+// Live perspectives (keyword bubbles + featured postcard + people count) —
+// api/perspectives.js auto-seeds itself with the original design's sample
+// content on first call, so this never shows an empty/broken screen even
+// before anyone has submitted anything for real.
+// ---------------------------------------------------------------------------
+const PERSPECTIVES_POLL_MS = 15000;
+
+function formatDate(iso){
+  const d = new Date(iso);
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function fetchPerspectives(){
+  try {
+    const res = await fetch(`${API_BASE}/api/perspectives`);
+    const data = await res.json();
+    perspectivesData = {
+      stopName: SAMPLE_DATA.stopName,
+      keywords: (data.keywords && data.keywords.length) ? data.keywords : SAMPLE_DATA.keywords,
+      quote: (data.featured && data.featured.quote) || SAMPLE_DATA.quote,
+      author: (data.featured && data.featured.author) || SAMPLE_DATA.author,
+      date: (data.featured && data.featured.timestamp) ? formatDate(data.featured.timestamp) : SAMPLE_DATA.date,
+      photo: (data.featured && data.featured.photo) || SAMPLE_DATA.photo,
+      peopleCount: data.peopleCount ?? SAMPLE_DATA.peopleCount,
+    };
+  } catch (err) {
+    console.error('Live perspectives fetch failed, keeping last known values:', err);
+    return;
+  }
+  renderAll();
+}
+
+// ---------------------------------------------------------------------------
+// Testing only: sends real sample text through the real submit-perspective
+// pipeline (real Claude call, real Redis write) so the categorization logic
+// can be watched working before there's a public-facing submission form.
+// ---------------------------------------------------------------------------
+const SAMPLE_SUBMISSIONS = [
+  { quote: 'Watching the sunset from this bench is my favorite part of the day.', author: 'Test User' },
+  { quote: 'This stop always feels so peaceful, even during rush hour.', author: 'Test User' },
+  { quote: 'I love how the trees here change with the seasons.', author: 'Test User' },
+  { quote: 'Something about waiting here in the rain always makes me nostalgic for college.', author: 'Test User' },
+];
+let simIndex = 0;
+
+async function simulateSubmission(){
+  const btn = document.getElementById('simulateBtn');
+  const status = document.getElementById('simulateStatus');
+  btn.disabled = true;
+  status.textContent = 'Sending to Claude…';
+  const sample = SAMPLE_SUBMISSIONS[simIndex % SAMPLE_SUBMISSIONS.length];
+  simIndex++;
+  try {
+    const res = await fetch(`${API_BASE}/api/submit-perspective`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sample),
+    });
+    const result = await res.json();
+    if (result.ok){
+      status.textContent = `Categorized as: ${result.keywords.join(', ')}` +
+        (result.newKeywords.length ? ` (new bubble: ${result.newKeywords.join(', ')})` : ' (matched existing bubbles)');
+      await fetchPerspectives();
+    } else {
+      status.textContent = 'Rejected — flagged as inappropriate for display.';
+    }
+  } catch (err) {
+    console.error('simulateSubmission failed:', err);
+    status.textContent = 'Failed — see console.';
+  }
+  btn.disabled = false;
+}
+document.getElementById('simulateBtn').addEventListener('click', simulateSubmission);
+
+renderAll();
 pollLiveData();
 setInterval(pollLiveData, POLL_MS);
+fetchPerspectives();
+setInterval(fetchPerspectives, PERSPECTIVES_POLL_MS);
 </script>
 </body>
 </html>
