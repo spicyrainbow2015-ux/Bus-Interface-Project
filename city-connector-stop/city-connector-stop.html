@@ -2,432 +2,184 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>City Connector — Bus Stop</title>
-<style>
-  :root{
-    --bg-page:      #efefef;
-    --ink:          #111111;
-    --panel-bezel:  #050505;
-    --screen-bg:    #141414;
-    --screen-bg-2:  #1e1e1e;
-    --white:        #ffffff;
-    --muted:        rgba(255,255,255,0.56);
-    --line:         rgba(255,255,255,0.12);
-    --accent:       #d6ff3b; /* City Connector's signature lime — same family as the mailbox's glow */
-    --accent-ink:   #10130a; /* dark text for on-accent surfaces */
-    --route-red:    #d1332f; /* kept from the other prototypes' SEPTA-red badge convention */
-    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 20px 44px -20px rgba(0,0,0,0.6);
-    --glow: rgba(214,255,59,0.5); /* the foggy/glowy accent light, echoing the mailbox's glow */
-  }
-  *{box-sizing:border-box;}
-  [hidden]{display:none !important;}
-  body{
-    margin:0; min-height:100%; background:var(--bg-page); color:var(--ink);
-    font-family:"Helvetica Neue", Helvetica, Arial, sans-serif;
-    padding:32px 16px 60px;
-    display:flex; flex-direction:column; align-items:center; gap:18px;
-  }
-
-  /* ---- Step 1: bezel/panel skeleton — same portrait-screen system as
-     Curb Signal (black frame, rounded inner screen), recolored to City
-     Connector's dark + lime language. Widened from 360 to 440px (and
-     paddings tightened throughout) specifically to cut the panel's
-     overall height — more horizontal room means the featured card can
-     go image-beside-quote instead of stacked, and bubbles wrap to
-     fewer rows. ---- */
-  .bezel{
-    background:var(--panel-bezel);
-    border-radius:20px;
-    padding:14px;
-    box-shadow:var(--shadow);
-    width:440px; max-width:100%;
-  }
-  .sign{
-    position:relative;
-    background:var(--screen-bg);
-    border-radius:10px;
-    overflow:hidden;
-    display:flex; flex-direction:column;
-    box-shadow:0 0 0 1px var(--line);
-  }
-  /* Ambient foggy glow blobs, blurred and mostly off-canvas — the same
-     soft-light language as the mailbox reference and the City Connector
-     brand mark's blurred orb. Decorative only (aria-hidden), sits behind
-     everything via z-index. */
-  .glow{
-    position:absolute; z-index:0; border-radius:50%;
-    filter:blur(46px); pointer-events:none;
-  }
-  .glow-1{ width:220px; height:220px; top:-80px; right:-70px; background:radial-gradient(circle, var(--glow), transparent 70%); opacity:.55; }
-  .glow-2{ width:180px; height:180px; bottom:60px; left:-60px; background:radial-gradient(circle, var(--glow), transparent 70%); opacity:.3; }
-  .sign > *:not(.glow){ position:relative; z-index:1; }
-
-  .brand-row{
-    display:flex; align-items:baseline; justify-content:space-between;
-    padding:12px 18px 10px; border-bottom:1px solid var(--line);
-  }
-  .brand-name{ font-size:14px; font-weight:800; letter-spacing:.01em; color:var(--white); }
-  .brand-name .dot{ color:var(--accent); }
-  .brand-loc{ font-size:10.5px; color:var(--muted); font-weight:600; }
-
-  .block{ padding:12px 18px; border-bottom:1px solid var(--line); }
-  .block:last-child{ border-bottom:0; }
-  .block-label{
-    font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
-    color:var(--muted); margin-bottom:10px;
-  }
-
-  /* ---- Step 2: incoming board, styled (reuses the data layer already
-     verified in the previous pass — fetch/fallback logic unchanged). ---- */
-  .incoming-row{
-    display:flex; align-items:center; gap:12px;
-    padding:8px 0; border-bottom:1px solid var(--line);
-  }
-  .incoming-row:last-child{ border-bottom:0; }
-  .route-badge{
-    background:var(--route-red); color:var(--white);
-    font-weight:800; font-size:16px;
-    padding:5px 13px; border-radius:999px; line-height:1; flex:0 0 auto;
-  }
-  .route-dest{
-    flex:1; min-width:0;
-    color:var(--white); font-size:13px; font-weight:700;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .route-tag{
-    flex:0 0 auto; margin-left:7px;
-    font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
-    padding:2px 6px; border-radius:5px;
-  }
-  .route-tag.live{ background:rgba(214,255,59,0.16); color:var(--accent); }
-  .route-tag.scheduled{ background:rgba(255,255,255,0.1); color:var(--muted); }
-  .eta{ text-align:right; flex:0 0 auto; }
-  .eta .mins{ font-weight:900; font-size:24px; line-height:1; color:var(--accent); }
-  .eta .unit{ font-size:9.5px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
-  .eta .clock{ font-size:10px; color:var(--muted); font-weight:600; margin-top:2px; font-variant-numeric:tabular-nums; }
-  .incoming-status{
-    margin-top:10px; font-size:10px; color:var(--muted); font-weight:600;
-  }
-
-  /* ---- Step 3-4: featured perspective (one seeded submission, shown
-     big) — a soft frosted card with its own faint glow, matching the
-     mailbox reference's glass-and-light feel. The "image" is a color
-     placeholder (no photo asset), since there's no real submitted
-     photo yet — each submission gets a stable-looking gradient rather
-     than a plain gray box, without adding any image weight to load. ---- */
-  .featured-card{
-    display:flex; align-items:stretch; gap:0;
-    border-radius:12px; overflow:hidden;
-    background:var(--screen-bg-2);
-    box-shadow:0 0 30px -6px var(--glow), inset 0 0 0 1px var(--line);
-  }
-  /* Image beside the quote, not stacked above it — the single biggest
-     height saving in this pass. Fixed width, stretches to the card's
-     own height rather than carrying a height of its own. */
-  .featured-image{ flex:0 0 96px; }
-  .featured-body{ flex:1; min-width:0; padding:12px 16px; }
-  .featured-quote{
-    color:var(--white); font-size:13px; font-weight:500; line-height:1.4;
-    margin-bottom:8px;
-    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
-  }
-  .featured-quote::before{ content:'\201C'; color:var(--accent); font-weight:800; }
-  .featured-quote::after{ content:'\201D'; color:var(--accent); font-weight:800; }
-  .featured-meta{
-    display:flex; align-items:center; flex-wrap:wrap; gap:6px;
-    font-size:10px; color:var(--muted); font-weight:600;
-  }
-  .featured-meta .kw{
-    padding:2px 7px; border-radius:999px;
-    background:rgba(214,255,59,0.12); color:var(--accent);
-    font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:.03em;
-  }
-
-  /* ---- Step 5: keyword bubbles — size (and glow intensity) computed
-     per-bubble from how often that theme comes up across submissions.
-     Plain flex-wrap layout, not a manual packing algorithm: cheap, and
-     the browser handles wrapping on its own. ---- */
-  .bubble-cluster{
-    display:flex; flex-wrap:wrap; align-items:center; justify-content:center;
-    gap:8px; padding:6px 0 2px;
-  }
-  /* Fill/glow color is set per-bubble inline (from the secondary
-     palette below) — black + lime stay the page's main colors
-     everywhere else; this is the one place the secondary palette shows
-     up, matching the reference mockup. */
-  .bubble{
-    border-radius:50%; display:flex; align-items:center; justify-content:center;
-    text-align:center; padding:4px;
-    color:#fff; font-weight:700; line-height:1.1;
-    word-break:break-word;
-    animation-name:bubble-float; animation-timing-function:ease-in-out; animation-iteration-count:infinite;
-    /* duration/delay are randomized per bubble (inline style) so they
-       drift out of sync with each other, not in robotic unison */
-  }
-  /* A gentle multi-directional wobble, not a simple up/down bob — reads
-     more like something floating in water/air than a mechanical bounce.
-     transform only, so this never affects the flex layout around it. */
-  @keyframes bubble-float{
-    0%,100%{ transform:translate(0,0); }
-    25%{ transform:translate(4px,-5px); }
-    50%{ transform:translate(-3px,2px); }
-    75%{ transform:translate(-4px,-3px); }
-  }
-  @media (prefers-reduced-motion: reduce){
-    .bubble{ animation:none; }
-  }
-
-  /* ---- Step 6: share-your-perspective — small, a placeholder QR
-     graphic (decorative pattern, not a real scannable code yet — there's
-     no live submission URL to encode) plus short copy. ---- */
-  .cta-row{ display:flex; align-items:center; gap:12px; }
-  .qr-placeholder{ flex:0 0 auto; width:44px; height:44px; }
-  .qr-placeholder rect{ fill:var(--accent); }
-  .qr-placeholder .bg{ fill:none; }
-  .cta-copy{ color:rgba(255,255,255,0.82); font-size:11.5px; font-weight:600; line-height:1.35; }
-</style>
+<title>City Connector — screen demo (E8)</title>
+<!-- Prototyping only: Montserrat + DM Mono load from Google (no local
+     files for those two). Sniglet is self-hosted via city-connector.css
+     (the .ttf you sent), so it's not requested here too. -->
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Montserrat:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="city-connector.css">
+<style>body { margin: 0; background: #000; display: grid; place-items: center; min-height: 100vh; }</style>
 </head>
 <body>
 
-<div class="bezel">
-  <div class="sign">
-    <div class="glow glow-1" aria-hidden="true"></div>
-    <div class="glow glow-2" aria-hidden="true"></div>
+<!-- Put this once anywhere in <body>: the hand-drawn wobble used by bubbles + route line -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="cc-wobble" x="-10%" y="-10%" width="120%" height="120%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="4"/>
+    <feDisplacementMap in="SourceGraphic" scale="4"/>
+  </filter>
+</svg>
 
-    <div class="brand-row">
-      <span class="brand-name">City Connector<span class="dot">.</span></span>
-      <span class="brand-loc">Chestnut St &amp; 43rd St</span>
-    </div>
+<main class="cc-screen">
 
-    <div class="block">
-      <div class="block-label">Incoming — Route 21</div>
-      <div id="arrivals"></div>
-      <div class="incoming-status" id="status">Loading…</div>
-    </div>
+  <header class="cc-topbar">
+    <div class="cc-brand">City Connector<span class="cc-brand__dot">.</span></div>
+    <div class="cc-stop" data-bind="stopName">Chestnut St &amp; 43rd St</div>
+  </header>
 
-    <div class="block">
-      <div class="block-label">Featured perspective</div>
-      <div class="featured-card" id="featuredCard"></div>
-    </div>
-
-    <div class="block">
-      <div class="block-label">What people are noticing</div>
-      <div class="bubble-cluster" id="bubbleCluster"></div>
-    </div>
-
-    <div class="block">
-      <div class="cta-row">
-        <svg class="qr-placeholder" id="qrPlaceholder" viewBox="0 0 29 29" aria-hidden="true"></svg>
-        <div class="cta-copy">Display your perspective on the screen</div>
+  <section class="cc-bus" aria-label="Next bus">
+    <div class="cc-bus__left">
+      <div class="cc-bus__row">
+        <span class="cc-route-pill" data-bind="route">21</span>
+        <span class="cc-bus__note" data-bind="arrivalNote">arrives 12:10 am</span>
       </div>
+      <div class="cc-destination" data-bind="destination">Columbus-Dock</div>
     </div>
-  </div>
-</div>
+    <!-- add class "cc-eta--scheduled" when the time isn't live -->
+    <div class="cc-eta" id="eta">
+      <span class="cc-eta__num" data-bind="minutes">26</span>
+      <span class="cc-eta__unit">MIN</span>
+    </div>
+  </section>
+
+  <section class="cc-chamber" aria-label="What people feel at this stop">
+    <svg class="cc-route-line" viewBox="0 0 516 700" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M-10 170 C 60 150 120 190 170 140 S 300 20 380 120 S 520 150 520 300"/>
+      <path d="M-10 690 C 80 650 150 700 250 520 S 420 700 530 610"/>
+      <circle cx="170" cy="140" r="7"/><circle cx="380" cy="120" r="7"/><circle cx="250" cy="520" r="7"/>
+    </svg>
+
+    <!-- Call to action: a specific question + big QR, at eye level -->
+    <div class="cc-cta">
+      <div class="cc-cta__text">
+        <div class="cc-cta__question">Share a memory for this stop?</div>
+        <div class="cc-cta__sub"><span data-bind="peopleCount">121</span> people have answered · a quick scan to submit!</div>
+      </div>
+      <div class="cc-qr"><!-- your real QR code <img> or <svg> goes here --></div>
+    </div>
+
+    <!-- two small decorative dots (no words) -->
+    <div class="cc-bubble cc-bubble--red cc-float-1" style="--d:52; --x:300; --y:722; animation-delay:-3s"></div>
+    <div class="cc-bubble cc-bubble--blue cc-float-1" style="--d:22; --x:470; --y:294; animation-delay:-2s"></div>
+
+    <!-- Bubbles are rendered by the script below from your keyword data -->
+    <div id="bubbles"></div>
+
+    <div class="cc-route-note">Route <span data-bind="route">21</span> →</div>
+
+    <article class="cc-postcard" id="postcard">
+      <div class="cc-postcard__tape"></div>
+      <img class="cc-postcard__photo" data-bind-src="photo" src="images/featured.jpg" alt="">
+      <p class="cc-postcard__quote">“<span data-bind="quote">Midway under snow storm!</span>”</p>
+      <div class="cc-postcard__meta">
+        <span data-bind="author">Lucy Huang</span>
+        <span data-bind="date">2022/ 01/03</span>
+      </div>
+    </article>
+  </section>
+
+</main>
 
 <script>
-  const API_BASE = 'https://bus-interface-project.vercel.app';
-  const STOP_ID = '590';
-  const ROUTES = ['21'];
-  const ARRIVALS_TO_SHOW = 3;
-  const POLL_MS = 20000;
+/* ---------------------------------------------------------------------------
+   Minimal wiring, as shipped in the design — kept as-is.
+   --------------------------------------------------------------------------- */
 
-  const statusEl = document.getElementById('status');
-  const listEl = document.getElementById('arrivals');
+// Fixed spots in the chamber (design px), biggest spot first.
+// Keeping positions fixed avoids jitter/overlap on a public screen.
+const SLOTS = [
+  { x: 342, y: 556, max: 156 }, { x: 24,  y: 144, max: 118 },
+  { x: 56,  y: 636, max: 104 }, { x: 264, y: 140, max: 88  },
+  { x: 196, y: 660, max: 82  }, { x: 170, y: 168, max: 66  },
+  { x: 440, y: 144, max: 58  }, { x: 452, y: 340, max: 56  },
+];
+const COLORS = ['mint', 'red', 'pink', 'blue', 'blue', 'mint', 'pink', 'red']; // one per slot, so neighbours differ
+const FLOATS = ['cc-float-2', 'cc-float-1', 'cc-float-3'];
 
-  function formatClockTime(iso){
-    return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
-  }
+function renderBubbles(keywords) {
+  const top = [...keywords].sort((a, b) => b.count - a.count).slice(0, SLOTS.length);
+  const maxCount = top[0]?.count || 1;
+  const MAX_D = 156, MIN_D = 50;
+  document.getElementById('bubbles').innerHTML = top.map((k, i) => {
+    const slot = SLOTS[i];
+    // area tracks count: diameter ∝ √count (top word = MAX_D), clamped, never bigger than its slot
+    const d = Math.round(Math.min(slot.max, Math.max(MIN_D, MAX_D * Math.sqrt(k.count / maxCount))));
+    const cx = slot.x + (slot.max - d) / 2, cy = slot.y + (slot.max - d) / 2; // keep centred in slot
+    return `<div class="cc-bubble cc-bubble--${COLORS[i]} ${FLOATS[i % 3]}"
+                 style="--d:${d}; --x:${cx}; --y:${cy}; animation-delay:-${i * 1.3}s">
+              <span>${escapeHtml(k.word)}</span></div>`;
+  }).join('');
+}
 
-  function renderArrivals(items){
-    listEl.innerHTML = '';
-    items.forEach(a => {
-      const row = document.createElement('div');
-      row.className = 'incoming-row';
-      row.innerHTML = `
-        <span class="route-badge">${a.route}</span>
-        <span class="route-dest">${a.destination || '—'}</span>
-        <span class="route-tag ${a.live ? 'live' : 'scheduled'}">${a.live ? 'Live' : 'Scheduled'}</span>
-        <span class="eta">
-          <div class="mins">${Math.max(0, a.etaMinutes)} <span class="unit">min</span></div>
-          <div class="clock">${formatClockTime(a.arrivalTimeIso)}</div>
-        </span>`;
-      listEl.appendChild(row);
-    });
-  }
+function render(data) {
+  document.querySelectorAll('[data-bind]').forEach(el => {
+    const v = data[el.dataset.bind]; if (v !== undefined) el.textContent = v;
+  });
+  document.querySelectorAll('[data-bind-src]').forEach(el => {
+    const v = data[el.dataset.bindSrc]; if (v) el.src = v;
+  });
+  document.getElementById('eta').classList.toggle('cc-eta--scheduled', !data.isLive);
+  renderBubbles(data.keywords);
+}
 
-  async function pollLiveData(){
-    try {
-      const res = await fetch(`${API_BASE}/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
-      const data = await res.json();
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 
-      if (data.arrivals && data.arrivals.length){
-        const next = data.arrivals.slice(0, ARRIVALS_TO_SHOW);
-        renderArrivals(next);
-        const liveCount = next.filter(a => a.live).length;
-        statusEl.textContent = `${liveCount}/${next.length} live · updated ${new Date().toLocaleTimeString()}`;
-      } else if (data.nextService){
-        renderArrivals([data.nextService]);
-        statusEl.textContent = 'No service right now — next scheduled trip shown';
-      } else {
-        listEl.innerHTML = '';
-        statusEl.textContent = 'No live or scheduled data returned.';
-      }
-    } catch (err) {
-      console.error('Live SEPTA fetch failed:', err);
-      statusEl.textContent = 'Fetch failed — retrying in 5s…';
-      setTimeout(pollLiveData, 5000);
-      return;
+// Keyword/postcard content — kept exactly as designed (not wired to a real
+// backend yet, per plan). Only the bus-arrival fields below are live.
+const SAMPLE_DATA = {
+  stopName: 'Chestnut St & 43rd St',
+  peopleCount: 121,
+  photo: 'images/featured.jpg', quote: 'Midway under snow storm!', author: 'Lucy Huang', date: '2022/ 01/03',
+  keywords: [
+    { word: 'Comforted', count: 48 }, { word: 'Energized', count: 27 }, { word: 'Nostalgic', count: 21 },
+    { word: 'In the rain', count: 15 }, { word: 'Back garden', count: 13 }, { word: 'Revisitor', count: 9 },
+    { word: 'Sunset', count: 7 }, { word: 'Architecture', count: 6 },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Live bus data — same pattern used throughout this project: SEPTA route 21
+// at Chestnut St & 43rd St (stop 590), absolute URL to the deployed API (so
+// this works opened standalone too), live preferred with a scheduled
+// fallback, polled every 20s.
+// ---------------------------------------------------------------------------
+const API_BASE = 'https://bus-interface-project.vercel.app';
+const STOP_ID = '590';
+const ROUTES = ['21'];
+const POLL_MS = 20000;
+
+function formatArrivalNote(iso){
+  const t = new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
+  return `arrives ${t}`;
+}
+
+async function pollLiveData(){
+  let busData = { route: '21', destination: '—', minutes: '—', isLive: false, arrivalNote: 'no data' };
+  try {
+    const res = await fetch(`${API_BASE}/api/stop-status?stopId=${STOP_ID}&routes=${ROUTES.join(',')}`);
+    const data = await res.json();
+    const next = (data.arrivals && data.arrivals[0]) || data.nextService;
+    if (next){
+      busData = {
+        route: next.route,
+        destination: next.destination || '—',
+        minutes: Math.max(0, next.etaMinutes),
+        isLive: !!next.live,
+        arrivalNote: formatArrivalNote(next.arrivalTimeIso),
+      };
     }
+  } catch (err) {
+    console.error('Live SEPTA fetch failed, keeping last known values:', err);
+    return; // don't stomp the screen with placeholder dashes on a transient failure
   }
+  render({ ...SAMPLE_DATA, ...busData });
+}
 
-  pollLiveData();
-  setInterval(pollLiveData, POLL_MS);
-
-  // -------------------------------------------------------------------
-  // Steps 3-6: perspectives (featured quote+image, keyword bubbles,
-  // submit CTA). Seed data stands in for real submissions — there's no
-  // backend yet, same "simulated data" approach used for the SEPTA
-  // fallback elsewhere in this project. state.submissions is the only
-  // source of truth; keyword counts are derived from it, never stored
-  // separately, so they can't drift out of sync.
-  //
-  // addSubmission() below isn't wired to any UI yet (no submit form
-  // this pass, per plan) — it exists now so that when the form (or a
-  // "simulate submission" demo button) is built next, it's a new
-  // *caller* of this same function, not a new code path.
-  // -------------------------------------------------------------------
-
-  const state = {
-    submissions: [
-      { id: 1, quote: 'This corner always smells like fresh bread from the bakery down the block. It’s the little things.', author: 'R. Chen', keywords: ['Local gems', 'Neighborly'], hue: 84 },
-      { id: 2, quote: 'I’ve waited at this stop for three years and I still notice something new about the block every week.', author: 'J. Alvarez', keywords: ['Nostalgic', 'Local gems'], hue: 210 },
-      { id: 3, quote: 'Busy in the morning, but everyone still says good morning to each other.', author: 'T. Okafor', keywords: ['Neighborly', 'Busy'], hue: 30 },
-      { id: 4, quote: 'The old rowhouses here have so much character — I always look up while I wait.', author: 'M. Singh', keywords: ['Historic', 'Local gems'], hue: 260 },
-      { id: 5, quote: 'Sometimes loud with traffic, but there’s a huge tree right here that makes it feel calmer.', author: 'L. Huang', keywords: ['Green space', 'Busy'], hue: 150 },
-      { id: 6, quote: 'This stop is where I met my now-roommate — we were both waiting in the rain.', author: 'A. Brooks', keywords: ['Nostalgic', 'Neighborly'], hue: 320 },
-      { id: 7, quote: 'Never miss the bus here — the schedule board actually helps.', author: 'D. Park', keywords: ['Convenient'], hue: 190 },
-      { id: 8, quote: 'The mural across the street changes my mood every time I see it.', author: 'S. Reyes', keywords: ['Local gems', 'Green space'], hue: 95 },
-    ],
-    featuredId: 6,
-  };
-
-  function keywordCounts(){
-    const counts = new Map();
-    state.submissions.forEach(s => {
-      s.keywords.forEach(k => counts.set(k, (counts.get(k) || 0) + 1));
-    });
-    return counts;
-  }
-
-  const featuredCardEl = document.getElementById('featuredCard');
-  function renderFeatured(){
-    const s = state.submissions.find(x => x.id === state.featuredId) || state.submissions[0];
-    if (!s) return;
-    featuredCardEl.innerHTML = `
-      <div class="featured-image" style="background:linear-gradient(135deg, hsl(${s.hue} 55% 22%), hsl(${s.hue + 40} 45% 12%));"></div>
-      <div class="featured-body">
-        <div class="featured-quote">${s.quote}</div>
-        <div class="featured-meta">
-          <span>${s.author}</span>
-          ${s.keywords.map(k => `<span class="kw">${k}</span>`).join('')}
-        </div>
-      </div>`;
-  }
-
-  const bubbleClusterEl = document.getElementById('bubbleCluster');
-  // Secondary palette — used only for the bubbles. Black + the lime
-  // accent stay the page's main colors everywhere else (brand, ETA,
-  // badges, glow), per the reference mockup where the multi-color
-  // treatment is specific to the perspective bubbles.
-  const BUBBLE_PALETTE = ['#0f9cd8', '#63b858', '#f25b43', '#f5a5be'];
-  function hexToRgb(hex){
-    const n = parseInt(hex.slice(1), 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  }
-  // Hashed (not random/cyclic by position) so the same keyword always
-  // lands on the same color across re-renders, even as the sorted
-  // order shifts when counts change.
-  function hashString(str){
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0;
-    return Math.abs(hash);
-  }
-  function colorForKeyword(keyword){
-    return BUBBLE_PALETTE[hashString(keyword) % BUBBLE_PALETTE.length];
-  }
-  // Stable per-keyword (not Math.random(), which would reshuffle the
-  // drift every re-render) so each bubble keeps its own float rhythm —
-  // duration 5-9s, delay 0-4s, offset so they don't move in unison.
-  function floatTimingForKeyword(keyword){
-    const h = hashString(keyword + '\u0001');
-    return { duration: 5 + (h % 40) / 10, delay: -((h >> 4) % 40) / 10 };
-  }
-
-  function renderBubbles(){
-    const counts = [...keywordCounts().entries()];
-    if (!counts.length) { bubbleClusterEl.innerHTML = ''; return; }
-    const max = Math.max(...counts.map(([, n]) => n));
-    const min = Math.min(...counts.map(([, n]) => n));
-    // Bubble DIAMETER scales with sqrt(count), not count directly — a
-    // circle's visual area (not its radius) is what reads as "how much
-    // bigger", and area grows with the square of diameter. Using count
-    // directly would make a 4x-mentioned keyword look 4x wider (16x the
-    // area), wildly overstating the difference.
-    const minD = 56, maxD = 106;
-    bubbleClusterEl.innerHTML = counts
-      .sort((a, b) => b[1] - a[1])
-      .map(([keyword, count]) => {
-        const t = max === min ? 1 : (Math.sqrt(count) - Math.sqrt(min)) / (Math.sqrt(max) - Math.sqrt(min));
-        const d = Math.round(minD + t * (maxD - minD));
-        const fontSize = Math.max(9.5, Math.min(13, 9.5 + t * 3.5));
-        const glowSize = 10 + t * 26;
-        const color = colorForKeyword(keyword);
-        const [r, g, b] = hexToRgb(color);
-        const { duration, delay } = floatTimingForKeyword(keyword);
-        return `<div class="bubble" style="width:${d}px;height:${d}px;font-size:${fontSize}px;background:${color};box-shadow:0 0 ${glowSize}px rgba(${r},${g},${b},${0.5 + t * 0.3});animation-duration:${duration}s;animation-delay:${delay}s;">${keyword}</div>`;
-      })
-      .join('');
-  }
-
-  // Decorative only — a QR-*shaped* placeholder (finder-pattern corners
-  // + a pseudo-random module grid), not a real scannable code. There's
-  // no live submission URL yet for it to encode.
-  function renderQrPlaceholder(){
-    const svg = document.getElementById('qrPlaceholder');
-    const n = 29;
-    let seed = 42;
-    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed / 0x7fffffff); };
-    const isFinder = (x, y) => {
-      const zones = [[0, 0], [n - 7, 0], [0, n - 7]];
-      return zones.some(([zx, zy]) => x >= zx && x < zx + 7 && y >= zy && y < zy + 7);
-    };
-    const drawFinder = (x, y) => `
-      <rect class="bg" x="${x}" y="${y}" width="7" height="7"/>
-      <rect x="${x}" y="${y}" width="7" height="7"/>
-      <rect class="bg" x="${x + 1}" y="${y + 1}" width="5" height="5"/>
-      <rect x="${x + 2}" y="${y + 2}" width="3" height="3"/>`;
-    let modules = '';
-    for (let y = 0; y < n; y++){
-      for (let x = 0; x < n; x++){
-        if (isFinder(x, y)) continue;
-        if (rand() > 0.56) modules += `<rect x="${x}" y="${y}" width="1" height="1"/>`;
-      }
-    }
-    svg.innerHTML = drawFinder(0, 0) + drawFinder(n - 7, 0) + drawFinder(0, n - 7) + modules;
-  }
-
-  function addSubmission({ quote, author, keywords, hue }){
-    const id = Math.max(0, ...state.submissions.map(s => s.id)) + 1;
-    state.submissions.push({ id, quote, author, keywords, hue: hue ?? Math.round(Math.random() * 360) });
-    state.featuredId = id;
-    renderFeatured();
-    renderBubbles();
-  }
-
-  renderFeatured();
-  renderBubbles();
-  renderQrPlaceholder();
+render({ ...SAMPLE_DATA, route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…' });
+pollLiveData();
+setInterval(pollLiveData, POLL_MS);
 </script>
 </body>
 </html>

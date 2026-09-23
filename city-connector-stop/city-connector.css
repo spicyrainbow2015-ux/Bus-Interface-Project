@@ -1,0 +1,316 @@
+/* =========================================================================
+   City Connector — bus stop screen styles (from design E8)
+   -------------------------------------------------------------------------
+   How to use
+   1. Link this file in your page <head>:
+        <link rel="stylesheet" href="city-connector.css">
+   2. Use the class names shown in city-connector-demo.html.
+      Layout top to bottom: .cc-topbar, .cc-bus, .cc-chamber (which holds
+      .cc-cta, the bubbles, the route line and .cc-postcard).
+   3. Put the tiny <svg> "wobble" filter from the demo once in <body>
+      (it gives the bubbles their hand-drawn outline).
+   4. Scale: the design is drawn at 540 x 960. For a 1080 x 1920 screen,
+      set  .cc-screen { --s: 2; }  and everything doubles.
+   ========================================================================= */
+
+/* ---------- Fonts ----------------------------------------------------------
+   Sniglet-Regular.ttf is the one font file actually provided, so it's
+   self-hosted below. Montserrat + DM Mono aren't in the project (no local
+   files for them) — they're loaded via the Google Fonts <link> in the HTML
+   head instead, so no @font-face rule for those two here (that would just
+   404 against a file that doesn't exist, harmlessly, but no reason to).
+   For a real kiosk build, download Montserrat/DM Mono too and add their
+   @font-face rules here the same way Sniglet's is set up.
+   -------------------------------------------------------------------------- */
+@font-face { font-family: "Sniglet"; src: url("fonts/Sniglet-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+
+/* ---------- Design tokens (change things here) ---------------------------- */
+:root {
+  /* surfaces */
+  --cc-bg: #121211;
+  --cc-chamber: #191918;
+  --cc-paper: #f4f1e8;
+  --cc-ink: #1a1a18;
+  --cc-muted: #b4b4ac;
+  --cc-muted-2: #a3a39b;
+  --cc-rule: #2a2a27;
+
+  /* accents */
+  --cc-lime: #d7f75b;
+  --cc-route: #c8423a;
+
+  /* bubble palette */
+  --cc-red: #f25b43;
+  --cc-blue: #0f9cd8;
+  --cc-mint: #94d8a7;
+  --cc-pink: #f5a5be;
+
+  /* type — two voices + labels */
+  --cc-font-transit: "Montserrat", system-ui, sans-serif;  /* the city speaks */
+  --cc-font-people: "Sniglet", system-ui, sans-serif;      /* people speak */
+  --cc-font-label: "DM Mono", ui-monospace, monospace;     /* small labels */
+}
+
+/* ---------- Screen -------------------------------------------------------- */
+.cc-screen {
+  --s: 1;                                   /* scale factor: 2 for 1080x1920 */
+  position: relative;
+  width: calc(540px * var(--s));
+  height: calc(960px * var(--s));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--cc-bg);
+  color: var(--cc-paper);
+  font-family: var(--cc-font-transit);
+}
+.cc-screen *, .cc-screen *::before, .cc-screen *::after { box-sizing: border-box; }
+
+/* ---------- Top bar ------------------------------------------------------- */
+.cc-topbar {
+  flex-shrink: 0;
+  height: calc(56px * var(--s));
+  padding: 0 calc(28px * var(--s));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: calc(1px * var(--s)) solid var(--cc-rule);
+}
+.cc-brand { font-size: calc(18px * var(--s)); font-weight: 800; letter-spacing: -0.01em; }
+.cc-brand__dot { color: var(--cc-lime); }
+.cc-stop { font-size: calc(14px * var(--s)); font-weight: 700; color: var(--cc-muted); }
+
+/* ---------- Next bus ------------------------------------------------------ */
+.cc-bus {
+  flex-shrink: 0;
+  margin: 0 calc(28px * var(--s));
+  padding: calc(14px * var(--s)) 0 calc(16px * var(--s));
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: calc(12px * var(--s));
+}
+.cc-bus__left { display: flex; flex-direction: column; gap: calc(8px * var(--s)); min-width: 0; }
+.cc-bus__row { display: flex; align-items: center; gap: calc(10px * var(--s)); }
+.cc-route-pill {
+  min-width: calc(52px * var(--s));
+  height: calc(36px * var(--s));
+  padding: 0 calc(12px * var(--s));
+  border-radius: 999px;
+  background: var(--cc-route);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(18px * var(--s));
+  font-weight: 800;
+}
+.cc-bus__note { font-family: var(--cc-font-label); font-size: calc(11px * var(--s)); color: var(--cc-muted); }
+.cc-destination {
+  font-size: calc(32px * var(--s));
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.015em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;                  /* long destination names */
+}
+.cc-eta { display: flex; align-items: baseline; gap: calc(6px * var(--s)); flex-shrink: 0; }
+.cc-eta__num {
+  font-size: calc(88px * var(--s));
+  font-weight: 800;
+  line-height: 0.85;
+  letter-spacing: -0.045em;
+  color: var(--cc-lime);
+  font-variant-numeric: tabular-nums;       /* digits don't jump as they change */
+}
+.cc-eta__unit { font-size: calc(20px * var(--s)); font-weight: 800; }
+/* when there is no live data, add .cc-eta--scheduled */
+.cc-eta--scheduled .cc-eta__num { color: var(--cc-paper); opacity: 0.85; }
+
+/* ---------- Chamber (bubbles + postcard) ---------------------------------- */
+.cc-chamber {
+  position: relative;
+  flex-grow: 1;
+  margin: 0 calc(12px * var(--s)) calc(12px * var(--s));
+  border-radius: calc(28px * var(--s));
+  overflow: hidden;
+  background: var(--cc-chamber);
+  border: calc(1px * var(--s)) solid rgba(244, 241, 232, 0.18);
+}
+/* ---------- Call to action (top of the chamber, at eye level) ----------- */
+.cc-cta {
+  position: absolute;
+  left: calc(12px * var(--s));
+  right: calc(12px * var(--s));
+  top: calc(12px * var(--s));
+  height: calc(100px * var(--s));
+  padding: calc(12px * var(--s)) calc(12px * var(--s)) calc(12px * var(--s)) calc(20px * var(--s));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(16px * var(--s));
+  border-radius: calc(18px * var(--s));
+  background: rgba(244, 241, 232, 0.07);
+  border: calc(1px * var(--s)) solid rgba(244, 241, 232, 0.2);
+  z-index: 4;
+}
+.cc-cta__text { display: flex; flex-direction: column; gap: calc(6px * var(--s)); min-width: 0; }
+.cc-cta__question { font-family: var(--cc-font-people); font-size: calc(27px * var(--s)); line-height: 1.05; }
+.cc-cta__sub { font-family: var(--cc-font-label); font-size: calc(11px * var(--s)); color: var(--cc-muted); }
+.cc-qr {
+  flex-shrink: 0;
+  width: calc(76px * var(--s));
+  height: calc(76px * var(--s));
+  padding: calc(7px * var(--s));
+  border-radius: calc(8px * var(--s));
+  background: var(--cc-lime);
+}
+.cc-qr img, .cc-qr svg { display: block; width: 100%; height: 100%; }
+
+.cc-route-line {                            /* the hand-drawn route svg */
+  position: absolute;
+  left: 0;
+  top: calc(104px * var(--s));             /* starts below the call to action */
+  width: calc(516px * var(--s));
+  height: calc(700px * var(--s));
+  pointer-events: none;
+}
+.cc-route-line path { fill: none; stroke: var(--cc-paper); stroke-opacity: 0.4; stroke-width: 3; stroke-linecap: round; filter: url(#cc-wobble); }
+.cc-route-line circle { fill: var(--cc-chamber); stroke: var(--cc-paper); stroke-opacity: 0.6; stroke-width: 2.5; }
+.cc-route-note {
+  position: absolute;
+  right: calc(32px * var(--s));
+  bottom: calc(18px * var(--s));
+  font-family: var(--cc-font-people);
+  font-size: calc(14px * var(--s));
+  opacity: 0.6;
+}
+
+/* ---------- Keyword bubbles ----------------------------------------------
+   Markup:  <div class="cc-bubble cc-bubble--mint cc-float-2"
+                 style="--d:156; --x:342; --y:452"><span>Comforted</span></div>
+   --d = diameter, --x/--y = position inside the chamber (all in design px;
+   the chamber's top 112px belong to the call to action).
+   Size rule: d is proportional to sqrt(count), clamped ~50–160.
+   -------------------------------------------------------------------------- */
+.cc-bubble {
+  --d: 80; --x: 0; --y: 0;
+  --fill: var(--cc-blue);
+  --text: var(--cc-paper);
+  position: absolute;
+  left: calc(var(--x) * 1px * var(--s));
+  top: calc(var(--y) * 1px * var(--s));
+  width: calc(var(--d) * 1px * var(--s));
+  height: calc(var(--d) * 1px * var(--s));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  z-index: 1;
+}
+.cc-bubble::before {                        /* flat colour fill, nudged down-right */
+  content: "";
+  position: absolute;
+  inset: 6% 2% 2% 6%;
+  border-radius: 50%;
+  background: var(--fill);
+}
+.cc-bubble::after {                         /* hand-drawn outline, nudged up-left */
+  content: "";
+  position: absolute;
+  inset: 2% 6% 6% 2%;
+  border-radius: 50%;
+  border: calc(2px * var(--s)) solid var(--cc-paper);
+  filter: url(#cc-wobble);
+}
+.cc-bubble > span {
+  position: relative;
+  z-index: 1;
+  padding: 0 12%;
+  font-family: var(--cc-font-people);
+  font-size: max(calc(10px * var(--s)), calc(var(--d) * 0.13px * var(--s)));  /* scales with the bubble, never below 10px */
+  line-height: 1.05;
+  color: var(--text);
+  hyphens: auto;                            /* long words break inside small bubbles */
+  overflow-wrap: anywhere;
+}
+/* colour modifiers — dark text on the light colours for contrast */
+.cc-bubble--red  { --fill: var(--cc-red);  --text: var(--cc-paper); }
+.cc-bubble--blue { --fill: var(--cc-blue); --text: var(--cc-paper); }
+.cc-bubble--mint { --fill: var(--cc-mint); --text: var(--cc-ink); }
+.cc-bubble--pink { --fill: var(--cc-pink); --text: var(--cc-ink); }
+
+/* gentle floating — transform only, so it stays smooth on kiosk hardware */
+.cc-float-1 { animation: cc-float-1 7s ease-in-out infinite; }
+.cc-float-2 { animation: cc-float-2 9s ease-in-out infinite; }
+.cc-float-3 { animation: cc-float-3 8s ease-in-out infinite; }
+@keyframes cc-float-1 { 50% { transform: translate(calc(5px * var(--s)), calc(-12px * var(--s))); } }
+@keyframes cc-float-2 { 50% { transform: translate(calc(-8px * var(--s)), calc(-7px * var(--s))); } }
+@keyframes cc-float-3 { 50% { transform: translate(calc(4px * var(--s)), calc(10px * var(--s))); } }
+
+/* ---------- Featured postcard --------------------------------------------- */
+.cc-postcard {
+  position: absolute;
+  left: calc(52px * var(--s));
+  top: calc(254px * var(--s));
+  width: calc(412px * var(--s));
+  padding: calc(12px * var(--s)) calc(12px * var(--s)) calc(14px * var(--s));
+  display: flex;
+  flex-direction: column;
+  gap: calc(12px * var(--s));
+  border-radius: calc(12px * var(--s));
+  background: var(--cc-paper);
+  color: var(--cc-ink);
+  transform: rotate(-2deg);
+  box-shadow: 0 calc(30px * var(--s)) calc(60px * var(--s)) calc(-18px * var(--s)) rgba(0, 0, 0, 0.8);
+  z-index: 3;
+  transition: opacity 0.6s ease;            /* for crossfading to the next post */
+}
+.cc-postcard.is-leaving { opacity: 0; }
+.cc-postcard__tape {
+  position: absolute;
+  left: calc(170px * var(--s));
+  top: calc(-12px * var(--s));
+  width: calc(72px * var(--s));
+  height: calc(24px * var(--s));
+  background: var(--cc-lime);
+  opacity: 0.85;
+  transform: rotate(4deg);
+}
+.cc-postcard__photo {
+  display: block;
+  width: 100%;
+  height: calc(248px * var(--s));
+  object-fit: cover;
+  border: calc(2px * var(--s)) solid var(--cc-ink);
+  border-radius: calc(12px * var(--s));
+  background: #d9d4c6;                      /* shows while the photo loads */
+}
+.cc-postcard__quote {
+  margin: 0;
+  padding: 0 calc(4px * var(--s));
+  font-family: var(--cc-font-people);
+  font-size: calc(32px * var(--s));
+  line-height: 1.1;
+  display: -webkit-box;                     /* cap long quotes at 2 lines */
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cc-postcard__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: calc(8px * var(--s)) calc(4px * var(--s)) 0;
+  border-top: calc(1px * var(--s)) solid var(--cc-ink);
+  font-family: var(--cc-font-label);
+  font-size: calc(12px * var(--s));
+}
+
+/* ---------- Accessibility ------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cc-float-1, .cc-float-2, .cc-float-3 { animation: none; }
+  .cc-postcard { transition: none; }
+}
