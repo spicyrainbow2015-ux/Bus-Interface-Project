@@ -79,7 +79,7 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .route-tag{
-    display:inline-block; margin-left:7px;
+    flex:0 0 auto; margin-left:7px;
     font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
     padding:2px 6px; border-radius:5px;
   }
@@ -162,7 +162,8 @@
       row.className = 'incoming-row';
       row.innerHTML = `
         <span class="route-badge">${a.route}</span>
-        <span class="route-dest">${a.destination || '—'}<span class="route-tag ${a.live ? 'live' : 'scheduled'}">${a.live ? 'Live' : 'Scheduled'}</span></span>
+        <span class="route-dest">${a.destination || '—'}</span>
+        <span class="route-tag ${a.live ? 'live' : 'scheduled'}">${a.live ? 'Live' : 'Scheduled'}</span>
         <span class="eta">
           <div class="mins">${Math.max(0, a.etaMinutes)} <span class="unit">min</span></div>
           <div class="clock">${formatClockTime(a.arrivalTimeIso)}</div>

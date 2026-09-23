@@ -236,21 +236,27 @@ module.exports = async (req, res) => {
     // skipped) than genuinely "0 min away" — trust the live read over the
     // timetable whenever both are in play.
     //
-    // Second guard: skip scheduled-only guesses entirely for a route with
-    // an active detour/disruption right now. Confirmed live: a real
-    // service change (SEPTA publishes route_info detour text) can retime,
-    // combine, or skip trips the static timetable doesn't know about —
-    // showing the timetable's guess anyway is how two scheduled entries
-    // that don't correspond to any real bus every showed up in testing
-    // during an active reroute, when Google Maps' own prediction (backed
-    // by the same underlying real-time feed) correctly omitted them.
+    // Second guard: a route with an active detour/disruption right now
+    // can't fully trust its own timetable — a real service change (SEPTA
+    // publishes route_info detour text) can retime, combine, or skip
+    // trips the static schedule doesn't know about. Showing every
+    // scheduled guess anyway is how two scheduled entries that didn't
+    // correspond to any real bus once showed up in testing during an
+    // active reroute, when Google Maps' own prediction (backed by the
+    // same underlying real-time feed) correctly omitted them.
+    //
+    // Rather than suppressing scheduled guesses on a disrupted route
+    // entirely, allow through just the single earliest one — riders
+    // still get a "next bus" instead of nothing, it's honestly labeled
+    // scheduled (not live), and one low-confidence guess is a smaller
+    // risk than the cascading multiple we saw go wrong.
     const disruptedRoutes = new Set(detoursByRoute.flat().map(d => d.route));
     const liveEtas = arrivals.filter(a => a.live).map(a => a.etaMinutes);
     const earliestLiveEta = liveEtas.length ? Math.min(...liveEtas) : null;
+    const scheduledCandidates = [];
 
     for (const [tripId, info] of tripToInfo) {
       if (matchedTripIds.has(tripId)) continue;
-      if (disruptedRoutes.has(info.route)) continue;
       const scheduledMs = midnightUtcMs + info.seconds * 1000;
       const etaMinutes = Math.round((scheduledMs - Date.now()) / 60000);
       // Unlike live entries (which get a few minutes of slack either way —
@@ -260,7 +266,7 @@ module.exports = async (req, res) => {
       if (etaMinutes < 0 || etaMinutes > 90) continue;
       if (earliestLiveEta !== null && etaMinutes <= earliestLiveEta) continue;
 
-      arrivals.push({
+      scheduledCandidates.push({
         route: info.route,
         vehicleId: null,
         etaMinutes,
@@ -271,6 +277,16 @@ module.exports = async (req, res) => {
         fullness: null,
         seatAvailabilityRaw: null,
       });
+    }
+
+    scheduledCandidates.sort((a, b) => a.etaMinutes - b.etaMinutes);
+    const seenScheduledForDisruptedRoute = new Set();
+    for (const candidate of scheduledCandidates) {
+      if (disruptedRoutes.has(candidate.route)) {
+        if (seenScheduledForDisruptedRoute.has(candidate.route)) continue;
+        seenScheduledForDisruptedRoute.add(candidate.route);
+      }
+      arrivals.push(candidate);
     }
 
     arrivals.sort((a, b) => a.etaMinutes - b.etaMinutes);
