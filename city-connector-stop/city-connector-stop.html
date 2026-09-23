@@ -161,6 +161,21 @@
     text-align:center; padding:4px;
     color:#fff; font-weight:700; line-height:1.1;
     word-break:break-word;
+    animation-name:bubble-float; animation-timing-function:ease-in-out; animation-iteration-count:infinite;
+    /* duration/delay are randomized per bubble (inline style) so they
+       drift out of sync with each other, not in robotic unison */
+  }
+  /* A gentle multi-directional wobble, not a simple up/down bob — reads
+     more like something floating in water/air than a mechanical bounce.
+     transform only, so this never affects the flex layout around it. */
+  @keyframes bubble-float{
+    0%,100%{ transform:translate(0,0); }
+    25%{ transform:translate(4px,-5px); }
+    50%{ transform:translate(-3px,2px); }
+    75%{ transform:translate(-4px,-3px); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .bubble{ animation:none; }
   }
 
   /* ---- Step 6: share-your-perspective — small, a placeholder QR
@@ -325,7 +340,7 @@
   // accent stay the page's main colors everywhere else (brand, ETA,
   // badges, glow), per the reference mockup where the multi-color
   // treatment is specific to the perspective bubbles.
-  const BUBBLE_PALETTE = ['#0f9cd8', '#ffc740', '#f25b43', '#f5a5be'];
+  const BUBBLE_PALETTE = ['#0f9cd8', '#63b858', '#f25b43', '#f5a5be'];
   function hexToRgb(hex){
     const n = parseInt(hex.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -333,10 +348,20 @@
   // Hashed (not random/cyclic by position) so the same keyword always
   // lands on the same color across re-renders, even as the sorted
   // order shifts when counts change.
-  function colorForKeyword(keyword){
+  function hashString(str){
     let hash = 0;
-    for (let i = 0; i < keyword.length; i++) hash = (hash * 31 + keyword.charCodeAt(i)) | 0;
-    return BUBBLE_PALETTE[Math.abs(hash) % BUBBLE_PALETTE.length];
+    for (let i = 0; i < str.length; i++) hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    return Math.abs(hash);
+  }
+  function colorForKeyword(keyword){
+    return BUBBLE_PALETTE[hashString(keyword) % BUBBLE_PALETTE.length];
+  }
+  // Stable per-keyword (not Math.random(), which would reshuffle the
+  // drift every re-render) so each bubble keeps its own float rhythm —
+  // duration 5-9s, delay 0-4s, offset so they don't move in unison.
+  function floatTimingForKeyword(keyword){
+    const h = hashString(keyword + '\u0001');
+    return { duration: 5 + (h % 40) / 10, delay: -((h >> 4) % 40) / 10 };
   }
 
   function renderBubbles(){
@@ -359,7 +384,8 @@
         const glowSize = 10 + t * 26;
         const color = colorForKeyword(keyword);
         const [r, g, b] = hexToRgb(color);
-        return `<div class="bubble" style="width:${d}px;height:${d}px;font-size:${fontSize}px;background:${color};box-shadow:0 0 ${glowSize}px rgba(${r},${g},${b},${0.5 + t * 0.3});">${keyword}</div>`;
+        const { duration, delay } = floatTimingForKeyword(keyword);
+        return `<div class="bubble" style="width:${d}px;height:${d}px;font-size:${fontSize}px;background:${color};box-shadow:0 0 ${glowSize}px rgba(${r},${g},${b},${0.5 + t * 0.3});animation-duration:${duration}s;animation-delay:${delay}s;">${keyword}</div>`;
       })
       .join('');
   }
