@@ -30,14 +30,18 @@
   }
 
   /* ---- Step 1: bezel/panel skeleton — same portrait-screen system as
-     Curb Signal (black frame, 360px, rounded inner screen), recolored
-     to City Connector's dark + lime language. ---- */
+     Curb Signal (black frame, rounded inner screen), recolored to City
+     Connector's dark + lime language. Widened from 360 to 440px (and
+     paddings tightened throughout) specifically to cut the panel's
+     overall height — more horizontal room means the featured card can
+     go image-beside-quote instead of stacked, and bubbles wrap to
+     fewer rows. ---- */
   .bezel{
     background:var(--panel-bezel);
     border-radius:20px;
     padding:14px;
     box-shadow:var(--shadow);
-    width:360px; max-width:100%;
+    width:440px; max-width:100%;
   }
   .sign{
     position:relative;
@@ -61,13 +65,13 @@
 
   .brand-row{
     display:flex; align-items:baseline; justify-content:space-between;
-    padding:16px 18px 12px; border-bottom:1px solid var(--line);
+    padding:12px 18px 10px; border-bottom:1px solid var(--line);
   }
   .brand-name{ font-size:14px; font-weight:800; letter-spacing:.01em; color:var(--white); }
   .brand-name .dot{ color:var(--accent); }
   .brand-loc{ font-size:10.5px; color:var(--muted); font-weight:600; }
 
-  .block{ padding:16px 18px; border-bottom:1px solid var(--line); }
+  .block{ padding:12px 18px; border-bottom:1px solid var(--line); }
   .block:last-child{ border-bottom:0; }
   .block-label{
     font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
@@ -78,7 +82,7 @@
      verified in the previous pass — fetch/fallback logic unchanged). ---- */
   .incoming-row{
     display:flex; align-items:center; gap:12px;
-    padding:11px 0; border-bottom:1px solid var(--line);
+    padding:8px 0; border-bottom:1px solid var(--line);
   }
   .incoming-row:last-child{ border-bottom:0; }
   .route-badge{
@@ -113,20 +117,25 @@
      photo yet — each submission gets a stable-looking gradient rather
      than a plain gray box, without adding any image weight to load. ---- */
   .featured-card{
+    display:flex; align-items:stretch; gap:0;
     border-radius:12px; overflow:hidden;
     background:var(--screen-bg-2);
     box-shadow:0 0 30px -6px var(--glow), inset 0 0 0 1px var(--line);
   }
-  .featured-image{ height:120px; }
-  .featured-body{ padding:14px 16px 16px; }
+  /* Image beside the quote, not stacked above it — the single biggest
+     height saving in this pass. Fixed width, stretches to the card's
+     own height rather than carrying a height of its own. */
+  .featured-image{ flex:0 0 96px; }
+  .featured-body{ flex:1; min-width:0; padding:12px 16px; }
   .featured-quote{
-    color:var(--white); font-size:13.5px; font-weight:500; line-height:1.45;
-    margin-bottom:10px;
+    color:var(--white); font-size:13px; font-weight:500; line-height:1.4;
+    margin-bottom:8px;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
   }
   .featured-quote::before{ content:'\201C'; color:var(--accent); font-weight:800; }
   .featured-quote::after{ content:'\201D'; color:var(--accent); font-weight:800; }
   .featured-meta{
-    display:flex; align-items:center; gap:6px;
+    display:flex; align-items:center; flex-wrap:wrap; gap:6px;
     font-size:10px; color:var(--muted); font-weight:600;
   }
   .featured-meta .kw{
