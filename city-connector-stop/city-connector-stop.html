@@ -18,6 +18,7 @@
     --accent-ink:   #10130a; /* dark text for on-accent surfaces */
     --route-red:    #d1332f; /* kept from the other prototypes' SEPTA-red badge convention */
     --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 20px 44px -20px rgba(0,0,0,0.6);
+    --glow: rgba(214,255,59,0.5); /* the foggy/glowy accent light, echoing the mailbox's glow */
   }
   *{box-sizing:border-box;}
   [hidden]{display:none !important;}
@@ -39,12 +40,24 @@
     width:360px; max-width:100%;
   }
   .sign{
+    position:relative;
     background:var(--screen-bg);
     border-radius:10px;
     overflow:hidden;
     display:flex; flex-direction:column;
     box-shadow:0 0 0 1px var(--line);
   }
+  /* Ambient foggy glow blobs, blurred and mostly off-canvas — the same
+     soft-light language as the mailbox reference and the City Connector
+     brand mark's blurred orb. Decorative only (aria-hidden), sits behind
+     everything via z-index. */
+  .glow{
+    position:absolute; z-index:0; border-radius:50%;
+    filter:blur(46px); pointer-events:none;
+  }
+  .glow-1{ width:220px; height:220px; top:-80px; right:-70px; background:radial-gradient(circle, var(--glow), transparent 70%); opacity:.55; }
+  .glow-2{ width:180px; height:180px; bottom:60px; left:-60px; background:radial-gradient(circle, var(--glow), transparent 70%); opacity:.3; }
+  .sign > *:not(.glow){ position:relative; z-index:1; }
 
   .brand-row{
     display:flex; align-items:baseline; justify-content:space-between;
@@ -93,20 +106,68 @@
     margin-top:10px; font-size:10px; color:var(--muted); font-weight:600;
   }
 
-  /* ---- Placeholders for everything not built yet — deliberately
-     plain/undesigned so it's obvious what's scaffolding vs finished. ---- */
-  .placeholder{
-    border:1.5px dashed var(--line); border-radius:8px;
-    padding:18px; text-align:center;
-    color:var(--muted); font-size:11.5px; line-height:1.5;
+  /* ---- Step 3-4: featured perspective (one seeded submission, shown
+     big) — a soft frosted card with its own faint glow, matching the
+     mailbox reference's glass-and-light feel. The "image" is a color
+     placeholder (no photo asset), since there's no real submitted
+     photo yet — each submission gets a stable-looking gradient rather
+     than a plain gray box, without adding any image weight to load. ---- */
+  .featured-card{
+    border-radius:12px; overflow:hidden;
+    background:var(--screen-bg-2);
+    box-shadow:0 0 30px -6px var(--glow), inset 0 0 0 1px var(--line);
   }
-  .placeholder strong{ display:block; color:rgba(255,255,255,0.75); font-size:12.5px; margin-bottom:4px; }
+  .featured-image{ height:120px; }
+  .featured-body{ padding:14px 16px 16px; }
+  .featured-quote{
+    color:var(--white); font-size:13.5px; font-weight:500; line-height:1.45;
+    margin-bottom:10px;
+  }
+  .featured-quote::before{ content:'\201C'; color:var(--accent); font-weight:800; }
+  .featured-quote::after{ content:'\201D'; color:var(--accent); font-weight:800; }
+  .featured-meta{
+    display:flex; align-items:center; gap:6px;
+    font-size:10px; color:var(--muted); font-weight:600;
+  }
+  .featured-meta .kw{
+    padding:2px 7px; border-radius:999px;
+    background:rgba(214,255,59,0.12); color:var(--accent);
+    font-weight:700; font-size:9.5px; text-transform:uppercase; letter-spacing:.03em;
+  }
+
+  /* ---- Step 5: keyword bubbles — size (and glow intensity) computed
+     per-bubble from how often that theme comes up across submissions.
+     Plain flex-wrap layout, not a manual packing algorithm: cheap, and
+     the browser handles wrapping on its own. ---- */
+  .bubble-cluster{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:center;
+    gap:8px; padding:6px 0 2px;
+  }
+  .bubble{
+    border-radius:50%; display:flex; align-items:center; justify-content:center;
+    text-align:center; padding:4px;
+    background:rgba(214,255,59,0.1); border:1px solid rgba(214,255,59,0.35);
+    color:var(--accent); font-weight:700; line-height:1.1;
+    word-break:break-word;
+  }
+
+  /* ---- Step 6: share-your-perspective — small, a placeholder QR
+     graphic (decorative pattern, not a real scannable code yet — there's
+     no live submission URL to encode) plus short copy. ---- */
+  .cta-row{ display:flex; align-items:center; gap:12px; }
+  .qr-placeholder{ flex:0 0 auto; width:44px; height:44px; }
+  .qr-placeholder rect{ fill:var(--accent); }
+  .qr-placeholder .bg{ fill:none; }
+  .cta-copy{ color:rgba(255,255,255,0.82); font-size:11.5px; font-weight:600; line-height:1.35; }
 </style>
 </head>
 <body>
 
 <div class="bezel">
   <div class="sign">
+    <div class="glow glow-1" aria-hidden="true"></div>
+    <div class="glow glow-2" aria-hidden="true"></div>
+
     <div class="brand-row">
       <span class="brand-name">City Connector<span class="dot">.</span></span>
       <span class="brand-loc">Chestnut St &amp; 43rd St</span>
@@ -119,23 +180,19 @@
     </div>
 
     <div class="block">
-      <div class="placeholder">
-        <strong>Featured quote + image</strong>
-        one submitted perspective on this area, shown large — coming next
-      </div>
+      <div class="block-label">Featured perspective</div>
+      <div class="featured-card" id="featuredCard"></div>
     </div>
 
     <div class="block">
-      <div class="placeholder">
-        <strong>Keyword bubbles</strong>
-        sized by how often each theme comes up across submissions — coming next
-      </div>
+      <div class="block-label">What people are noticing</div>
+      <div class="bubble-cluster" id="bubbleCluster"></div>
     </div>
 
     <div class="block">
-      <div class="placeholder">
-        <strong>Share your perspective</strong>
-        invitation to submit (no form yet) — coming next
+      <div class="cta-row">
+        <svg class="qr-placeholder" id="qrPlaceholder" viewBox="0 0 29 29" aria-hidden="true"></svg>
+        <div class="cta-copy">Display your perspective on the screen</div>
       </div>
     </div>
   </div>
@@ -199,6 +256,120 @@
 
   pollLiveData();
   setInterval(pollLiveData, POLL_MS);
+
+  // -------------------------------------------------------------------
+  // Steps 3-6: perspectives (featured quote+image, keyword bubbles,
+  // submit CTA). Seed data stands in for real submissions — there's no
+  // backend yet, same "simulated data" approach used for the SEPTA
+  // fallback elsewhere in this project. state.submissions is the only
+  // source of truth; keyword counts are derived from it, never stored
+  // separately, so they can't drift out of sync.
+  //
+  // addSubmission() below isn't wired to any UI yet (no submit form
+  // this pass, per plan) — it exists now so that when the form (or a
+  // "simulate submission" demo button) is built next, it's a new
+  // *caller* of this same function, not a new code path.
+  // -------------------------------------------------------------------
+
+  const state = {
+    submissions: [
+      { id: 1, quote: 'This corner always smells like fresh bread from the bakery down the block. It’s the little things.', author: 'R. Chen', keywords: ['Local gems', 'Neighborly'], hue: 84 },
+      { id: 2, quote: 'I’ve waited at this stop for three years and I still notice something new about the block every week.', author: 'J. Alvarez', keywords: ['Nostalgic', 'Local gems'], hue: 210 },
+      { id: 3, quote: 'Busy in the morning, but everyone still says good morning to each other.', author: 'T. Okafor', keywords: ['Neighborly', 'Busy'], hue: 30 },
+      { id: 4, quote: 'The old rowhouses here have so much character — I always look up while I wait.', author: 'M. Singh', keywords: ['Historic', 'Local gems'], hue: 260 },
+      { id: 5, quote: 'Sometimes loud with traffic, but there’s a huge tree right here that makes it feel calmer.', author: 'L. Huang', keywords: ['Green space', 'Busy'], hue: 150 },
+      { id: 6, quote: 'This stop is where I met my now-roommate — we were both waiting in the rain.', author: 'A. Brooks', keywords: ['Nostalgic', 'Neighborly'], hue: 320 },
+      { id: 7, quote: 'Never miss the bus here — the schedule board actually helps.', author: 'D. Park', keywords: ['Convenient'], hue: 190 },
+      { id: 8, quote: 'The mural across the street changes my mood every time I see it.', author: 'S. Reyes', keywords: ['Local gems', 'Green space'], hue: 95 },
+    ],
+    featuredId: 6,
+  };
+
+  function keywordCounts(){
+    const counts = new Map();
+    state.submissions.forEach(s => {
+      s.keywords.forEach(k => counts.set(k, (counts.get(k) || 0) + 1));
+    });
+    return counts;
+  }
+
+  const featuredCardEl = document.getElementById('featuredCard');
+  function renderFeatured(){
+    const s = state.submissions.find(x => x.id === state.featuredId) || state.submissions[0];
+    if (!s) return;
+    featuredCardEl.innerHTML = `
+      <div class="featured-image" style="background:linear-gradient(135deg, hsl(${s.hue} 55% 22%), hsl(${s.hue + 40} 45% 12%));"></div>
+      <div class="featured-body">
+        <div class="featured-quote">${s.quote}</div>
+        <div class="featured-meta">
+          <span>${s.author}</span>
+          ${s.keywords.map(k => `<span class="kw">${k}</span>`).join('')}
+        </div>
+      </div>`;
+  }
+
+  const bubbleClusterEl = document.getElementById('bubbleCluster');
+  function renderBubbles(){
+    const counts = [...keywordCounts().entries()];
+    if (!counts.length) { bubbleClusterEl.innerHTML = ''; return; }
+    const max = Math.max(...counts.map(([, n]) => n));
+    const min = Math.min(...counts.map(([, n]) => n));
+    // Bubble DIAMETER scales with sqrt(count), not count directly — a
+    // circle's visual area (not its radius) is what reads as "how much
+    // bigger", and area grows with the square of diameter. Using count
+    // directly would make a 4x-mentioned keyword look 4x wider (16x the
+    // area), wildly overstating the difference.
+    const minD = 56, maxD = 106;
+    bubbleClusterEl.innerHTML = counts
+      .sort((a, b) => b[1] - a[1])
+      .map(([keyword, count]) => {
+        const t = max === min ? 1 : (Math.sqrt(count) - Math.sqrt(min)) / (Math.sqrt(max) - Math.sqrt(min));
+        const d = Math.round(minD + t * (maxD - minD));
+        const fontSize = Math.max(9.5, Math.min(13, 9.5 + t * 3.5));
+        const glow = 6 + t * 22;
+        return `<div class="bubble" style="width:${d}px;height:${d}px;font-size:${fontSize}px;box-shadow:0 0 ${glow}px rgba(214,255,59,${0.15 + t * 0.35});">${keyword}</div>`;
+      })
+      .join('');
+  }
+
+  // Decorative only — a QR-*shaped* placeholder (finder-pattern corners
+  // + a pseudo-random module grid), not a real scannable code. There's
+  // no live submission URL yet for it to encode.
+  function renderQrPlaceholder(){
+    const svg = document.getElementById('qrPlaceholder');
+    const n = 29;
+    let seed = 42;
+    const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed / 0x7fffffff); };
+    const isFinder = (x, y) => {
+      const zones = [[0, 0], [n - 7, 0], [0, n - 7]];
+      return zones.some(([zx, zy]) => x >= zx && x < zx + 7 && y >= zy && y < zy + 7);
+    };
+    const drawFinder = (x, y) => `
+      <rect class="bg" x="${x}" y="${y}" width="7" height="7"/>
+      <rect x="${x}" y="${y}" width="7" height="7"/>
+      <rect class="bg" x="${x + 1}" y="${y + 1}" width="5" height="5"/>
+      <rect x="${x + 2}" y="${y + 2}" width="3" height="3"/>`;
+    let modules = '';
+    for (let y = 0; y < n; y++){
+      for (let x = 0; x < n; x++){
+        if (isFinder(x, y)) continue;
+        if (rand() > 0.56) modules += `<rect x="${x}" y="${y}" width="1" height="1"/>`;
+      }
+    }
+    svg.innerHTML = drawFinder(0, 0) + drawFinder(n - 7, 0) + drawFinder(0, n - 7) + modules;
+  }
+
+  function addSubmission({ quote, author, keywords, hue }){
+    const id = Math.max(0, ...state.submissions.map(s => s.id)) + 1;
+    state.submissions.push({ id, quote, author, keywords, hue: hue ?? Math.round(Math.random() * 360) });
+    state.featuredId = id;
+    renderFeatured();
+    renderBubbles();
+  }
+
+  renderFeatured();
+  renderBubbles();
+  renderQrPlaceholder();
 </script>
 </body>
 </html>
