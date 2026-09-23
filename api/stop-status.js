@@ -235,11 +235,22 @@ module.exports = async (req, res) => {
     // dispatched by now but isn't live yet is more likely running late (or
     // skipped) than genuinely "0 min away" — trust the live read over the
     // timetable whenever both are in play.
+    //
+    // Second guard: skip scheduled-only guesses entirely for a route with
+    // an active detour/disruption right now. Confirmed live: a real
+    // service change (SEPTA publishes route_info detour text) can retime,
+    // combine, or skip trips the static timetable doesn't know about —
+    // showing the timetable's guess anyway is how two scheduled entries
+    // that don't correspond to any real bus every showed up in testing
+    // during an active reroute, when Google Maps' own prediction (backed
+    // by the same underlying real-time feed) correctly omitted them.
+    const disruptedRoutes = new Set(detoursByRoute.flat().map(d => d.route));
     const liveEtas = arrivals.filter(a => a.live).map(a => a.etaMinutes);
     const earliestLiveEta = liveEtas.length ? Math.min(...liveEtas) : null;
 
     for (const [tripId, info] of tripToInfo) {
       if (matchedTripIds.has(tripId)) continue;
+      if (disruptedRoutes.has(info.route)) continue;
       const scheduledMs = midnightUtcMs + info.seconds * 1000;
       const etaMinutes = Math.round((scheduledMs - Date.now()) / 60000);
       // Unlike live entries (which get a few minutes of slack either way —
