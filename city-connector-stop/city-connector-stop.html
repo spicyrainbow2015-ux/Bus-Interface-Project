@@ -152,11 +152,14 @@
     display:flex; flex-wrap:wrap; align-items:center; justify-content:center;
     gap:8px; padding:6px 0 2px;
   }
+  /* Fill/glow color is set per-bubble inline (from the secondary
+     palette below) — black + lime stay the page's main colors
+     everywhere else; this is the one place the secondary palette shows
+     up, matching the reference mockup. */
   .bubble{
     border-radius:50%; display:flex; align-items:center; justify-content:center;
     text-align:center; padding:4px;
-    background:rgba(214,255,59,0.1); border:1px solid rgba(214,255,59,0.35);
-    color:var(--accent); font-weight:700; line-height:1.1;
+    color:#fff; font-weight:700; line-height:1.1;
     word-break:break-word;
   }
 
@@ -318,6 +321,24 @@
   }
 
   const bubbleClusterEl = document.getElementById('bubbleCluster');
+  // Secondary palette — used only for the bubbles. Black + the lime
+  // accent stay the page's main colors everywhere else (brand, ETA,
+  // badges, glow), per the reference mockup where the multi-color
+  // treatment is specific to the perspective bubbles.
+  const BUBBLE_PALETTE = ['#0f9cd8', '#ffc740', '#f25b43', '#f5a5be'];
+  function hexToRgb(hex){
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  // Hashed (not random/cyclic by position) so the same keyword always
+  // lands on the same color across re-renders, even as the sorted
+  // order shifts when counts change.
+  function colorForKeyword(keyword){
+    let hash = 0;
+    for (let i = 0; i < keyword.length; i++) hash = (hash * 31 + keyword.charCodeAt(i)) | 0;
+    return BUBBLE_PALETTE[Math.abs(hash) % BUBBLE_PALETTE.length];
+  }
+
   function renderBubbles(){
     const counts = [...keywordCounts().entries()];
     if (!counts.length) { bubbleClusterEl.innerHTML = ''; return; }
@@ -335,8 +356,10 @@
         const t = max === min ? 1 : (Math.sqrt(count) - Math.sqrt(min)) / (Math.sqrt(max) - Math.sqrt(min));
         const d = Math.round(minD + t * (maxD - minD));
         const fontSize = Math.max(9.5, Math.min(13, 9.5 + t * 3.5));
-        const glow = 6 + t * 22;
-        return `<div class="bubble" style="width:${d}px;height:${d}px;font-size:${fontSize}px;box-shadow:0 0 ${glow}px rgba(214,255,59,${0.15 + t * 0.35});">${keyword}</div>`;
+        const glowSize = 10 + t * 26;
+        const color = colorForKeyword(keyword);
+        const [r, g, b] = hexToRgb(color);
+        return `<div class="bubble" style="width:${d}px;height:${d}px;font-size:${fontSize}px;background:${color};box-shadow:0 0 ${glowSize}px rgba(${r},${g},${b},${0.5 + t * 0.3});">${keyword}</div>`;
       })
       .join('');
   }
