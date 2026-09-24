@@ -71,6 +71,26 @@ function buildUserMessage(quote, existingKeywords){
   return `${themesLine}\n\nObservation: "${quote}"`;
 }
 
+// Finds the first *balanced* {...} object in text, unlike a greedy regex
+// (which grabs from the first "{" to the LAST "}" in the whole string —
+// if Claude adds any trailing note after the JSON, and that note happens
+// to contain its own "}", the regex swallows both and JSON.parse chokes
+// on the leftover text in between). This is what was causing every
+// "Refresh themes" call to fail outright.
+function extractFirstJsonObject(text){
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < text.length; i++){
+    if (text[i] === '{') depth++;
+    else if (text[i] === '}'){
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 async function extractTags(quote, existingKeywords){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -97,9 +117,16 @@ async function extractTags(quote, existingKeywords){
     parsed = JSON.parse(textOut);
   } catch {
     // Claude occasionally wraps the object in a little extra text despite
-    // instructions not to — fall back to pulling the first {...} out.
-    const match = textOut.match(/\{[\s\S]*\}/);
-    parsed = match ? JSON.parse(match[0]) : {};
+    // instructions not to — fall back to pulling the first balanced {...}
+    // out. If even that isn't valid JSON, treat it as no tags rather than
+    // throwing (a single malformed response shouldn't fail the whole batch).
+    const extracted = extractFirstJsonObject(textOut);
+    try {
+      parsed = extracted ? JSON.parse(extracted) : {};
+    } catch (err) {
+      console.error('refresh-themes: could not parse Claude response, skipping tags for this one:', textOut, err);
+      parsed = {};
+    }
   }
   const asStringList = (v) => Array.isArray(v) ? v.filter(t => typeof t === 'string' && t.trim()) : [];
   return { matched: asStringList(parsed.matched), new: asStringList(parsed.new) };
@@ -149,15 +176,20 @@ module.exports = async (req, res) => {
 
     const processed = [];
     for (const id of ids) {
-      const result = await processSubmission(id, existingKeywords);
-      if (result) processed.push(result);
+      try {
+        const result = await processSubmission(id, existingKeywords);
+        if (result) processed.push(result);
+      } catch (err) {
+        // One submission's Claude call failing (rate limit, transient API
+        // error, etc.) shouldn't block every other pending submission from
+        // being processed — log it and move on, same as a null result.
+        console.error(`refresh-themes: failed to process submission ${id}, skipping:`, err);
+      }
     }
 
     res.status(200).json({ ok: true, processedCount: processed.length, processed });
   } catch (err) {
     console.error('refresh-themes error:', err);
-    // TEMPORARY: surfacing err.message directly to the client to debug a
-    // live 500 without needing Vercel dashboard access — revert once found.
-    res.status(500).json({ ok: false, error: `Something went wrong refreshing themes: ${err.message}` });
+    res.status(500).json({ ok: false, error: 'Something went wrong refreshing themes.' });
   }
 };
