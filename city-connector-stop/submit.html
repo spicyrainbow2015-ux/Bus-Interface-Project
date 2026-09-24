@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Share your perspective — City Connector</title>
+<style>
+  :root{
+    --bg: #121211; --paper: #f4f1e8; --ink: #1a1a18;
+    --muted: #b4b4ac; --line: #2a2a27; --lime: #d7f75b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--paper);
+    font-family:-apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    padding:32px 20px 60px;
+  }
+  .wrap{ width:100%; max-width:420px; }
+  h1{ font-size:22px; font-weight:800; margin:0 0 6px; }
+  .stop{ font-size:13px; color:var(--muted); font-weight:600; margin:0 0 28px; }
+  label{ display:block; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 8px; }
+  textarea, input{
+    width:100%; background:#1c1c1a; border:1px solid var(--line); border-radius:10px;
+    color:var(--paper); font:inherit; font-size:15px; padding:12px 14px; margin:0 0 20px;
+  }
+  textarea{ min-height:120px; resize:vertical; }
+  textarea:focus, input:focus{ outline:2px solid var(--lime); outline-offset:1px; }
+  .count{ font-size:11px; color:var(--muted); text-align:right; margin:-14px 0 20px; }
+  button{
+    width:100%; padding:14px; border-radius:999px; border:none;
+    background:var(--lime); color:#10130a; font:inherit; font-size:15px; font-weight:800;
+    cursor:pointer;
+  }
+  button:disabled{ opacity:.6; cursor:default; }
+  button:hover:not(:disabled){ opacity:.9; }
+  .msg{ margin-top:18px; font-size:14px; text-align:center; line-height:1.5; }
+  .msg.success{ color:var(--lime); }
+  .msg.error{ color:#f25b43; }
+  .again{
+    display:none; margin-top:14px; width:100%; padding:12px; border-radius:999px;
+    border:1px solid var(--line); background:transparent; color:var(--paper); font:inherit; font-size:13px; cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Share a memory for this stop</h1>
+  <p class="stop">Chestnut St &amp; 43rd St</p>
+
+  <form id="form">
+    <label for="quote">Your perspective</label>
+    <textarea id="quote" maxlength="500" placeholder="What's this place like for you?" required></textarea>
+    <div class="count"><span id="charCount">0</span>/500</div>
+
+    <label for="author">Your name (optional)</label>
+    <input id="author" type="text" maxlength="60" placeholder="Anonymous">
+
+    <button id="submitBtn" type="submit">Submit</button>
+  </form>
+
+  <div class="msg" id="msg" hidden></div>
+  <button class="again" id="againBtn" type="button">Share another</button>
+</div>
+
+<script>
+  // Same stop this whole project uses, and a relative API path — this
+  // page is only ever reached by scanning the QR code, never opened as a
+  // standalone file, so (unlike the kiosk page) there's no need for the
+  // absolute-URL trick used elsewhere in this project.
+  const form = document.getElementById('form');
+  const quoteEl = document.getElementById('quote');
+  const authorEl = document.getElementById('author');
+  const charCountEl = document.getElementById('charCount');
+  const submitBtn = document.getElementById('submitBtn');
+  const msgEl = document.getElementById('msg');
+  const againBtn = document.getElementById('againBtn');
+
+  quoteEl.addEventListener('input', () => {
+    charCountEl.textContent = quoteEl.value.length;
+  });
+
+  function showMessage(text, type){
+    msgEl.textContent = text;
+    msgEl.className = `msg ${type}`;
+    msgEl.hidden = false;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const quote = quoteEl.value.trim();
+    if (!quote) return;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+    msgEl.hidden = true;
+
+    try {
+      const res = await fetch('/api/submit-perspective', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ quote, author: authorEl.value.trim() || 'Anonymous' }),
+      });
+      const data = await res.json();
+      if (data.ok){
+        form.hidden = true;
+        showMessage('Thanks — your perspective was added. It’ll show up on the sign soon.', 'success');
+        againBtn.style.display = 'block';
+      } else {
+        showMessage(data.error || 'Something went wrong. Please try again.', 'error');
+      }
+    } catch (err) {
+      console.error('Submission failed:', err);
+      showMessage('Couldn’t reach the server. Check your connection and try again.', 'error');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit';
+    }
+  });
+
+  againBtn.addEventListener('click', () => {
+    form.hidden = false;
+    form.reset();
+    charCountEl.textContent = '0';
+    msgEl.hidden = true;
+    againBtn.style.display = 'none';
+    quoteEl.focus();
+  });
+</script>
+</body>
+</html>

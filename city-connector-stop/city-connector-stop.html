@@ -95,12 +95,17 @@
 </main>
 
 <!-- Testing scaffolding, not part of the projection design — fixed so it
-     doesn't disturb the .cc-screen grid centering. Sends real sample text
-     through the real AI pipeline so the keyword-extraction/matching logic
-     can be watched working before there's a public-facing submission
-     form. -->
+     doesn't disturb the .cc-screen grid centering. Two separate buttons,
+     matching the two-phase design: "Simulate submission" only stores text
+     (Phase 1, no API call — same as the real /submit.html page), and
+     "Refresh themes" is the manual trigger that actually calls Claude
+     (Phase 2). Keeping them separate here mirrors how the real system
+     works: submitting never auto-triggers the AI call. -->
 <div id="devstrip" style="position:fixed; left:12px; bottom:12px; z-index:10; background:rgba(255,255,255,.94); border:1px dashed #999; border-radius:8px; padding:10px 12px; font:12px/1.4 system-ui, sans-serif; max-width:320px; color:#222;">
-  <button id="simulateBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Simulate submission (real AI call)</button>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button id="simulateBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Simulate submission (store only)</button>
+    <button id="refreshBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Refresh themes (real AI call)</button>
+  </div>
   <div id="simulateStatus" style="margin-top:6px; color:#555;"></div>
 </div>
 
@@ -265,9 +270,12 @@ async function fetchPerspectives(){
 }
 
 // ---------------------------------------------------------------------------
-// Testing only: sends real sample text through the real submit-perspective
-// pipeline (real Claude call, real Redis write) so the categorization logic
-// can be watched working before there's a public-facing submission form.
+// Testing only, matching the real two-phase system:
+//   1. "Simulate submission" — stores sample text (Phase 1, no AI call),
+//      exactly what /submit.html does for a real person.
+//   2. "Refresh themes" — the manual trigger that calls Claude on whatever
+//      is still pending (Phase 2). Separate on purpose: submitting never
+//      auto-triggers the AI call, here or in the real system.
 // ---------------------------------------------------------------------------
 const SAMPLE_SUBMISSIONS = [
   { quote: 'Watching the sunset from this bench is my favorite part of the day.', author: 'Test User' },
@@ -281,7 +289,7 @@ async function simulateSubmission(){
   const btn = document.getElementById('simulateBtn');
   const status = document.getElementById('simulateStatus');
   btn.disabled = true;
-  status.textContent = 'Sending to Claude…';
+  status.textContent = 'Storing submission…';
   const sample = SAMPLE_SUBMISSIONS[simIndex % SAMPLE_SUBMISSIONS.length];
   simIndex++;
   try {
@@ -291,20 +299,41 @@ async function simulateSubmission(){
       body: JSON.stringify(sample),
     });
     const result = await res.json();
-    if (result.ok){
-      status.textContent = `Categorized as: ${result.keywords.join(', ')}` +
-        (result.newKeywords.length ? ` (new bubble: ${result.newKeywords.join(', ')})` : ' (matched existing bubbles)');
-      await fetchPerspectives();
-    } else {
-      status.textContent = 'Rejected — flagged as inappropriate for display.';
-    }
+    status.textContent = result.ok
+      ? `Stored as pending (id ${result.id}). Click "Refresh themes" to process it.`
+      : (result.error || 'Failed to store.');
   } catch (err) {
     console.error('simulateSubmission failed:', err);
     status.textContent = 'Failed — see console.';
   }
   btn.disabled = false;
 }
+
+async function refreshThemes(){
+  const btn = document.getElementById('refreshBtn');
+  const status = document.getElementById('simulateStatus');
+  btn.disabled = true;
+  status.textContent = 'Sending pending submissions to Claude…';
+  try {
+    const res = await fetch(`${API_BASE}/api/refresh-themes`, { method: 'POST' });
+    const result = await res.json();
+    if (result.ok){
+      status.textContent = result.processedCount
+        ? `Processed ${result.processedCount}: ` + result.processed.map(p => p.keywords.join('/')).join(', ')
+        : 'Nothing pending to process.';
+      await fetchPerspectives();
+    } else {
+      status.textContent = result.error || 'Failed to refresh.';
+    }
+  } catch (err) {
+    console.error('refreshThemes failed:', err);
+    status.textContent = 'Failed — see console.';
+  }
+  btn.disabled = false;
+}
+
 document.getElementById('simulateBtn').addEventListener('click', simulateSubmission);
+document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
 
 renderAll();
 pollLiveData();
