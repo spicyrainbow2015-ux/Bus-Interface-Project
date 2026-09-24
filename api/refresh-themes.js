@@ -10,11 +10,53 @@
 // endpoint to be hit manually. The processing logic itself doesn't
 // change either way.
 
-// PLACEHOLDER PROMPT — swap this for your exact Workbench-tested wording
-// the moment you send it. Everything else in this file works regardless
-// of the exact wording, since it only expects a JSON array of short
-// strings back (e.g. ["quiet morning","peaceful"]).
-const SYSTEM_PROMPT = `You extract 1-3 short, meaningful themes from a short piece of text someone wrote about a place — an emotion, a notable detail, or an activity, not generic filler words. Respond with ONLY a JSON array of short lowercase phrases, nothing else, no explanation. Example response: ["quiet morning","peaceful"]`;
+// Exact wording tested in the Anthropic Workbench. Claude does its own
+// matching against the existing themes it's given (see buildUserMessage
+// below), so the response is {matched: [...], new: [...]} rather than a
+// flat tag list — no separate case-insensitive matching pass needed here.
+const SYSTEM_PROMPT = `You organize short local observations into community themes.
+
+First identify the main takeaway of the observation, then compare it with the existing themes.
+
+Rules:
+1. Focus on the most meaningful, memorable, or recognizable idea. Ignore minor background details.
+2. Use simple, everyday language a passerby would naturally understand.
+3. Themes may describe atmosphere, emotion, activity, notable objects or places, or recurring local experiences.
+4. Avoid vague or overly poetic labels such as "shared awe", "urban wonder", "collective joy", or "sky drama".
+5. Keep themes to 1–3 words.
+
+Tags can describe:
+- atmosphere
+- emotion
+- activity
+- a notable object or place
+- a recurring local experience
+
+Ignore supporting details unless they are the main point.
+
+Good examples:
+"pretty sky"
+"quiet morning"
+"rainy day"
+"street music"
+"cat"
+"peaceful"
+"sunset"
+
+When starting off there's no existing themes, then generate as normal.
+When existing theme exists, comparing with existing themes:
+- Match an existing theme whenever it reasonably represents the same idea, even if the wording is different.
+- Prefer an existing theme over creating a slightly different duplicate.
+- Only create a new theme when the observation contains a meaningful idea not represented by the existing themes.
+- A submission may match more than one theme if there are multiple important ideas.
+
+
+Return only JSON:
+
+{
+"matched": [],
+"new": []
+}`;
 
 const { Redis } = require('@upstash/redis');
 
@@ -22,7 +64,14 @@ const redis = Redis.fromEnv();
 
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'; // cheapest/fastest Claude tier
 
-async function extractTags(text){
+function buildUserMessage(quote, existingKeywords){
+  const themesLine = existingKeywords.length
+    ? `Existing themes: ${JSON.stringify(existingKeywords)}`
+    : `Existing themes: none yet`;
+  return `${themesLine}\n\nObservation: "${quote}"`;
+}
+
+async function extractTags(quote, existingKeywords){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -32,9 +81,9 @@ async function extractTags(text){
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 30,
+      max_tokens: 150, // {"matched":[...],"new":[...]} can run longer than a flat array
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: text }],
+      messages: [{ role: 'user', content: buildUserMessage(quote, existingKeywords) }],
     }),
   });
   if (!res.ok) {
@@ -43,26 +92,17 @@ async function extractTags(text){
   }
   const data = await res.json();
   const textOut = (data.content || []).map(b => b.text || '').join('').trim();
-  let tags;
+  let parsed;
   try {
-    tags = JSON.parse(textOut);
+    parsed = JSON.parse(textOut);
   } catch {
-    // Claude occasionally wraps the array in a little extra text despite
-    // instructions not to — fall back to pulling the first [...] out.
-    const match = textOut.match(/\[[\s\S]*\]/);
-    tags = match ? JSON.parse(match[0]) : [];
+    // Claude occasionally wraps the object in a little extra text despite
+    // instructions not to — fall back to pulling the first {...} out.
+    const match = textOut.match(/\{[\s\S]*\}/);
+    parsed = match ? JSON.parse(match[0]) : {};
   }
-  return Array.isArray(tags) ? tags.filter(t => typeof t === 'string' && t.trim()).slice(0, 3) : [];
-}
-
-// Matches a returned tag against existing bubble categories case-
-// insensitively, so "Peaceful" and "peaceful" merge into one bubble
-// instead of becoming two separate ones. Exact-match only (no fuzzy/
-// semantic matching) — flagged as a placeholder decision, same as the
-// system prompt above.
-function resolveKeyword(tag, existingKeywords){
-  const found = existingKeywords.find(k => k.toLowerCase() === tag.toLowerCase());
-  return found || tag;
+  const asStringList = (v) => Array.isArray(v) ? v.filter(t => typeof t === 'string' && t.trim()) : [];
+  return { matched: asStringList(parsed.matched), new: asStringList(parsed.new) };
 }
 
 async function processSubmission(id, existingKeywords){
@@ -71,13 +111,21 @@ async function processSubmission(id, existingKeywords){
   const record = typeof raw === 'string' ? JSON.parse(raw) : raw;
   if (record.status !== 'pending') return null;
 
-  const rawTags = await extractTags(record.quote);
+  const { matched, new: newThemes } = await extractTags(record.quote, existingKeywords);
   const finalKeywords = [];
   const newKeywords = [];
-  for (const tag of rawTags) {
-    const kw = resolveKeyword(tag, existingKeywords);
+
+  for (const tag of matched) {
+    // Claude already matched this against the existing themes it was given —
+    // this just finds the stored casing so counts land on the same bubble.
+    const kw = existingKeywords.find(k => k.toLowerCase() === tag.toLowerCase()) || tag;
     finalKeywords.push(kw);
+    await redis.hincrby('perspectives:keywords', kw, 1);
+  }
+
+  for (const kw of newThemes) {
     if (!existingKeywords.includes(kw)) { existingKeywords.push(kw); newKeywords.push(kw); }
+    finalKeywords.push(kw);
     await redis.hincrby('perspectives:keywords', kw, 1);
   }
 
