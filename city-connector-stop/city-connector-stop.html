@@ -129,15 +129,13 @@
 </main>
 
 <!-- Testing scaffolding, not part of the projection design — fixed so it
-     doesn't disturb the .cc-screen grid centering. Two separate buttons,
-     matching the two-phase design: "Simulate submission" only stores text
-     (Phase 1, no API call — same as the real /submit.html page), and
-     "Refresh themes" is the manual trigger that actually calls Claude
-     (Phase 2). Keeping them separate here mirrors how the real system
-     works: submitting never auto-triggers the AI call. -->
+     doesn't disturb the .cc-screen grid centering. Real submissions (via
+     /submit.html) already appear here on their own within ~15s (the
+     regular fetchPerspectives poll) — no button needed for that. This is
+     just the one manual step that's still deliberate: "Refresh themes" is
+     Phase 2, the only thing that calls Claude, and only runs when clicked. -->
 <div id="devstrip" style="position:fixed; left:12px; bottom:12px; z-index:10; background:rgba(255,255,255,.94); border:1px dashed #999; border-radius:8px; padding:10px 12px; font:12px/1.4 system-ui, sans-serif; max-width:320px; color:#222;">
   <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button id="simulateBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Simulate submission (store only)</button>
     <button id="refreshBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Refresh themes (real AI call)</button>
   </div>
   <div id="simulateStatus" style="margin-top:6px; color:#555;"></div>
@@ -312,45 +310,11 @@ async function fetchPerspectives(){
 }
 
 // ---------------------------------------------------------------------------
-// Testing only, matching the real two-phase system:
-//   1. "Simulate submission" — stores sample text (Phase 1, no AI call),
-//      exactly what /submit.html does for a real person.
-//   2. "Refresh themes" — the manual trigger that calls Claude on whatever
-//      is still pending (Phase 2). Separate on purpose: submitting never
-//      auto-triggers the AI call, here or in the real system.
+// "Refresh themes" is Phase 2 — the manual trigger that calls Claude on
+// whatever's still pending. Real submissions (via /submit.html) already
+// show up here on their own via the regular fetchPerspectives poll below;
+// this button is the only deliberately-manual step left.
 // ---------------------------------------------------------------------------
-const SAMPLE_SUBMISSIONS = [
-  { quote: 'Watching the sunset from this bench is my favorite part of the day.', author: 'Test User' },
-  { quote: 'This stop always feels so peaceful, even during rush hour.', author: 'Test User' },
-  { quote: 'I love how the trees here change with the seasons.', author: 'Test User' },
-  { quote: 'Something about waiting here in the rain always makes me nostalgic for college.', author: 'Test User' },
-];
-let simIndex = 0;
-
-async function simulateSubmission(){
-  const btn = document.getElementById('simulateBtn');
-  const status = document.getElementById('simulateStatus');
-  btn.disabled = true;
-  status.textContent = 'Storing submission…';
-  const sample = SAMPLE_SUBMISSIONS[simIndex % SAMPLE_SUBMISSIONS.length];
-  simIndex++;
-  try {
-    const res = await fetch(`${API_BASE}/api/submit-perspective`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(sample),
-    });
-    const result = await res.json();
-    status.textContent = result.ok
-      ? `Stored as pending (id ${result.id}). Click "Refresh themes" to process it.`
-      : (result.error || 'Failed to store.');
-  } catch (err) {
-    console.error('simulateSubmission failed:', err);
-    status.textContent = 'Failed — see console.';
-  }
-  btn.disabled = false;
-}
-
 const TAG_COLORS = ['cc-postcard__tag--0', 'cc-postcard__tag--1', 'cc-postcard__tag--2', 'cc-postcard__tag--3'];
 function renderTagSpans(keywords){
   return (keywords || []).slice(0, 2)
@@ -449,7 +413,6 @@ async function refreshThemes(){
   btn.disabled = false;
 }
 
-document.getElementById('simulateBtn').addEventListener('click', simulateSubmission);
 document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
 
 renderAll();
