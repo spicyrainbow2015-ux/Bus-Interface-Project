@@ -282,7 +282,7 @@
 .cc-postcard {
   position: absolute;
   left: calc(52px * var(--s));
-  top: calc(254px * var(--s));
+  top: calc(232px * var(--s));              /* shifted up from 254px so top/bottom space in the chamber is more balanced */
   width: calc(412px * var(--s));
   padding: calc(12px * var(--s)) calc(12px * var(--s)) calc(14px * var(--s));
   display: flex;
@@ -297,6 +297,11 @@
   transition: opacity 0.6s ease;            /* for crossfading to the next post */
 }
 .cc-postcard.is-leaving { opacity: 0; }
+/* No photo (real submissions via /submit.html don't collect one) — the
+   quote is now the first thing in the card, so it needs more breathing
+   room above it than the base 12px padding (which was tuned assuming the
+   photo, not text, sits at the very top). */
+.cc-postcard--no-photo { padding-top: calc(28px * var(--s)); }
 .cc-postcard__tape {
   position: absolute;
   left: calc(170px * var(--s));
@@ -373,7 +378,7 @@
 .cc-envelope {
   position: absolute;
   left: calc(52px * var(--s));
-  top: calc(254px * var(--s));
+  top: calc(232px * var(--s));              /* must match .cc-postcard's top so they overlap exactly */
   width: calc(412px * var(--s));
   height: calc(320px * var(--s));
   z-index: 5;

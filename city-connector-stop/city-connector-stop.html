@@ -184,6 +184,7 @@ function render(data) {
     // submission showing, or reserving blank space for it.
     const v = data[el.dataset.bindSrc];
     if (v) { el.src = v; el.style.display = ''; } else { el.style.display = 'none'; }
+    el.closest('.cc-postcard')?.classList.toggle('cc-postcard--no-photo', !v);
   });
   document.getElementById('eta').classList.toggle('cc-eta--scheduled', !data.isLive);
   if (data.hasSecond){
@@ -403,6 +404,7 @@ function playEnvelopeReveal(){
   const envPhoto = document.getElementById('envPhoto');
   if (perspectivesData.photo){ envPhoto.src = perspectivesData.photo; envPhoto.style.display = ''; }
   else { envPhoto.style.display = 'none'; }
+  envPhoto.closest('.cc-postcard').classList.toggle('cc-postcard--no-photo', !perspectivesData.photo);
 
   envelope.classList.remove('is-playing');
   void envelope.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
