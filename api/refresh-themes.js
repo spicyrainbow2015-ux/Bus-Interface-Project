@@ -156,6 +156,8 @@ module.exports = async (req, res) => {
     res.status(200).json({ ok: true, processedCount: processed.length, processed });
   } catch (err) {
     console.error('refresh-themes error:', err);
-    res.status(500).json({ ok: false, error: 'Something went wrong refreshing themes.' });
+    // TEMPORARY: surfacing err.message directly to the client to debug a
+    // live 500 without needing Vercel dashboard access — revert once found.
+    res.status(500).json({ ok: false, error: `Something went wrong refreshing themes: ${err.message}` });
   }
 };
