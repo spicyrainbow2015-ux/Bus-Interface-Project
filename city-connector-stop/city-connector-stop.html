@@ -332,6 +332,18 @@ async function simulateSubmission(){
   btn.disabled = false;
 }
 
+// Fades the old postcard out (the .is-leaving CSS transition already
+// shipped with the design, previously unused), swaps in the latest
+// submission's data while it's invisible, then fades back in — so the
+// old quote visibly disappears instead of jump-cutting to the new one.
+async function swapPostcard(){
+  const postcard = document.getElementById('postcard');
+  postcard.classList.add('is-leaving');
+  await new Promise(resolve => setTimeout(resolve, 650)); // matches the 0.6s CSS transition
+  await fetchPerspectives();
+  postcard.classList.remove('is-leaving');
+}
+
 async function refreshThemes(){
   const btn = document.getElementById('refreshBtn');
   const status = document.getElementById('simulateStatus');
@@ -344,8 +356,10 @@ async function refreshThemes(){
       status.textContent = result.processedCount
         ? `Processed ${result.processedCount}: ` + result.processed.map(p => p.keywords.join('/')).join(', ')
         : 'Nothing pending to process.';
-      await fetchPerspectives();
-      result.processed.forEach(enqueueEnvelope);
+      if (result.processedCount){
+        await swapPostcard();
+        result.processed.forEach(enqueueEnvelope);
+      }
     } else {
       status.textContent = result.error || 'Failed to refresh.';
     }
