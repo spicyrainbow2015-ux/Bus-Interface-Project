@@ -90,6 +90,29 @@
         <span data-bind="date">2022/ 01/03</span>
       </div>
     </article>
+
+    <!-- Plays once whenever a submission finishes Phase 2 ("Refresh themes")
+         — see playEnvelope() in the script. Hidden/empty until then. -->
+    <div class="cc-envelope" id="envelope" aria-live="polite">
+      <div class="cc-envelope__closed">
+        <svg class="cc-envelope__svg" viewBox="0 0 412 320" preserveAspectRatio="none" aria-hidden="true">
+          <rect x="6" y="60" width="400" height="254" rx="16" fill="var(--cc-paper)" stroke="#141310" stroke-width="6"/>
+          <polyline points="6,60 206,210 406,60" fill="none" stroke="#141310" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="206" cy="190" r="22" fill="var(--cc-lime)" stroke="#141310" stroke-width="4"/>
+        </svg>
+      </div>
+      <div class="cc-envelope__open">
+        <div class="cc-envelope__card">
+          <span class="cc-envelope__pill">New submission</span>
+          <p class="cc-envelope__quote" id="envQuote"></p>
+          <div class="cc-envelope__tags" id="envTags"></div>
+          <div class="cc-envelope__meta">
+            <span id="envAuthor"></span>
+            <span id="envDate"></span>
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 
 </main>
@@ -322,6 +345,7 @@ async function refreshThemes(){
         ? `Processed ${result.processedCount}: ` + result.processed.map(p => p.keywords.join('/')).join(', ')
         : 'Nothing pending to process.';
       await fetchPerspectives();
+      result.processed.forEach(enqueueEnvelope);
     } else {
       status.textContent = result.error || 'Failed to refresh.';
     }
@@ -334,6 +358,47 @@ async function refreshThemes(){
 
 document.getElementById('simulateBtn').addEventListener('click', simulateSubmission);
 document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
+
+// ---------------------------------------------------------------------------
+// "New submission dropped" envelope — plays once per newly-tagged submission
+// after a "Refresh themes" run (Phase 2), over the postcard's footprint.
+// Queued so multiple submissions processed in the same run play one at a
+// time instead of stacking on top of each other.
+// ---------------------------------------------------------------------------
+const ENVELOPE_TAG_COLORS = ['cc-envelope__tag--0', 'cc-envelope__tag--1', 'cc-envelope__tag--2', 'cc-envelope__tag--3'];
+let envelopeQueue = [];
+let envelopePlaying = false;
+
+function enqueueEnvelope(item){
+  if (!item || !item.quote) return;
+  envelopeQueue.push(item);
+  if (!envelopePlaying) playNextEnvelope();
+}
+
+function playNextEnvelope(){
+  const item = envelopeQueue.shift();
+  if (!item){ envelopePlaying = false; return; }
+  envelopePlaying = true;
+
+  const el = document.getElementById('envelope');
+  document.getElementById('envQuote').textContent = `“${item.quote}”`;
+  document.getElementById('envAuthor').textContent = item.author || 'Anonymous';
+  document.getElementById('envDate').textContent = item.timestamp ? formatDate(item.timestamp) : '';
+  document.getElementById('envTags').innerHTML = (item.keywords || []).slice(0, 2)
+    .map((kw, i) => `<span class="cc-envelope__tag ${ENVELOPE_TAG_COLORS[i % ENVELOPE_TAG_COLORS.length]}">${escapeHtml(kw)}</span>`)
+    .join('');
+
+  el.classList.remove('is-playing');
+  void el.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
+  el.classList.add('is-playing');
+}
+
+document.getElementById('envelope').addEventListener('animationend', (e) => {
+  if (e.target.closest('.cc-envelope__open')){ // fires once, when the longer (open) layer finishes
+    e.currentTarget.classList.remove('is-playing');
+    playNextEnvelope();
+  }
+});
 
 renderAll();
 pollLiveData();

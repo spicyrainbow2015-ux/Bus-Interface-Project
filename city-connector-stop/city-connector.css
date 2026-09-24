@@ -337,8 +337,103 @@
   font-size: calc(12px * var(--s));
 }
 
+/* ---------- New-submission envelope ---------------------------------------
+   Plays over the postcard's footprint when Phase 2 ("Refresh themes")
+   finishes tagging a submission: a closed envelope pops in, opens to
+   reveal the quote + two theme tags + author/date, holds, then fades out.
+   Two layers cross-fade via their own keyframes on the same timeline —
+   see playEnvelope() in the script for how playback is triggered/queued.
+   -------------------------------------------------------------------------- */
+.cc-envelope {
+  position: absolute;
+  left: calc(52px * var(--s));
+  top: calc(254px * var(--s));
+  width: calc(412px * var(--s));
+  height: calc(320px * var(--s));
+  z-index: 5;
+  pointer-events: none;
+}
+.cc-envelope__closed {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.cc-envelope__open {
+  /* height:auto (not inset:0) so a long quote grows the card downward
+     instead of its meta row overflowing past a fixed-height box */
+  position: absolute;
+  left: 0; top: 0; width: 100%; height: auto;
+  opacity: 0;
+}
+.cc-envelope.is-playing .cc-envelope__closed { animation: cc-envelope-closed 6.4s cubic-bezier(.22, .8, .25, 1) forwards; }
+.cc-envelope.is-playing .cc-envelope__open   { animation: cc-envelope-open   6.4s cubic-bezier(.22, .8, .25, 1) forwards; }
+
+.cc-envelope__svg { width: 100%; height: 100%; filter: drop-shadow(0 0 calc(20px * var(--s)) rgba(215, 247, 91, .6)); }
+
+.cc-envelope__card {
+  width: 100%; box-sizing: border-box;
+  background: var(--cc-paper); color: var(--cc-ink);
+  border: calc(4px * var(--s)) solid #141310;
+  border-radius: calc(16px * var(--s));
+  box-shadow: 0 0 calc(36px * var(--s)) rgba(215, 247, 91, .5);
+  padding: calc(18px * var(--s)) calc(18px * var(--s)) calc(14px * var(--s));
+  display: flex; flex-direction: column; gap: calc(12px * var(--s));
+}
+.cc-envelope__pill {
+  align-self: flex-start;
+  background: #141310; color: var(--cc-paper);
+  font-family: var(--cc-font-label); font-size: calc(12px * var(--s)); font-weight: 700;
+  padding: calc(6px * var(--s)) calc(14px * var(--s));
+  border-radius: 999px;
+}
+.cc-envelope__quote {
+  margin: 0; font-family: var(--cc-font-people); font-size: calc(24px * var(--s)); line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cc-envelope__tags { display: flex; gap: calc(8px * var(--s)); flex-wrap: wrap; }
+.cc-envelope__tag {
+  font-family: var(--cc-font-label); font-size: calc(12px * var(--s)); font-weight: 700;
+  padding: calc(6px * var(--s)) calc(12px * var(--s)); border-radius: 999px;
+}
+.cc-envelope__tag--0 { background: var(--cc-blue); color: var(--cc-paper); }
+.cc-envelope__tag--1 { background: var(--cc-mint); color: var(--cc-ink); }
+.cc-envelope__tag--2 { background: var(--cc-pink); color: var(--cc-ink); }
+.cc-envelope__tag--3 { background: var(--cc-red); color: var(--cc-paper); }
+.cc-envelope__meta {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding-top: calc(8px * var(--s)); border-top: calc(1px * var(--s)) solid var(--cc-ink);
+  font-family: var(--cc-font-label); font-size: calc(12px * var(--s));
+}
+
+/* pop in -> hold closed -> cross-fade open -> hold -> fade out, all in one run */
+@keyframes cc-envelope-closed {
+  0%   { opacity: 0; transform: scale(.6) translateY(calc(20px * var(--s))); }
+  10%  { opacity: 1; transform: scale(1.04) translateY(0); }
+  16%  { opacity: 1; transform: scale(1); }
+  34%  { opacity: 1; transform: scale(1); }
+  42%  { opacity: 0; transform: scale(.94); }
+  100% { opacity: 0; }
+}
+@keyframes cc-envelope-open {
+  0%   { opacity: 0; transform: scale(.94) translateY(calc(10px * var(--s))); }
+  40%  { opacity: 0; transform: scale(.94) translateY(calc(10px * var(--s))); }
+  50%  { opacity: 1; transform: scale(1) translateY(0); }
+  84%  { opacity: 1; transform: scale(1); }
+  94%  { opacity: 0; transform: scale(.96); }
+  100% { opacity: 0; }
+}
+
+@keyframes cc-envelope-open-reduced {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* ---------- Accessibility ------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .cc-float-1, .cc-float-2, .cc-float-3 { animation: none; }
   .cc-postcard { transition: none; }
+  .cc-envelope.is-playing .cc-envelope__closed { animation: none; opacity: 0; }
+  .cc-envelope.is-playing .cc-envelope__open { animation: cc-envelope-open-reduced 6.4s ease forwards; }
 }

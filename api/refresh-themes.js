@@ -132,7 +132,9 @@ async function processSubmission(id, existingKeywords){
   record.status = 'processed';
   record.keywords = finalKeywords;
   await redis.set(`perspectives:submission:${id}`, JSON.stringify(record));
-  return { id, keywords: finalKeywords, newKeywords };
+  // quote/author/timestamp included so the client can play the "new
+  // submission dropped" envelope animation without a second round trip.
+  return { id, quote: record.quote, author: record.author, timestamp: record.timestamp, keywords: finalKeywords, newKeywords };
 }
 
 module.exports = async (req, res) => {
