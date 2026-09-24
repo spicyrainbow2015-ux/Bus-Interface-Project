@@ -85,6 +85,12 @@
       <div class="cc-postcard__tape"></div>
       <img class="cc-postcard__photo" data-bind-src="photo" src="images/featured.jpg" alt="">
       <p class="cc-postcard__quote">“<span data-bind="quote">Midway under snow storm!</span>”</p>
+      <!-- Shown only while .is-fresh (right after a new submission is
+           processed) — see swapPostcard()/playEnvelopeReveal() below. -->
+      <div class="cc-postcard__tags">
+        <span class="cc-postcard__new-pill">New submission</span>
+        <div class="cc-postcard__tag-list" id="postcardTagList"></div>
+      </div>
       <div class="cc-postcard__meta">
         <span data-bind="author">Lucy Huang</span>
         <span data-bind="date">2022/ 01/03</span>
@@ -92,7 +98,10 @@
     </article>
 
     <!-- Plays once whenever a submission finishes Phase 2 ("Refresh themes")
-         — see playEnvelope() in the script. Hidden/empty until then. -->
+         — see playEnvelopeReveal() in the script. The "open" state is a
+         clone of #postcard itself (same classes: tilt, conditional photo,
+         tag row, meta) so opening the envelope really does look like it's
+         becoming the new postcard, not a different-looking overlay. -->
     <div class="cc-envelope" id="envelope" aria-live="polite">
       <div class="cc-envelope__closed">
         <svg class="cc-envelope__svg" viewBox="0 0 412 320" preserveAspectRatio="none" aria-hidden="true">
@@ -101,17 +110,19 @@
           <circle cx="206" cy="190" r="20" fill="var(--cc-lime)" stroke="#141310" stroke-width="3"/>
         </svg>
       </div>
-      <div class="cc-envelope__open">
-        <div class="cc-envelope__card">
-          <span class="cc-envelope__pill">New submission</span>
-          <p class="cc-envelope__quote" id="envQuote"></p>
-          <div class="cc-envelope__tags" id="envTags"></div>
-          <div class="cc-envelope__meta">
-            <span id="envAuthor"></span>
-            <span id="envDate"></span>
-          </div>
+      <article class="cc-envelope__open cc-postcard is-fresh">
+        <div class="cc-postcard__tape"></div>
+        <img class="cc-postcard__photo" id="envPhoto" alt="">
+        <p class="cc-postcard__quote" id="envQuote"></p>
+        <div class="cc-postcard__tags">
+          <span class="cc-postcard__new-pill">New submission</span>
+          <div class="cc-postcard__tag-list" id="envTagList"></div>
         </div>
-      </div>
+        <div class="cc-postcard__meta">
+          <span id="envAuthor"></span>
+          <span id="envDate"></span>
+        </div>
+      </article>
     </div>
   </section>
 
@@ -168,7 +179,11 @@ function render(data) {
     const v = data[el.dataset.bind]; if (v !== undefined) el.textContent = v;
   });
   document.querySelectorAll('[data-bind-src]').forEach(el => {
-    const v = data[el.dataset.bindSrc]; if (v) el.src = v;
+    // Real submissions (via /submit.html) never collect a photo — hide the
+    // element entirely rather than leaving a stale one from a previous
+    // submission showing, or reserving blank space for it.
+    const v = data[el.dataset.bindSrc];
+    if (v) { el.src = v; el.style.display = ''; } else { el.style.display = 'none'; }
   });
   document.getElementById('eta').classList.toggle('cc-eta--scheduled', !data.isLive);
   if (data.hasSecond){
@@ -282,7 +297,10 @@ async function fetchPerspectives(){
       quote: (data.featured && data.featured.quote) || SAMPLE_DATA.quote,
       author: (data.featured && data.featured.author) || SAMPLE_DATA.author,
       date: (data.featured && data.featured.timestamp) ? formatDate(data.featured.timestamp) : SAMPLE_DATA.date,
-      photo: (data.featured && data.featured.photo) || SAMPLE_DATA.photo,
+      // Only the seed submission has a real photo — a real submission with
+      // none should show no photo at all, never fall back to the seed's.
+      photo: (data.featured && data.featured.photo) ? data.featured.photo : null,
+      featuredKeywords: (data.featured && data.featured.keywords) || [],
       peopleCount: data.peopleCount ?? SAMPLE_DATA.peopleCount,
     };
   } catch (err) {
@@ -332,16 +350,66 @@ async function simulateSubmission(){
   btn.disabled = false;
 }
 
-// Fades the old postcard out (the .is-leaving CSS transition already
-// shipped with the design, previously unused), swaps in the latest
-// submission's data while it's invisible, then fades back in — so the
-// old quote visibly disappears instead of jump-cutting to the new one.
+const TAG_COLORS = ['cc-postcard__tag--0', 'cc-postcard__tag--1', 'cc-postcard__tag--2', 'cc-postcard__tag--3'];
+function renderTagSpans(keywords){
+  return (keywords || []).slice(0, 2)
+    .map((kw, i) => `<span class="cc-postcard__tag ${TAG_COLORS[i % TAG_COLORS.length]}">${escapeHtml(kw)}</span>`)
+    .join('');
+}
+
+// ---------------------------------------------------------------------------
+// "New submission dropped" sequence, run once per "Refresh themes" call that
+// actually processed something. Order matters here (see the CSS comment
+// above cc-envelope-closed/-open for the exact timeline):
+//   1. The real postcard fades out (.is-leaving) and its data is swapped
+//      while invisible — nothing changes on screen yet.
+//   2. The closed envelope pops in and holds — the postcard stays hidden
+//      underneath, so only the envelope is visible.
+//   3. The envelope "opens": its open layer is a clone of #postcard itself
+//      (same classes — tilt, conditional photo, tag row, meta), so this is
+//      the actual reveal of the new content.
+//   4. The clone holds, then starts fading out. The real postcard is
+//      revealed at that exact moment (ENVELOPE_REVEAL_AT_MS), already
+//      showing identical content, so the crossfade is seamless.
+//   5. A little after that, the tag row quietly retires on the real
+//      postcard, settling into the plain, permanent state.
+// ---------------------------------------------------------------------------
+const ENVELOPE_TOTAL_MS = 34000;
+const ENVELOPE_REVEAL_AT_MS = 32200; // must match the 94.71% keyframe in city-connector.css
+const POSTCARD_FRESH_EXTRA_MS = 4000; // how long the real postcard keeps its tag row after being revealed
+
 async function swapPostcard(){
   const postcard = document.getElementById('postcard');
   postcard.classList.add('is-leaving');
   await new Promise(resolve => setTimeout(resolve, 650)); // matches the 0.6s CSS transition
-  await fetchPerspectives();
-  postcard.classList.remove('is-leaving');
+  await fetchPerspectives(); // swaps quote/author/date/photo/featuredKeywords while invisible
+
+  document.getElementById('postcardTagList').innerHTML = renderTagSpans(perspectivesData.featuredKeywords);
+  postcard.classList.add('is-fresh');
+  // postcard stays hidden (is-leaving) until playEnvelopeReveal's timer
+  // reveals it — do NOT remove is-leaving here, that was the bug: it made
+  // the real postcard fade back in before the envelope even appeared.
+  playEnvelopeReveal();
+}
+
+function playEnvelopeReveal(){
+  const envelope = document.getElementById('envelope');
+  const postcard = document.getElementById('postcard');
+
+  document.getElementById('envQuote').textContent = `“${perspectivesData.quote}”`;
+  document.getElementById('envAuthor').textContent = perspectivesData.author || 'Anonymous';
+  document.getElementById('envDate').textContent = perspectivesData.date || '';
+  document.getElementById('envTagList').innerHTML = renderTagSpans(perspectivesData.featuredKeywords);
+  const envPhoto = document.getElementById('envPhoto');
+  if (perspectivesData.photo){ envPhoto.src = perspectivesData.photo; envPhoto.style.display = ''; }
+  else { envPhoto.style.display = 'none'; }
+
+  envelope.classList.remove('is-playing');
+  void envelope.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
+  envelope.classList.add('is-playing');
+
+  setTimeout(() => postcard.classList.remove('is-leaving'), ENVELOPE_REVEAL_AT_MS);
+  setTimeout(() => postcard.classList.remove('is-fresh'), ENVELOPE_REVEAL_AT_MS + POSTCARD_FRESH_EXTRA_MS);
 }
 
 async function refreshThemes(){
@@ -358,7 +426,6 @@ async function refreshThemes(){
         : 'Nothing pending to process.';
       if (result.processedCount){
         await swapPostcard();
-        result.processed.forEach(enqueueEnvelope);
       }
     } else {
       status.textContent = result.error || 'Failed to refresh.';
@@ -372,47 +439,6 @@ async function refreshThemes(){
 
 document.getElementById('simulateBtn').addEventListener('click', simulateSubmission);
 document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
-
-// ---------------------------------------------------------------------------
-// "New submission dropped" envelope — plays once per newly-tagged submission
-// after a "Refresh themes" run (Phase 2), over the postcard's footprint.
-// Queued so multiple submissions processed in the same run play one at a
-// time instead of stacking on top of each other.
-// ---------------------------------------------------------------------------
-const ENVELOPE_TAG_COLORS = ['cc-envelope__tag--0', 'cc-envelope__tag--1', 'cc-envelope__tag--2', 'cc-envelope__tag--3'];
-let envelopeQueue = [];
-let envelopePlaying = false;
-
-function enqueueEnvelope(item){
-  if (!item || !item.quote) return;
-  envelopeQueue.push(item);
-  if (!envelopePlaying) playNextEnvelope();
-}
-
-function playNextEnvelope(){
-  const item = envelopeQueue.shift();
-  if (!item){ envelopePlaying = false; return; }
-  envelopePlaying = true;
-
-  const el = document.getElementById('envelope');
-  document.getElementById('envQuote').textContent = `“${item.quote}”`;
-  document.getElementById('envAuthor').textContent = item.author || 'Anonymous';
-  document.getElementById('envDate').textContent = item.timestamp ? formatDate(item.timestamp) : '';
-  document.getElementById('envTags').innerHTML = (item.keywords || []).slice(0, 2)
-    .map((kw, i) => `<span class="cc-envelope__tag ${ENVELOPE_TAG_COLORS[i % ENVELOPE_TAG_COLORS.length]}">${escapeHtml(kw)}</span>`)
-    .join('');
-
-  el.classList.remove('is-playing');
-  void el.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
-  el.classList.add('is-playing');
-}
-
-document.getElementById('envelope').addEventListener('animationend', (e) => {
-  if (e.target.closest('.cc-envelope__open')){ // fires once, when the longer (open) layer finishes
-    e.currentTarget.classList.remove('is-playing');
-    playNextEnvelope();
-  }
-});
 
 renderAll();
 pollLiveData();
