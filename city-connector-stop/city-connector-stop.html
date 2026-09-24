@@ -217,10 +217,17 @@ function reconcileBubbles(keywords){
     el.className = `cc-bubble cc-bubble--${BUBBLE_COLORS[bubbleSprites.length % BUBBLE_COLORS.length]}`;
     el.innerHTML = `<span>${escapeHtml(k.word)}</span>`;
     bubblesEl.appendChild(el);
+    // Biased toward the lower ~70% of the vertical range: the strip above
+    // the postcard (between it and the CTA box) is much narrower than the
+    // space below/beside it, so an even spawn distribution overcrowds that
+    // thin band. Spawning fewer bubbles up there to begin with (they can
+    // still drift up over time, just less densely) reads as far less
+    // cramped than an even split.
+    const usableHeight = Math.max(1, bounds.height - bounds.top - d - BUBBLE_MARGIN);
     bubbleSprites.push({
       el, word: k.word, d,
       x: BUBBLE_MARGIN + Math.random() * Math.max(1, bounds.width - d - BUBBLE_MARGIN * 2),
-      y: bounds.top + Math.random() * Math.max(1, bounds.height - bounds.top - d - BUBBLE_MARGIN),
+      y: bounds.top + (0.3 + Math.random() * 0.7) * usableHeight,
       ...randomVelocity(),
     });
   });
@@ -277,7 +284,13 @@ function resolveBubbleCollisions(){
 function constrainBubble(s, bounds, postcard, reflect){
   if (s.x < BUBBLE_MARGIN){ s.x = BUBBLE_MARGIN; if (reflect) s.vx = Math.abs(s.vx); }
   if (s.x + s.d > bounds.width - BUBBLE_MARGIN){ s.x = bounds.width - BUBBLE_MARGIN - s.d; if (reflect) s.vx = -Math.abs(s.vx); }
-  if (s.y < bounds.top){ s.y = bounds.top; if (reflect) s.vy = Math.abs(s.vy); }
+  if (s.y < bounds.top){
+    s.y = bounds.top;
+    // Extra push (not just a plain bounce) so a bubble doesn't linger in
+    // the narrow strip above the postcard — capped so repeated bounces
+    // don't compound into an ever-faster bubble.
+    if (reflect) s.vy = Math.min(Math.abs(s.vy) * 1.6, BUBBLE_SPEED_RANGE[1] * 1.5);
+  }
   if (s.y + s.d > bounds.height - BUBBLE_MARGIN){ s.y = bounds.height - BUBBLE_MARGIN - s.d; if (reflect) s.vy = -Math.abs(s.vy); }
 
   const overlapsX = s.x + s.d > postcard.left && s.x < postcard.right;
@@ -313,7 +326,17 @@ function constrainBubble(s, bounds, postcard, reflect){
 
 function tickBubbles(){
   const bounds = getChamberBounds();
-  const postcard = getPostcardRect(bounds.scale);
+  // Extended upward to the chamber's own top wall for collision purposes:
+  // the real gap between the CTA box and the postcard's top edge is only
+  // ~107px, narrower than several bubbles' own diameter — bubbles that
+  // wandered in there got trapped in a pocket (bounded above by the top
+  // wall, below by the postcard, and only escapable by crossing the
+  // postcard's full ~412px width sideways, which rarely happened in
+  // practice). Merging that gap into the postcard's own obstacle closes
+  // the pocket entirely: bubbles can still occupy the corners (left of
+  // the postcard, right of it, or below it — all with plenty of room),
+  // just never the thin strip directly above it.
+  const postcard = { ...getPostcardRect(bounds.scale), top: bounds.top };
   const dt = 1 / 60; // fixed step keeps speeds predictable regardless of actual frame timing
 
   bubbleSprites.forEach(s => {
