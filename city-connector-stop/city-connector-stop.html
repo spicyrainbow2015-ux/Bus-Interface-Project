@@ -147,29 +147,166 @@
    --------------------------------------------------------------------------- */
 
 // Fixed spots in the chamber (design px), biggest spot first.
-// Keeping positions fixed avoids jitter/overlap on a public screen.
-const SLOTS = [
-  { x: 342, y: 556, max: 156 }, { x: 24,  y: 144, max: 118 },
-  { x: 56,  y: 636, max: 104 }, { x: 264, y: 140, max: 88  },
-  { x: 196, y: 660, max: 82  }, { x: 170, y: 168, max: 66  },
-  { x: 440, y: 144, max: 58  }, { x: 452, y: 340, max: 56  },
-];
-const COLORS = ['mint', 'red', 'pink', 'blue', 'blue', 'mint', 'pink', 'red']; // one per slot, so neighbours differ
-const FLOATS = ['cc-float-2', 'cc-float-1', 'cc-float-3'];
+// ---------------------------------------------------------------------------
+// Bubble physics — bubbles used to sit in fixed slots and could end up
+// hidden behind the postcard. Now they drift around the chamber like a DVD
+// screensaver: bouncing off the chamber's own edges AND off the postcard's
+// rectangle, so they roam the empty space around it instead of getting
+// covered. See reconcileBubbles() (called from renderBubbles() whenever
+// keyword data changes) and tickBubbles() (the requestAnimationFrame loop
+// that runs continuously, started once at the bottom of this script).
+// ---------------------------------------------------------------------------
+const BUBBLE_COLORS = ['mint', 'red', 'pink', 'blue'];
+const BUBBLE_SPEED_RANGE = [16, 30]; // design px/second
+const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
+const MAX_BUBBLES = 8, MAX_D = 156, MIN_D = 50;
+let bubbleSprites = []; // { el, word, d, x, y, vx, vy }
+
+function getScale(){
+  const raw = getComputedStyle(document.querySelector('.cc-screen')).getPropertyValue('--s').trim();
+  return parseFloat(raw) || 1;
+}
+
+// All measurements are converted into "design px" (dividing by --s) so
+// they line up with --d/--x/--y, which the CSS re-multiplies by var(--s).
+function getChamberBounds(){
+  const scale = getScale();
+  const chamberRect = document.querySelector('.cc-chamber').getBoundingClientRect();
+  const ctaRect = document.querySelector('.cc-cta').getBoundingClientRect();
+  return {
+    scale,
+    width: chamberRect.width / scale,
+    height: chamberRect.height / scale,
+    top: (ctaRect.bottom - chamberRect.top) / scale + BUBBLE_MARGIN,
+  };
+}
+
+function getPostcardRect(scale){
+  const chamberRect = document.querySelector('.cc-chamber').getBoundingClientRect();
+  const postcardRect = document.getElementById('postcard').getBoundingClientRect();
+  return {
+    left: (postcardRect.left - chamberRect.left) / scale,
+    top: (postcardRect.top - chamberRect.top) / scale,
+    right: (postcardRect.right - chamberRect.left) / scale,
+    bottom: (postcardRect.bottom - chamberRect.top) / scale,
+  };
+}
+
+function randomVelocity(){
+  const speed = BUBBLE_SPEED_RANGE[0] + Math.random() * (BUBBLE_SPEED_RANGE[1] - BUBBLE_SPEED_RANGE[0]);
+  const angle = Math.random() * Math.PI * 2;
+  return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed };
+}
+
+function reconcileBubbles(keywords){
+  const top = [...keywords].sort((a, b) => b.count - a.count).slice(0, MAX_BUBBLES);
+  const maxCount = top[0]?.count || 1;
+  const bubblesEl = document.getElementById('bubbles');
+  const bounds = getChamberBounds();
+
+  const seenWords = new Set();
+  top.forEach((k) => {
+    seenWords.add(k.word);
+    const d = Math.round(Math.min(MAX_D, Math.max(MIN_D, MAX_D * Math.sqrt(k.count / maxCount))));
+    let sprite = bubbleSprites.find(s => s.word === k.word);
+    if (sprite){
+      sprite.d = d; // size can change as its count changes; position keeps drifting undisturbed
+      return;
+    }
+    const el = document.createElement('div');
+    el.className = `cc-bubble cc-bubble--${BUBBLE_COLORS[bubbleSprites.length % BUBBLE_COLORS.length]}`;
+    el.innerHTML = `<span>${escapeHtml(k.word)}</span>`;
+    bubblesEl.appendChild(el);
+    bubbleSprites.push({
+      el, word: k.word, d,
+      x: BUBBLE_MARGIN + Math.random() * Math.max(1, bounds.width - d - BUBBLE_MARGIN * 2),
+      y: bounds.top + Math.random() * Math.max(1, bounds.height - bounds.top - d - BUBBLE_MARGIN),
+      ...randomVelocity(),
+    });
+  });
+
+  // A word that fell out of the top list gets removed entirely, rather
+  // than kept invisibly drifting — keeps the physics loop doing no more
+  // work than there are bubbles actually on screen.
+  bubbleSprites = bubbleSprites.filter(s => {
+    if (seenWords.has(s.word)) return true;
+    s.el.remove();
+    return false;
+  });
+}
 
 function renderBubbles(keywords) {
-  const top = [...keywords].sort((a, b) => b.count - a.count).slice(0, SLOTS.length);
-  const maxCount = top[0]?.count || 1;
-  const MAX_D = 156, MIN_D = 50;
-  document.getElementById('bubbles').innerHTML = top.map((k, i) => {
-    const slot = SLOTS[i];
-    // area tracks count: diameter ∝ √count (top word = MAX_D), clamped, never bigger than its slot
-    const d = Math.round(Math.min(slot.max, Math.max(MIN_D, MAX_D * Math.sqrt(k.count / maxCount))));
-    const cx = slot.x + (slot.max - d) / 2, cy = slot.y + (slot.max - d) / 2; // keep centred in slot
-    return `<div class="cc-bubble cc-bubble--${COLORS[i]} ${FLOATS[i % 3]}"
-                 style="--d:${d}; --x:${cx}; --y:${cy}; animation-delay:-${i * 1.3}s">
-              <span>${escapeHtml(k.word)}</span></div>`;
-  }).join('');
+  reconcileBubbles(keywords);
+}
+
+// Simple circle-circle collision: separates any two overlapping bubbles by
+// nudging their positions apart. O(n²) over at most 8 bubbles, so
+// trivially cheap per frame. Deliberately positional-only, with no
+// velocity exchange: an earlier version reflected velocity too (a "real"
+// elastic collision), but several bubbles pressed together against a wall
+// could cancel each other's velocity into a stable, visually frozen jam.
+// Leaving each bubble's own velocity untouched means it keeps drifting in
+// its original direction and just slides past neighbors instead of
+// getting stuck, which is what actually fills the empty space over time.
+function resolveBubbleCollisions(){
+  for (let i = 0; i < bubbleSprites.length; i++){
+    for (let j = i + 1; j < bubbleSprites.length; j++){
+      const a = bubbleSprites[i], b = bubbleSprites[j];
+      const ar = a.d / 2, br = b.d / 2;
+      const dx = (b.x + br) - (a.x + ar);
+      const dy = (b.y + br) - (a.y + ar);
+      const dist = Math.hypot(dx, dy) || 0.01;
+      const minDist = ar + br;
+      if (dist >= minDist) continue;
+
+      const overlap = minDist - dist;
+      const nx = dx / dist, ny = dy / dist;
+      a.x -= nx * overlap / 2; a.y -= ny * overlap / 2;
+      b.x += nx * overlap / 2; b.y += ny * overlap / 2;
+    }
+  }
+}
+
+function tickBubbles(){
+  const bounds = getChamberBounds();
+  const postcard = getPostcardRect(bounds.scale);
+  const dt = 1 / 60; // fixed step keeps speeds predictable regardless of actual frame timing
+
+  bubbleSprites.forEach(s => {
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+
+    if (s.x < BUBBLE_MARGIN){ s.x = BUBBLE_MARGIN; s.vx = Math.abs(s.vx); }
+    if (s.x + s.d > bounds.width - BUBBLE_MARGIN){ s.x = bounds.width - BUBBLE_MARGIN - s.d; s.vx = -Math.abs(s.vx); }
+    if (s.y < bounds.top){ s.y = bounds.top; s.vy = Math.abs(s.vy); }
+    if (s.y + s.d > bounds.height - BUBBLE_MARGIN){ s.y = bounds.height - BUBBLE_MARGIN - s.d; s.vy = -Math.abs(s.vy); }
+
+    // Bounce off the postcard's rectangle like a wall: push back out along
+    // whichever axis has the smaller overlap, then reflect that axis only.
+    const overlapsX = s.x + s.d > postcard.left && s.x < postcard.right;
+    const overlapsY = s.y + s.d > postcard.top && s.y < postcard.bottom;
+    if (overlapsX && overlapsY){
+      const fromLeft = s.x + s.d - postcard.left;
+      const fromRight = postcard.right - s.x;
+      const fromTop = s.y + s.d - postcard.top;
+      const fromBottom = postcard.bottom - s.y;
+      const minOverlap = Math.min(fromLeft, fromRight, fromTop, fromBottom);
+      if (minOverlap === fromLeft){ s.x = postcard.left - s.d; s.vx = -Math.abs(s.vx); }
+      else if (minOverlap === fromRight){ s.x = postcard.right; s.vx = Math.abs(s.vx); }
+      else if (minOverlap === fromTop){ s.y = postcard.top - s.d; s.vy = -Math.abs(s.vy); }
+      else { s.y = postcard.bottom; s.vy = Math.abs(s.vy); }
+    }
+  });
+
+  resolveBubbleCollisions(); // keeps bubbles from drifting into clumps — pushes them apart instead
+
+  bubbleSprites.forEach(s => {
+    s.el.style.setProperty('--d', s.d);
+    s.el.style.setProperty('--x', s.x);
+    s.el.style.setProperty('--y', s.y);
+  });
+
+  requestAnimationFrame(tickBubbles);
 }
 
 function render(data) {
@@ -421,6 +558,9 @@ pollLiveData();
 setInterval(pollLiveData, POLL_MS);
 fetchPerspectives();
 setInterval(fetchPerspectives, PERSPECTIVES_POLL_MS);
+if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  requestAnimationFrame(tickBubbles);
+}
 </script>
 </body>
 </html>
