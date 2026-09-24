@@ -379,11 +379,19 @@ const ENVELOPE_TOTAL_MS = 34000;
 const ENVELOPE_REVEAL_AT_MS = 32200; // must match the 94.71% keyframe in city-connector.css
 const POSTCARD_FRESH_EXTRA_MS = 4000; // how long the real postcard keeps its tag row after being revealed
 
-async function swapPostcard(){
+async function swapPostcard(freshKeywords){
   const postcard = document.getElementById('postcard');
   postcard.classList.add('is-leaving');
   await new Promise(resolve => setTimeout(resolve, 650)); // matches the 0.6s CSS transition
-  await fetchPerspectives(); // swaps quote/author/date/photo/featuredKeywords while invisible
+  await fetchPerspectives(); // swaps quote/author/date/photo while invisible
+
+  // /api/perspectives is edge-cached for a few seconds (see its
+  // Cache-Control header) so this fetch — happening right after
+  // refresh-themes.js just wrote the tags — can still return the
+  // pre-tag (empty) keywords. freshKeywords comes straight from that
+  // POST's own response instead, which is never cached, so it's
+  // authoritative when provided.
+  if (freshKeywords) perspectivesData.featuredKeywords = freshKeywords;
 
   document.getElementById('postcardTagList').innerHTML = renderTagSpans(perspectivesData.featuredKeywords);
   postcard.classList.add('is-fresh');
@@ -427,7 +435,9 @@ async function refreshThemes(){
         ? `Processed ${result.processedCount}: ` + result.processed.map(p => p.keywords.join('/')).join(', ')
         : 'Nothing pending to process.';
       if (result.processedCount){
-        await swapPostcard();
+        // processed[] is newest-first (see refresh-themes.js), matching
+        // /api/perspectives' own "featured = most recent submission" rule.
+        await swapPostcard(result.processed[0] && result.processed[0].keywords);
       }
     } else {
       status.textContent = result.error || 'Failed to refresh.';
