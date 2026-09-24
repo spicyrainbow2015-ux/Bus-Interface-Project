@@ -270,6 +270,17 @@
 .cc-bubble--mint { --fill: var(--cc-mint); --text: var(--cc-ink); }
 .cc-bubble--pink { --fill: var(--cc-pink); --text: var(--cc-ink); }
 
+/* Green glow pulse — plays once when a just-processed submission's category
+   lands on this bubble (see glowBubbles() in the script), so growth is
+   obviously tied to "you did that" instead of easy to miss. Targets ::before
+   (the circular colour fill) since it already has border-radius:50%, so the
+   glow reads as a ring around the bubble rather than a square shadow. */
+.cc-bubble.is-glowing::before { animation: cc-bubble-glow 2.4s ease-out 2; }
+@keyframes cc-bubble-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(215, 247, 91, 0); }
+  50%      { box-shadow: 0 0 calc(26px * var(--s)) calc(8px * var(--s)) rgba(215, 247, 91, .85); }
+}
+
 /* gentle floating — transform only, so it stays smooth on kiosk hardware */
 .cc-float-1 { animation: cc-float-1 7s ease-in-out infinite; }
 .cc-float-2 { animation: cc-float-2 9s ease-in-out infinite; }
@@ -440,4 +451,5 @@
   .cc-postcard__tags { transition: none; }
   .cc-envelope.is-playing .cc-envelope__closed { animation: none; opacity: 0; }
   .cc-envelope.is-playing .cc-envelope__open { animation: cc-envelope-open-reduced 34s ease forwards; }
+  .cc-bubble.is-glowing::before { animation: none; box-shadow: 0 0 calc(20px * var(--s)) calc(6px * var(--s)) rgba(215, 247, 91, .85); }
 }

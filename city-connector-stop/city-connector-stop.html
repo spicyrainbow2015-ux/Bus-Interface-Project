@@ -228,6 +228,26 @@ function renderBubbles(keywords) {
   reconcileBubbles(keywords);
 }
 
+// Pulses a green glow on whichever bubble(s) a just-processed submission's
+// categories landed on — growth by itself was hard to notice, so this
+// gives a direct "this is why" moment tied to the submission that caused
+// it. A brand-new category that didn't make the top MAX_BUBBLES has no
+// bubble on screen to glow; this is a no-op for it, same as before.
+function glowBubbles(words){
+  if (!words || !words.length) return;
+  const wordSet = new Set(words);
+  bubbleSprites.forEach(s => {
+    if (!wordSet.has(s.word)) return;
+    s.el.classList.remove('is-glowing');
+    void s.el.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
+    s.el.classList.add('is-glowing');
+    // The animated version fades itself out after ~4.8s, but the
+    // prefers-reduced-motion variant is a static (non-animated) glow with
+    // nothing to end it — this timeout clears the class either way.
+    setTimeout(() => s.el.classList.remove('is-glowing'), 5000);
+  });
+}
+
 // Simple circle-circle collision: separates any two overlapping bubbles by
 // nudging their positions apart. O(n²) over at most 8 bubbles, so
 // trivially cheap per frame. Deliberately positional-only, with no
@@ -498,6 +518,7 @@ async function swapPostcard(freshlyProcessed){
   // processed[0].
   const match = (freshlyProcessed || []).find(p => p.id === perspectivesData.id);
   if (match) perspectivesData.featuredKeywords = match.keywords;
+  glowBubbles(perspectivesData.featuredKeywords); // clear feedback: "this bubble is why"
 
   document.getElementById('postcardTagList').innerHTML = renderTagSpans(perspectivesData.featuredKeywords);
   postcard.classList.add('is-fresh');
