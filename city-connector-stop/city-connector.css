@@ -29,7 +29,7 @@
 :root {
   /* surfaces */
   --cc-bg: #121211;
-  --cc-chamber: #191918;
+  --cc-chamber: #121211;                    /* was #191918 — now matches --cc-bg so the chamber reads as plain black, not a grey panel */
   --cc-paper: #f4f1e8;
   --cc-ink: #1a1a18;
   --cc-muted: #b4b4ac;
@@ -84,10 +84,7 @@
   font-family: var(--cc-font-label);
   font-size: calc(13px * var(--s));
   font-weight: 700;
-  color: var(--cc-ink);
-  background: var(--cc-paper);
-  padding: calc(6px * var(--s)) calc(14px * var(--s));
-  border-radius: 999px;
+  color: var(--cc-paper);
   white-space: nowrap;
 }
 
@@ -179,7 +176,6 @@
   border-radius: calc(28px * var(--s));
   overflow: hidden;
   background: var(--cc-chamber);
-  border: calc(1px * var(--s)) solid rgba(244, 241, 232, 0.18);
 }
 /* ---------- Prompt (replaces the old in-chamber CTA) ---------------------
    Now its own block above the chamber rather than absolutely positioned
