@@ -24,10 +24,13 @@
 
   <header class="cc-topbar">
     <div class="cc-brand">City Connector<span class="cc-brand__dot">.</span></div>
-    <div class="cc-stop" data-bind="stopName">Chestnut St &amp; 43rd St</div>
+    <div class="cc-clock" id="clock">2026/09/28   5:07 PM</div>
   </header>
 
-  <section class="cc-bus" aria-label="Next bus">
+  <!-- Bus arrival — hidden for now (simplification pass). Flip
+       SHOW_BUS_INFO back to true in the script to bring it back; the
+       markup/data wiring is untouched, just not shown. -->
+  <section class="cc-bus" aria-label="Next bus" hidden>
     <div class="cc-bus__left">
       <div class="cc-bus__row">
         <span class="cc-route-pill" data-bind="route">21</span>
@@ -56,21 +59,28 @@
     </div>
   </section>
 
+  <!-- Prompt: replaces the old in-chamber CTA — now its own block above
+       the chamber, so the chamber (and the bubbles roaming it) gets all
+       the vertical space that used to be spent on the CTA + bus rows. -->
+  <section class="cc-prompt">
+    <div class="cc-prompt__text">
+      <div class="cc-prompt__title">Leave a thought for someone nearby</div>
+      <div class="cc-prompt__sub">Scan to share a photo or thought</div>
+    </div>
+    <div class="cc-prompt__qr"><!-- your real QR code <img> or <svg> goes here --><span>QR code</span></div>
+  </section>
+
+  <div class="cc-highlight">
+    <span class="cc-highlight__label">Community highlight · <span data-bind="peopleCount">140</span> responses</span>
+    <span class="cc-highlight__line"></span>
+  </div>
+
   <section class="cc-chamber" aria-label="What people feel at this stop">
     <svg class="cc-route-line" viewBox="0 0 516 700" preserveAspectRatio="none" aria-hidden="true">
       <path d="M-10 170 C 60 150 120 190 170 140 S 300 20 380 120 S 520 150 520 300"/>
       <path d="M-10 690 C 80 650 150 700 250 520 S 420 700 530 610"/>
       <circle cx="170" cy="140" r="7"/><circle cx="380" cy="120" r="7"/><circle cx="250" cy="520" r="7"/>
     </svg>
-
-    <!-- Call to action: a specific question + big QR, at eye level -->
-    <div class="cc-cta">
-      <div class="cc-cta__text">
-        <div class="cc-cta__question">Share a memory for this stop?</div>
-        <div class="cc-cta__sub"><span data-bind="peopleCount">121</span> people have answered · a quick scan to submit!</div>
-      </div>
-      <div class="cc-qr"><!-- your real QR code <img> or <svg> goes here --></div>
-    </div>
 
     <!-- two small decorative dots (no words) -->
     <div class="cc-bubble cc-bubble--red cc-float-1" style="--d:52; --x:300; --y:722; animation-delay:-3s"></div>
@@ -146,6 +156,11 @@
    Minimal wiring, as shipped in the design — kept as-is.
    --------------------------------------------------------------------------- */
 
+// Simplification pass: bus arrival UI hidden for now (the .cc-bus/.cc-bus2
+// markup and data wiring are untouched) so the chamber gets that vertical
+// space back for bubbles to roam. Flip to true to bring it back.
+const SHOW_BUS_INFO = false;
+
 // Fixed spots in the chamber (design px), biggest spot first.
 // ---------------------------------------------------------------------------
 // Bubble physics — bubbles used to sit in fixed slots and could end up
@@ -172,12 +187,14 @@ function getScale(){
 function getChamberBounds(){
   const scale = getScale();
   const chamberRect = document.querySelector('.cc-chamber').getBoundingClientRect();
-  const ctaRect = document.querySelector('.cc-cta').getBoundingClientRect();
   return {
     scale,
     width: chamberRect.width / scale,
     height: chamberRect.height / scale,
-    top: (ctaRect.bottom - chamberRect.top) / scale + BUBBLE_MARGIN,
+    // The prompt/CTA now lives above the chamber entirely (see .cc-prompt),
+    // so the chamber's own top edge is the boundary — no more need to
+    // carve out room for a CTA box that used to sit inside it.
+    top: BUBBLE_MARGIN,
   };
 }
 
@@ -343,11 +360,13 @@ function render(data) {
     if (v) { el.src = v; el.style.display = ''; } else { el.style.display = 'none'; }
     el.closest('.cc-postcard')?.classList.toggle('cc-postcard--no-photo', !v);
   });
-  document.getElementById('eta').classList.toggle('cc-eta--scheduled', !data.isLive);
-  if (data.hasSecond){
-    document.getElementById('eta2').classList.toggle('cc-bus2__eta--scheduled', !data.isLive2);
+  if (SHOW_BUS_INFO){
+    document.getElementById('eta').classList.toggle('cc-eta--scheduled', !data.isLive);
+    if (data.hasSecond){
+      document.getElementById('eta2').classList.toggle('cc-bus2__eta--scheduled', !data.isLive2);
+    }
+    document.getElementById('bus2').hidden = !data.hasSecond;
   }
-  document.getElementById('bus2').hidden = !data.hasSecond;
   renderBubbles(data.keywords);
 }
 
@@ -576,11 +595,22 @@ async function refreshThemes(){
 
 document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
 
+function updateClock(){
+  const now = new Date();
+  const date = formatDate(now.toISOString());
+  const time = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  document.getElementById('clock').textContent = `${date}   ${time}`;
+}
+
 renderAll();
-pollLiveData();
-setInterval(pollLiveData, POLL_MS);
+if (SHOW_BUS_INFO){
+  pollLiveData();
+  setInterval(pollLiveData, POLL_MS);
+}
 fetchPerspectives();
 setInterval(fetchPerspectives, PERSPECTIVES_POLL_MS);
+updateClock();
+setInterval(updateClock, 30000);
 if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
   requestAnimationFrame(tickBubbles);
 }
