@@ -174,7 +174,7 @@ const SHOW_BUS_INFO = false;
 const BUBBLE_COLORS = ['mint', 'red', 'pink', 'blue'];
 const BUBBLE_SPEED_RANGE = [16, 30]; // design px/second
 const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
-const MAX_BUBBLES = 6, MAX_D = 156, MIN_D = 50;
+const MAX_BUBBLES = 8, MAX_D = 156, MIN_D = 50;
 let bubbleSprites = []; // { el, word, d, x, y, vx, vy }
 
 function getScale(){
@@ -464,6 +464,15 @@ function formatDate(iso){
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Date-only isn't enough context for "when was this submitted" on the
+// postcard/envelope — unlike formatDate() (used for the topbar clock,
+// which doesn't need a time attached to itself), this includes it.
+function formatSubmissionDateTime(iso){
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${formatDate(iso)}  ${time}`;
+}
+
 async function fetchPerspectives(){
   try {
     const res = await fetch(`${API_BASE}/api/perspectives`);
@@ -474,7 +483,7 @@ async function fetchPerspectives(){
       keywords: (data.keywords && data.keywords.length) ? data.keywords : SAMPLE_DATA.keywords,
       quote: (data.featured && data.featured.quote) || SAMPLE_DATA.quote,
       author: (data.featured && data.featured.author) || SAMPLE_DATA.author,
-      date: (data.featured && data.featured.timestamp) ? formatDate(data.featured.timestamp) : SAMPLE_DATA.date,
+      date: (data.featured && data.featured.timestamp) ? formatSubmissionDateTime(data.featured.timestamp) : SAMPLE_DATA.date,
       // Only the seed submission has a real photo — a real submission with
       // none should show no photo at all, never fall back to the seed's.
       photo: (data.featured && data.featured.photo) ? data.featured.photo : null,
