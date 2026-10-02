@@ -207,6 +207,51 @@ function randomVelocity(){
   return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed };
 }
 
+// A bubble's identity is its CATEGORY (k.word: what's matched and counted);
+// the text it shows is the more specific bubble label ("Christmas pop-up
+// bagel"), falling back to the category for anything that has no label yet.
+//
+// Text-fitting: a longer label can't be squeezed into a small bubble, so
+// this finds the largest font (never under 10px) at which the label, wrapped
+// to the bubble's text width, sits inside the drawn circle — and if even
+// 10px doesn't fit it grows the bubble until it does. Short labels come out
+// exactly as before. Widths are MEASURED with the real bubble font rather
+// than guessed per character (Sniglet is wide, so a guess ran optimistic).
+const measureCtx = document.createElement('canvas').getContext('2d');
+function textWidth(t, fs){
+  measureCtx.font = `${fs}px Sniglet, "Comic Sans MS", sans-serif`;
+  return measureCtx.measureText(t).width;
+}
+function wrapsInside(text, d, fs){
+  const maxW = 0.76 * d;                        // the span has 12% padding each side
+  const pieces = text.split(/(?<=-)|\s+/).filter(Boolean); // can break at spaces and after hyphens
+  const lineWidths = [];
+  let cur = 0, prevEndsWithHyphen = true;       // true = first piece, nothing to space from
+  for (const piece of pieces){
+    const w = textWidth(piece, fs);
+    if (w > maxW) return false;                 // a single word wider than the bubble
+    const gap = (cur && !prevEndsWithHyphen) ? textWidth(' ', fs) : 0;
+    if (cur && cur + gap + w > maxW){ lineWidths.push(cur); cur = w; } else cur += gap + w;
+    prevEndsWithHyphen = piece.endsWith('-');
+  }
+  lineWidths.push(cur);
+  // every line's farthest corner (from the bubble's centre) must be inside the circle
+  const lh = 1.05 * fs, blockH = lineWidths.length * lh, R = 0.44 * d;
+  return lineWidths.every((w, i) => {
+    const yTop = -blockH / 2 + i * lh, yBottom = yTop + lh;
+    return Math.hypot(w / 2, Math.max(Math.abs(yTop), Math.abs(yBottom))) <= R;
+  });
+}
+function fitBubble(text, dFromCount){
+  for (let d = dFromCount; d <= MAX_D; d += 3){
+    for (let fs = Math.max(10, 0.13 * d); fs >= 10; fs -= 1){
+      if (wrapsInside(text, d, fs)) return { d, fs };
+    }
+    if (wrapsInside(text, d, 10)) return { d, fs: 10 };
+  }
+  return { d: MAX_D, fs: 10 };
+}
+
 // allTimeMax is the biggest total across ALL categories, including ones
 // currently hidden by "Clear bubbles" — sizing against it means a category
 // keeps the size it had before a clear (49 -> 50 stays full-size) instead of
@@ -220,18 +265,21 @@ function reconcileBubbles(keywords, allTimeMax){
   const seenWords = new Set();
   top.forEach((k) => {
     seenWords.add(k.word);
-    const d = Math.round(Math.min(MAX_D, Math.max(MIN_D, MAX_D * Math.sqrt(k.count / maxCount))));
+    const text = k.label || k.word;
+    const dFromCount = Math.round(Math.min(MAX_D, Math.max(MIN_D, MAX_D * Math.sqrt(k.count / maxCount))));
+    const { d, fs } = fitBubble(text, dFromCount);
     let sprite = bubbleSprites.find(s => s.word === k.word);
     if (sprite){
-      sprite.d = d; // size can change as its count changes; position keeps drifting undisturbed
+      sprite.d = d; sprite.fs = fs; // size can change as its count/label changes; position keeps drifting undisturbed
+      if (sprite.text !== text){ sprite.text = text; sprite.el.firstElementChild.textContent = text; }
       return;
     }
     const el = document.createElement('div');
     el.className = `cc-bubble cc-bubble--${BUBBLE_COLORS[bubbleSprites.length % BUBBLE_COLORS.length]}`;
-    el.innerHTML = `<span>${escapeHtml(k.word)}</span>`;
+    el.innerHTML = `<span>${escapeHtml(text)}</span>`;
     bubblesEl.appendChild(el);
     bubbleSprites.push({
-      el, word: k.word, d,
+      el, word: k.word, text, d, fs,
       x: BUBBLE_MARGIN + Math.random() * Math.max(1, bounds.width - d - BUBBLE_MARGIN * 2),
       y: bounds.top + Math.random() * Math.max(1, bounds.height - bounds.top - d - BUBBLE_MARGIN),
       ...randomVelocity(),
@@ -349,6 +397,7 @@ function tickBubbles(){
 
   bubbleSprites.forEach(s => {
     s.el.style.setProperty('--d', s.d);
+    s.el.style.setProperty('--fs', s.fs);
     s.el.style.setProperty('--x', s.x);
     s.el.style.setProperty('--y', s.y);
   });
@@ -504,6 +553,7 @@ async function fetchPerspectives(){
       // none should show no photo at all, never fall back to the seed's.
       photo: (data.featured && data.featured.photo) ? data.featured.photo : null,
       featuredKeywords: (data.featured && data.featured.keywords) || [],
+      featuredThemes: themesOf(data.featured),
       peopleCount: data.peopleCount ?? SAMPLE_DATA.peopleCount,
     };
   } catch (err) {
@@ -522,9 +572,27 @@ async function fetchPerspectives(){
 // this button is the only deliberately-manual step left.
 // ---------------------------------------------------------------------------
 const TAG_COLORS = ['cc-postcard__tag--0', 'cc-postcard__tag--1', 'cc-postcard__tag--2', 'cc-postcard__tag--3'];
-function renderTagSpans(keywords){
-  return (keywords || []).slice(0, 2)
-    .map((kw, i) => `<span class="cc-postcard__tag ${TAG_COLORS[i % TAG_COLORS.length]}">${escapeHtml(kw)}</span>`)
+
+// A submission's themes as [{ category, label }]. Newer records carry
+// .themes; older ones only have .keywords (categories), which become themes
+// whose label is the category itself.
+function themesOf(record){
+  if (!record) return [];
+  if (Array.isArray(record.themes) && record.themes.length) return record.themes;
+  return (record.keywords || []).map(k => ({ category: k, label: k }));
+}
+
+// For each theme (max 2) show the broad category tag, then the specific
+// bubble-label tag next to it — e.g. "bagel" then "Christmas pop-up bagel".
+// If the label is just the category again, only one tag is shown.
+function renderTagSpans(themes){
+  const chips = [];
+  (themes || []).slice(0, 2).forEach(t => {
+    chips.push(t.category);
+    if (t.label && t.label.toLowerCase() !== t.category.toLowerCase()) chips.push(t.label);
+  });
+  return chips
+    .map((text, i) => `<span class="cc-postcard__tag ${TAG_COLORS[i % TAG_COLORS.length]}">${escapeHtml(text)}</span>`)
     .join('');
 }
 
@@ -561,10 +629,10 @@ async function swapPostcard(freshlyProcessed){
   // Match by id rather than assuming order — with more than one submission
   // pending at once, the featured one isn't always processed[0].
   const match = (freshlyProcessed || []).find(p => p.id === perspectivesData.id);
-  if (match) perspectivesData.featuredKeywords = match.keywords;
+  if (match){ perspectivesData.featuredKeywords = match.keywords; perspectivesData.featuredThemes = themesOf(match); }
   glowBubbles(perspectivesData.featuredKeywords); // clear feedback: "this bubble is why"
 
-  document.getElementById('postcardTagList').innerHTML = renderTagSpans(perspectivesData.featuredKeywords);
+  document.getElementById('postcardTagList').innerHTML = renderTagSpans(perspectivesData.featuredThemes);
   postcard.classList.add('is-fresh');
   // postcard stays hidden (is-leaving) until playEnvelopeReveal's timer
   // reveals it — do NOT remove is-leaving here, that was the bug: it made
@@ -579,7 +647,7 @@ function playEnvelopeReveal(){
   document.getElementById('envQuote').textContent = `“${perspectivesData.quote}”`;
   document.getElementById('envAuthor').textContent = perspectivesData.author || 'Anonymous';
   document.getElementById('envDate').textContent = perspectivesData.date || '';
-  document.getElementById('envTagList').innerHTML = renderTagSpans(perspectivesData.featuredKeywords);
+  document.getElementById('envTagList').innerHTML = renderTagSpans(perspectivesData.featuredThemes);
   const envPhoto = document.getElementById('envPhoto');
   if (perspectivesData.photo){ envPhoto.src = perspectivesData.photo; envPhoto.style.display = ''; }
   else { envPhoto.style.display = 'none'; }
@@ -603,7 +671,7 @@ async function refreshThemes(){
     const result = await res.json();
     if (result.ok){
       status.textContent = result.processedCount
-        ? `Processed ${result.processedCount}: ` + result.processed.map(p => p.keywords.join('/')).join(', ')
+        ? `Processed ${result.processedCount}: ` + result.processed.map(p => themesOf(p).map(t => t.label && t.label !== t.category ? `${t.category} → ${t.label}` : t.category).join(', ')).join(' | ')
         : 'Nothing pending to process.';
       if (result.processedCount){
         await swapPostcard(result.processed);
@@ -665,6 +733,9 @@ setInterval(updateClock, 30000);
 if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
   requestAnimationFrame(tickBubbles);
 }
+// Bubble sizes are fitted from measured text widths, which are only right once
+// the bubble font has loaded — re-fit when it has.
+if (document.fonts) document.fonts.ready.then(() => { if (bubblesReady) renderAll(); });
 </script>
 </body>
 </html>

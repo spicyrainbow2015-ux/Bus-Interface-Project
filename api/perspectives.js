@@ -15,7 +15,9 @@
 //                                  Filled and trimmed (oldest out first) by
 //                                  refresh-themes.js, emptied by
 //                                  clear-bubbles.js
-//   perspectives:initV2           STRING  set once the setup below has run
+//   perspectives:labels           HASH    category -> its most recent
+//                                  bubble_label (what the bubble shows);
+//                                  also holds the setup-done marker field
 //   perspectives:peopleCount      STRING  running total of submissions
 //
 // The "featured" submission is just the most recent one by submission
@@ -43,13 +45,21 @@ const SEED_SUBMISSION = {
 const SEED_PEOPLE_COUNT = 121;
 
 const ON_SCREEN_KEY = 'perspectives:onScreen';
-const INIT_KEY = 'perspectives:initV2';
+// category -> most recent bubble_label (written by refresh-themes.js). This
+// hash is read on EVERY poll to get the labels, so it also carries the
+// one-time-setup marker as a field — checking "has setup run?" is then free
+// instead of a separate Redis command per poll.
+const LABELS_KEY = 'perspectives:labels';
+const LABELS_INIT_FIELD = '__initV2__';
+// The previous version kept its setup marker in its own key. If that's
+// present, the on-screen list was already built — don't build it again.
+const PREVIOUS_INIT_KEY = 'perspectives:initV2';
 // Same cap/key as refresh-themes.js — keep them in sync.
 const MAX_ON_SCREEN = 8;
 
-// One-time setup, guarded by a single marker so a normal request costs one
-// existence check (same as before). It does two things:
-//  1. brand-new database -> seed the sample content (as before);
+// One-time setup. Only runs on the first request after deploying (a normal
+// request sees the marker and skips this entirely). It does two things:
+//  1. brand-new database -> seed the sample content;
 //  2. build the on-screen list from whatever data already exists, so
 //     upgrading doesn't blank the screen: the 8 biggest categories that
 //     were visible under the old "Clear bubbles" snapshot (if any). Smaller
@@ -57,7 +67,10 @@ const MAX_ON_SCREEN = 8;
 // After this runs once, "Clear bubbles" can safely empty the on-screen list
 // without it ever being mistaken for "never set up".
 async function ensureInitialized(){
-  if (await redis.exists(INIT_KEY)) return;
+  if (await redis.exists(PREVIOUS_INIT_KEY)) {
+    await redis.hset(LABELS_KEY, { [LABELS_INIT_FIELD]: '1' });
+    return;
+  }
 
   if (!(await redis.exists('perspectives:submissionIds'))) {
     await redis.hset('perspectives:keywords', SEED_KEYWORDS);
@@ -79,8 +92,18 @@ async function ensureInitialized(){
     await redis.zadd(ON_SCREEN_KEY, { nx: true }, first, ...rest);
   }
 
-  await redis.set(INIT_KEY, 1);
+  await redis.hset(LABELS_KEY, { [LABELS_INIT_FIELD]: '1' });
 }
+
+// The 5 reads every request makes (the 6th command is fetching the featured
+// submission itself, once its id is known).
+const readAll = () => Promise.all([
+  redis.hgetall('perspectives:keywords'),
+  redis.zrange(ON_SCREEN_KEY, 0, -1), // categories currently shown, earliest-to-appear first
+  redis.hgetall(LABELS_KEY),
+  redis.lrange('perspectives:submissionIds', 0, 0), // most recent submission id
+  redis.get('perspectives:peopleCount'),
+]);
 
 module.exports = async (req, res) => {
   // No edge caching: a stale response right after "Clear bubbles" or
@@ -91,22 +114,26 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
-    await ensureInitialized();
-
-    const [keywordsMap, onScreen, recentIds, peopleCount] = await Promise.all([
-      redis.hgetall('perspectives:keywords'),
-      redis.zrange(ON_SCREEN_KEY, 0, -1), // categories currently shown, earliest-to-appear first
-      redis.lrange('perspectives:submissionIds', 0, 0), // most recent submission id
-      redis.get('perspectives:peopleCount'),
-    ]);
+    let [keywordsMap, onScreen, labelsMap, recentIds, peopleCount] = await readAll();
+    if (!(labelsMap && labelsMap[LABELS_INIT_FIELD])) {
+      await ensureInitialized();
+      [keywordsMap, onScreen, labelsMap, recentIds, peopleCount] = await readAll();
+    }
 
     const totals = keywordsMap || {};
-    const hasTotal = (word) => Object.prototype.hasOwnProperty.call(totals, word);
+    const labels = labelsMap || {};
+    const has = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
     // Exactly the categories on screen, each with its ALL-TIME total (so a
-    // category that was bumped off and comes back keeps its size).
-    // String(): the Redis client auto-converts number-looking members.
-    const keywords = (onScreen || []).map(String).filter(hasTotal)
-      .map(word => ({ word, count: Number(totals[word]) }));
+    // category that was bumped off and comes back keeps its size) and the
+    // specific label the bubble should display (absent for categories that
+    // predate labels — the page falls back to the category name).
+    // String(): the Redis client auto-converts number-looking members/values.
+    const keywords = (onScreen || []).map(String).filter(word => has(totals, word))
+      .map(word => ({
+        word,
+        count: Number(totals[word]),
+        label: word !== LABELS_INIT_FIELD && has(labels, word) ? String(labels[word]) : undefined,
+      }));
     // All-time max, INCLUDING categories not currently shown: bubble size is
     // scaled against this so sizes stay consistent as bubbles come and go.
     const maxKeywordCount = Object.values(totals).reduce((m, c) => Math.max(m, Number(c)), 0);

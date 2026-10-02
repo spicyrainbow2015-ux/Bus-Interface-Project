@@ -291,10 +291,10 @@
   z-index: 1;
   padding: 0 12%;
   font-family: var(--cc-font-people);
-  font-size: max(calc(10px * var(--s)), calc(var(--d) * 0.13px * var(--s)));  /* scales with the bubble, never below 10px */
+  font-size: calc(var(--fs, 13) * 1px * var(--s));  /* --fs is set per bubble by the page so the label fits (never below 10px) */
   line-height: 1.05;
   color: var(--text);
-  hyphens: auto;                            /* long words break inside small bubbles */
+  hyphens: manual;                          /* no automatic "win-dow" splits: the page sizes each bubble so every word fits whole (overflow-wrap below is only a last resort) */
   overflow-wrap: anywhere;
 }
 /* colour modifiers — dark text on the light colours for contrast */
@@ -421,14 +421,14 @@
   max-height: 0; opacity: 0; overflow: hidden;
   transition: max-height .5s ease, opacity .4s ease;
 }
-.cc-postcard.is-fresh .cc-postcard__tags { max-height: calc(80px * var(--s)); opacity: 1; }
+.cc-postcard.is-fresh .cc-postcard__tags { max-height: calc(130px * var(--s)); opacity: 1; }  /* room for the pill + 2 categories and their labels over a few wrapped lines */
 .cc-postcard__new-pill {
   background: #141310; color: var(--cc-paper);
   font-family: var(--cc-font-label); font-size: calc(12px * var(--s)); font-weight: 700;
   padding: calc(6px * var(--s)) calc(14px * var(--s));
   border-radius: 999px;
 }
-.cc-postcard__tag-list { display: flex; gap: calc(8px * var(--s)); flex-wrap: wrap; }
+.cc-postcard__tag-list { display: contents; }  /* the chips become direct children of .cc-postcard__tags, so they wrap alongside the "New submission" pill instead of dropping to their own block */
 .cc-postcard__tag {
   font-family: var(--cc-font-label); font-size: calc(12px * var(--s)); font-weight: 700;
   padding: calc(6px * var(--s)) calc(12px * var(--s)); border-radius: 999px;

@@ -10,52 +10,53 @@
 // endpoint to be hit manually. The processing logic itself doesn't
 // change either way.
 
-// Exact wording tested in the Anthropic Workbench. Claude does its own
-// matching against the existing themes it's given (see buildUserMessage
-// below), so the response is {matched: [...], new: [...]} rather than a
-// flat tag list — no separate case-insensitive matching pass needed here.
+// The prompt is the wording from the Anthropic Workbench, pasted in as-is,
+// with ONE change: its final "Return only JSON" block, which only showed
+// {"matched": [], "new": []} without saying what goes inside the lists, now
+// spells out the item shape the code reads — every item has a "category"
+// (the broad tag used for matching/counting) AND a "bubble_label" (the
+// specific phrase shown on the bubble). Claude does its own matching against
+// the existing categories it's given (see buildUserMessage below).
 const SYSTEM_PROMPT = `You organize short local observations into community themes.
 
-First identify the main takeaway of the observation, then compare it with the existing themes.
+First identify the main takeaway, then compare it with existing themes.
 
 Rules:
-1. Focus on the most meaningful, memorable, or recognizable idea. Ignore minor background details.
-2. Use simple, everyday language a passerby would naturally understand.
-3. Themes may describe atmosphere, emotion, activity, notable objects or places, or recurring local experiences.
-4. Avoid vague or overly poetic labels such as "shared awe", "urban wonder", "collective joy", or "sky drama".
-5. Keep themes to 1–3 words.
+1. Focus on the most meaningful or recognizable idea. Ignore minor details.
+2. Use simple, everyday language.
+3. Themes may describe atmosphere, emotion, activity, objects, places, or recurring local experiences.
+4. Avoid vague or poetic labels like "shared awe", "urban wonder", or "sky drama".
+5. Keep categories to 1–3 words.
 
-Tags can describe:
-- atmosphere
-- emotion
-- activity
-- a notable object or place
-- a recurring local experience
+For each theme:
+- category = broader theme used for matching and counting
+- bubble_label = more specific 2–5 word phrase shown to users
+- Preserve a distinctive detail from the submission in the bubble_label.
+- Do not invent details.
 
-Ignore supporting details unless they are the main point.
+Examples:
+"orange cat under the bench"
+→ category: "cat"
+→ bubble_label: "the bench cat"
 
-Good examples:
-"pretty sky"
-"quiet morning"
-"rainy day"
-"street music"
-"cat"
-"peaceful"
-"sunset"
+"pink sunset reflected in windows"
+→ category: "sunset"
+→ bubble_label: "pink window sunsets"
 
-When starting off there's no existing themes, then generate as normal.
-When existing theme exists, comparing with existing themes:
-- Match an existing theme whenever it reasonably represents the same idea, even if the wording is different.
-- Prefer an existing theme over creating a slightly different duplicate.
-- Only create a new theme when the observation contains a meaningful idea not represented by the existing themes.
-- A submission may match more than one theme if there are multiple important ideas.
+When no existing themes exist, generate new ones normally.
 
+When existing themes exist:
+- Match an existing theme when it reasonably represents the same idea.
+- Prefer an existing theme over a near-duplicate.
+- Return matched category labels exactly as provided.
+- Only create a new theme if the idea is meaningfully different.
+- A submission may match more than one theme.
 
-Return only JSON:
+Return only JSON, in exactly this shape. Every item in "matched" and "new" is an object with both fields:
 
 {
-"matched": [],
-"new": []
+  "matched": [{ "category": "<existing category, exactly as provided>", "bubble_label": "<2-5 word label>" }],
+  "new": [{ "category": "<new category>", "bubble_label": "<2-5 word label>" }]
 }`;
 
 const { Redis } = require('@upstash/redis');
@@ -76,6 +77,12 @@ const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'; // cheapest/fastest Claude 
 // (Same cap/key as the initial setup in perspectives.js — keep them in sync.)
 const ON_SCREEN_KEY = 'perspectives:onScreen';
 const MAX_ON_SCREEN = 8;
+
+// category -> its most recent bubble_label. The same hash also holds the
+// one-time-setup marker field (see perspectives.js), which is why it's read on
+// every poll anyway and the marker costs nothing extra.
+const LABELS_KEY = 'perspectives:labels';
+const LABELS_INIT_FIELD = '__initV2__';
 
 function buildUserMessage(quote, existingKeywords){
   const themesLine = existingKeywords.length
@@ -104,6 +111,25 @@ function extractFirstJsonObject(text){
   return null;
 }
 
+const MAX_LABEL_LENGTH = 60;
+
+// Turns Claude's list into [{ category, label }]. The expected item is
+// { category, bubble_label }; a bare string (the old reply shape) is still
+// accepted and just uses the category as its own label. A missing/blank
+// bubble_label also falls back to the category, so a bubble never ends up
+// with no text.
+function normalizeThemes(list){
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    const category = typeof item === 'string' ? item : (item && typeof item.category === 'string' ? item.category : '');
+    const labelRaw = item && typeof item === 'object' && typeof item.bubble_label === 'string' ? item.bubble_label : '';
+    if (!category.trim()) continue;
+    out.push({ category: category.trim(), label: (labelRaw.trim() || category.trim()).slice(0, MAX_LABEL_LENGTH) });
+  }
+  return out;
+}
+
 async function extractTags(quote, existingKeywords){
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -114,7 +140,7 @@ async function extractTags(quote, existingKeywords){
     },
     body: JSON.stringify({
       model: ANTHROPIC_MODEL,
-      max_tokens: 150, // {"matched":[...],"new":[...]} can run longer than a flat array
+      max_tokens: 300, // each item now carries category + bubble_label; a cut-off reply is unparseable JSON, which would silently drop every tag
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: buildUserMessage(quote, existingKeywords) }],
     }),
@@ -141,8 +167,7 @@ async function extractTags(quote, existingKeywords){
       parsed = {};
     }
   }
-  const asStringList = (v) => Array.isArray(v) ? v.filter(t => typeof t === 'string' && t.trim()) : [];
-  return { matched: asStringList(parsed.matched), new: asStringList(parsed.new) };
+  return { matched: normalizeThemes(parsed.matched), new: normalizeThemes(parsed.new) };
 }
 
 // Puts a category on screen if it isn't already. nx:true means "only add if
@@ -153,6 +178,15 @@ async function putOnScreen(kw, ctx){
   await redis.zadd(ON_SCREEN_KEY, { nx: true }, { score: ctx.tick++, member: kw });
 }
 
+// Remembers the most recent bubble_label for a category — that's the text
+// the bubble displays (the category itself stays the identity used for
+// matching and counting). Latest wins, so a bubble always shows the newest
+// specific phrase someone used for it.
+async function rememberLabel(category, label){
+  if (category === LABELS_INIT_FIELD) return; // that field is the setup marker, not a category
+  await redis.hset(LABELS_KEY, { [category]: label });
+}
+
 async function processSubmission(id, existingKeywords, ctx){
   const raw = await redis.get(`perspectives:submission:${id}`);
   if (!raw) return null;
@@ -160,31 +194,36 @@ async function processSubmission(id, existingKeywords, ctx){
   if (record.status !== 'pending') return null;
 
   const { matched, new: newThemes } = await extractTags(record.quote, existingKeywords);
-  const finalKeywords = [];
+  const themes = []; // [{ category, label }] for THIS submission — shown as tags on the card
   const newKeywords = [];
 
-  for (const tag of matched) {
+  for (const t of matched) {
     // Claude already matched this against the existing themes it was given —
     // this just finds the stored casing so counts land on the same bubble.
-    const kw = existingKeywords.find(k => k.toLowerCase() === tag.toLowerCase()) || tag;
-    finalKeywords.push(kw);
+    const kw = existingKeywords.find(k => k.toLowerCase() === t.category.toLowerCase()) || t.category;
+    themes.push({ category: kw, label: t.label });
     await redis.hincrby('perspectives:keywords', kw, 1);
+    await rememberLabel(kw, t.label);
     await putOnScreen(kw, ctx);
   }
 
-  for (const kw of newThemes) {
+  for (const t of newThemes) {
+    const kw = t.category;
     if (!existingKeywords.includes(kw)) { existingKeywords.push(kw); newKeywords.push(kw); }
-    finalKeywords.push(kw);
+    themes.push({ category: kw, label: t.label });
     await redis.hincrby('perspectives:keywords', kw, 1);
+    await rememberLabel(kw, t.label);
     await putOnScreen(kw, ctx);
   }
 
+  const finalKeywords = themes.map(t => t.category);
   record.status = 'processed';
-  record.keywords = finalKeywords;
+  record.keywords = finalKeywords; // categories only (what older code read)
+  record.themes = themes;          // categories + their labels
   await redis.set(`perspectives:submission:${id}`, JSON.stringify(record));
   // quote/author/timestamp included so the client can play the "new
   // submission dropped" envelope animation without a second round trip.
-  return { id, quote: record.quote, author: record.author, timestamp: record.timestamp, keywords: finalKeywords, newKeywords };
+  return { id, quote: record.quote, author: record.author, timestamp: record.timestamp, keywords: finalKeywords, themes, newKeywords };
 }
 
 module.exports = async (req, res) => {
