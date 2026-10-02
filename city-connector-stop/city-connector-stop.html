@@ -174,7 +174,10 @@ const SHOW_BUS_INFO = false;
 const BUBBLE_COLORS = ['mint', 'red', 'pink', 'blue'];
 const BUBBLE_SPEED_RANGE = [16, 30]; // design px/second
 const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
-const MAX_BUBBLES = 8, MAX_D = 175, MIN_D = 58;
+// (How many bubbles show at once — currently 8 — is decided on the server,
+// in api/refresh-themes.js, which drops the earliest-to-appear one when a
+// new category pushes past the cap. This page just draws what it's sent.)
+const MAX_D = 175, MIN_D = 58;
 let bubbleSprites = []; // { el, word, d, x, y, vx, vy }
 
 function getScale(){
@@ -209,7 +212,7 @@ function randomVelocity(){
 // keeps the size it had before a clear (49 -> 50 stays full-size) instead of
 // being rescaled just because the visible ones are all small right now.
 function reconcileBubbles(keywords, allTimeMax){
-  const top = [...keywords].sort((a, b) => b.count - a.count).slice(0, MAX_BUBBLES);
+  const top = [...keywords].sort((a, b) => b.count - a.count);
   const maxCount = Math.max(allTimeMax || 0, top[0]?.count || 0) || 1;
   const bubblesEl = document.getElementById('bubbles');
   const bounds = getChamberBounds();
@@ -253,8 +256,8 @@ function renderBubbles(keywords, allTimeMax) {
 // Pulses a green glow on whichever bubble(s) a just-processed submission's
 // categories landed on — growth by itself was hard to notice, so this
 // gives a direct "this is why" moment tied to the submission that caused
-// it. A brand-new category that didn't make the top MAX_BUBBLES has no
-// bubble on screen to glow; this is a no-op for it, same as before.
+// it. A category that was bumped off screen again within the same refresh
+// (a big batch of submissions) has no bubble to glow; no-op for it.
 function glowBubbles(words){
   if (!words || !words.length) return;
   const wordSet = new Set(words);
@@ -372,7 +375,7 @@ function render(data) {
     }
     document.getElementById('bus2').hidden = !data.hasSecond;
   }
-  renderBubbles(data.keywords, data.maxKeywordCount);
+  if (bubblesReady) renderBubbles(data.keywords, data.maxKeywordCount);
 }
 
 function escapeHtml(s) {
@@ -414,6 +417,11 @@ function formatArrivalNote(iso){
 // different schedules/triggers) and merged into one render() call so
 // neither fetch ever stomps on the other's fields.
 let perspectivesData = { ...SAMPLE_DATA };
+// Bubbles aren't drawn until the first /api/perspectives answer arrives (or
+// fails, in which case the sample bubbles are the fallback). Otherwise a
+// reload would flash the sample bubbles for a moment and then fade them out
+// — very visible after a "Clear bubbles", when the real answer is empty.
+let bubblesReady = false;
 let busData = { route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…', hasSecond: false };
 
 function renderAll(){
@@ -500,8 +508,10 @@ async function fetchPerspectives(){
     };
   } catch (err) {
     console.error('Live perspectives fetch failed, keeping last known values:', err);
+    if (!bubblesReady){ bubblesReady = true; renderAll(); } // never got real data: show the sample bubbles
     return;
   }
+  bubblesReady = true;
   renderAll();
 }
 
@@ -622,7 +632,7 @@ async function clearBubbles(){
     const result = await res.json();
     if (result.ok){
       await fetchPerspectives(); // server now returns no visible categories
-      status.textContent = 'Cleared. Totals and the response count are kept — bubbles come back as new responses land on them.';
+      status.textContent = 'Cleared. Totals and the response count are kept — a category comes back when a new response lands on it.';
     } else {
       status.textContent = result.error || 'Failed to clear.';
     }

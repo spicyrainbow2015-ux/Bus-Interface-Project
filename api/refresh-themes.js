@@ -64,6 +64,19 @@ const redis = Redis.fromEnv();
 
 const ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'; // cheapest/fastest Claude tier
 
+// Which categories are currently shown as bubbles on the kiosk.
+// perspectives:onScreen is a sorted set: member = category, score = the
+// moment it came on screen. When more than MAX_ON_SCREEN are on, the ones
+// with the lowest score (the earliest to appear) are dropped — plain
+// first-in-first-out. Popularity deliberately doesn't protect a bubble: the
+// point is to keep surfacing new, unusual perspectives, and a popular
+// category simply comes back (at its full all-time size) the next time
+// someone hits it. The category's total in perspectives:keywords is never
+// touched by any of this.
+// (Same cap/key as the initial setup in perspectives.js — keep them in sync.)
+const ON_SCREEN_KEY = 'perspectives:onScreen';
+const MAX_ON_SCREEN = 8;
+
 function buildUserMessage(quote, existingKeywords){
   const themesLine = existingKeywords.length
     ? `Existing themes: ${JSON.stringify(existingKeywords)}`
@@ -132,7 +145,15 @@ async function extractTags(quote, existingKeywords){
   return { matched: asStringList(parsed.matched), new: asStringList(parsed.new) };
 }
 
-async function processSubmission(id, existingKeywords){
+// Puts a category on screen if it isn't already. nx:true means "only add if
+// not already a member" — so a hit on a bubble that's already showing does
+// NOT reset its clock (pure first-in-first-out, as chosen). ctx.tick hands
+// out strictly increasing scores so ties can't scramble the order.
+async function putOnScreen(kw, ctx){
+  await redis.zadd(ON_SCREEN_KEY, { nx: true }, { score: ctx.tick++, member: kw });
+}
+
+async function processSubmission(id, existingKeywords, ctx){
   const raw = await redis.get(`perspectives:submission:${id}`);
   if (!raw) return null;
   const record = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -148,12 +169,14 @@ async function processSubmission(id, existingKeywords){
     const kw = existingKeywords.find(k => k.toLowerCase() === tag.toLowerCase()) || tag;
     finalKeywords.push(kw);
     await redis.hincrby('perspectives:keywords', kw, 1);
+    await putOnScreen(kw, ctx);
   }
 
   for (const kw of newThemes) {
     if (!existingKeywords.includes(kw)) { existingKeywords.push(kw); newKeywords.push(kw); }
     finalKeywords.push(kw);
     await redis.hincrby('perspectives:keywords', kw, 1);
+    await putOnScreen(kw, ctx);
   }
 
   record.status = 'processed';
@@ -174,10 +197,15 @@ module.exports = async (req, res) => {
     const existingKeywordsMap = await redis.hgetall('perspectives:keywords') || {};
     const existingKeywords = Object.keys(existingKeywordsMap);
 
+    // ids is newest-first; walk it OLDEST-first so that when several pending
+    // submissions are processed in one go, their categories land on screen
+    // in the order people actually submitted (otherwise the newest
+    // submission's bubbles would count as the earliest and be dropped first).
+    const ctx = { tick: Date.now() };
     const processed = [];
-    for (const id of ids) {
+    for (const id of [...ids].reverse()) {
       try {
-        const result = await processSubmission(id, existingKeywords);
+        const result = await processSubmission(id, existingKeywords, ctx);
         if (result) processed.push(result);
       } catch (err) {
         // One submission's Claude call failing (rate limit, transient API
@@ -185,6 +213,12 @@ module.exports = async (req, res) => {
         // being processed — log it and move on, same as a null result.
         console.error(`refresh-themes: failed to process submission ${id}, skipping:`, err);
       }
+    }
+
+    // Over the cap? Drop the earliest-to-appear bubbles (lowest scores).
+    if (processed.length) {
+      const onScreen = await redis.zcard(ON_SCREEN_KEY);
+      if (onScreen > MAX_ON_SCREEN) await redis.zpopmin(ON_SCREEN_KEY, onScreen - MAX_ON_SCREEN);
     }
 
     res.status(200).json({ ok: true, processedCount: processed.length, processed });
