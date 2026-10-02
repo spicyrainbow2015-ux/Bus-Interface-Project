@@ -64,8 +64,10 @@
        the vertical space that used to be spent on the CTA + bus rows. -->
   <section class="cc-prompt">
     <div class="cc-prompt__text">
-      <div class="cc-prompt__title">Leave a thought for someone nearby</div>
-      <div class="cc-prompt__sub">Scan to share a photo or thought</div>
+      <!-- The question people answer — also appears as the heading on
+           submit.html, so change it in both places. -->
+      <div class="cc-prompt__title">Favorite nearby spot?</div>
+      <div class="cc-prompt__sub">Leave a thought for someone nearby</div>
     </div>
     <div class="cc-prompt__qr"><!-- your real QR code <img> or <svg> goes here --><span>QR code</span></div>
   </section>
@@ -144,6 +146,7 @@
 <div id="devstrip" style="position:fixed; left:12px; bottom:12px; z-index:10; background:rgba(255,255,255,.94); border:1px dashed #999; border-radius:8px; padding:10px 12px; font:12px/1.4 system-ui, sans-serif; max-width:320px; color:#222;">
   <div style="display:flex; gap:8px; flex-wrap:wrap;">
     <button id="refreshBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Refresh themes (real AI call)</button>
+    <button id="clearBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Clear bubbles</button>
   </div>
   <div id="simulateStatus" style="margin-top:6px; color:#555;"></div>
 </div>
@@ -201,9 +204,13 @@ function randomVelocity(){
   return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed };
 }
 
-function reconcileBubbles(keywords){
+// allTimeMax is the biggest total across ALL categories, including ones
+// currently hidden by "Clear bubbles" — sizing against it means a category
+// keeps the size it had before a clear (49 -> 50 stays full-size) instead of
+// being rescaled just because the visible ones are all small right now.
+function reconcileBubbles(keywords, allTimeMax){
   const top = [...keywords].sort((a, b) => b.count - a.count).slice(0, MAX_BUBBLES);
-  const maxCount = top[0]?.count || 1;
+  const maxCount = Math.max(allTimeMax || 0, top[0]?.count || 0) || 1;
   const bubblesEl = document.getElementById('bubbles');
   const bounds = getChamberBounds();
 
@@ -228,18 +235,19 @@ function reconcileBubbles(keywords){
     });
   });
 
-  // A word that fell out of the top list gets removed entirely, rather
-  // than kept invisibly drifting — keeps the physics loop doing no more
-  // work than there are bubbles actually on screen.
+  // A word that fell out of the list (cleared, or pushed out of the top N)
+  // is dropped from the physics loop immediately — no invisible bubbles
+  // drifting around — and its element fades out before being removed.
   bubbleSprites = bubbleSprites.filter(s => {
     if (seenWords.has(s.word)) return true;
-    s.el.remove();
+    s.el.classList.add('is-leaving');
+    setTimeout(() => s.el.remove(), 450); // matches the .is-leaving transition in the CSS
     return false;
   });
 }
 
-function renderBubbles(keywords) {
-  reconcileBubbles(keywords);
+function renderBubbles(keywords, allTimeMax) {
+  reconcileBubbles(keywords, allTimeMax);
 }
 
 // Pulses a green glow on whichever bubble(s) a just-processed submission's
@@ -364,7 +372,7 @@ function render(data) {
     }
     document.getElementById('bus2').hidden = !data.hasSecond;
   }
-  renderBubbles(data.keywords);
+  renderBubbles(data.keywords, data.maxKeywordCount);
 }
 
 function escapeHtml(s) {
@@ -477,7 +485,10 @@ async function fetchPerspectives(){
     perspectivesData = {
       stopName: SAMPLE_DATA.stopName,
       id: (data.featured && data.featured.id) || null,
-      keywords: (data.keywords && data.keywords.length) ? data.keywords : SAMPLE_DATA.keywords,
+      // An empty list is a real answer now (everything cleared) — only fall
+      // back to the sample bubbles if the field is missing entirely.
+      keywords: Array.isArray(data.keywords) ? data.keywords : SAMPLE_DATA.keywords,
+      maxKeywordCount: data.maxKeywordCount || 0,
       quote: (data.featured && data.featured.quote) || SAMPLE_DATA.quote,
       author: (data.featured && data.featured.author) || SAMPLE_DATA.author,
       date: (data.featured && data.featured.timestamp) ? formatSubmissionDateTime(data.featured.timestamp) : SAMPLE_DATA.date,
@@ -534,13 +545,11 @@ async function swapPostcard(freshlyProcessed){
   await new Promise(resolve => setTimeout(resolve, 650)); // matches the 0.6s CSS transition
   await fetchPerspectives(); // swaps quote/author/date/photo/id while invisible
 
-  // /api/perspectives is edge-cached for a few seconds (see its
-  // Cache-Control header) so this fetch — happening right after
-  // refresh-themes.js just wrote the tags — can still return the
-  // pre-tag (empty) keywords. Match by id against refresh-themes.js's own
-  // (never-cached) response instead of assuming order — with more than
-  // one submission pending at once, the featured one isn't always
-  // processed[0].
+  // Prefer refresh-themes.js's own response for the featured submission's
+  // tags over whatever this fetch returned (it used to be edge-cached and
+  // could lag behind; it's no-store now, but this stays as a safeguard).
+  // Match by id rather than assuming order — with more than one submission
+  // pending at once, the featured one isn't always processed[0].
   const match = (freshlyProcessed || []).find(p => p.id === perspectivesData.id);
   if (match) perspectivesData.featuredKeywords = match.keywords;
   glowBubbles(perspectivesData.featuredKeywords); // clear feedback: "this bubble is why"
@@ -599,7 +608,33 @@ async function refreshThemes(){
   btn.disabled = false;
 }
 
+// Clears the bubbles from the display only — the server keeps every
+// category's total and the "N responses" count (see api/clear-bubbles.js),
+// so a bubble returns, at its old size plus the new response, the next time
+// a submission lands on its category; a brand-new category just appears.
+async function clearBubbles(){
+  const btn = document.getElementById('clearBtn');
+  const status = document.getElementById('simulateStatus');
+  btn.disabled = true;
+  status.textContent = 'Clearing bubbles…';
+  try {
+    const res = await fetch(`${API_BASE}/api/clear-bubbles`, { method: 'POST' });
+    const result = await res.json();
+    if (result.ok){
+      await fetchPerspectives(); // server now returns no visible categories
+      status.textContent = 'Cleared. Totals and the response count are kept — bubbles come back as new responses land on them.';
+    } else {
+      status.textContent = result.error || 'Failed to clear.';
+    }
+  } catch (err) {
+    console.error('clearBubbles failed:', err);
+    status.textContent = 'Failed — see console.';
+  }
+  btn.disabled = false;
+}
+
 document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
+document.getElementById('clearBtn').addEventListener('click', clearBubbles);
 
 function updateClock(){
   const now = new Date();

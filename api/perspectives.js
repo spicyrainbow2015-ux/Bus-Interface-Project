@@ -10,6 +10,10 @@
 //                                  timestamp, status, keywords}
 //   perspectives:submissionIds    LIST    ids, newest first
 //   perspectives:keywords         HASH    keyword -> mention count
+//   perspectives:clearedCounts    HASH    keyword -> total at the last "Clear
+//                                  bubbles" (see clear-bubbles.js); a
+//                                  category is shown only if it has grown
+//                                  past this
 //   perspectives:peopleCount      STRING  running total of submissions
 //
 // The "featured" submission is just the most recent one by submission
@@ -46,19 +50,32 @@ async function ensureSeeded(){
 }
 
 module.exports = async (req, res) => {
-  res.setHeader('Cache-Control', 's-maxage=5, stale-while-revalidate=15');
+  // No edge caching: a stale response right after "Clear bubbles" or
+  // "Refresh themes" would resurrect bubbles / hide new ones for up to ~20s
+  // (the old s-maxage=5 + stale-while-revalidate=15 caused exactly that kind
+  // of bug once already). Only the single kiosk page polls this.
+  res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
     await ensureSeeded();
 
-    const [keywordsMap, recentIds, peopleCount] = await Promise.all([
+    const [keywordsMap, clearedMap, recentIds, peopleCount] = await Promise.all([
       redis.hgetall('perspectives:keywords'),
+      redis.hgetall('perspectives:clearedCounts'), // snapshot written by api/clear-bubbles.js
       redis.lrange('perspectives:submissionIds', 0, 0), // most recent submission id
       redis.get('perspectives:peopleCount'),
     ]);
 
-    const keywords = Object.entries(keywordsMap || {}).map(([word, count]) => ({ word, count: Number(count) }));
+    const allKeywords = Object.entries(keywordsMap || {}).map(([word, count]) => ({ word, count: Number(count) }));
+    const cleared = clearedMap || {};
+    // A category is on screen only if it has grown since the last clear
+    // (no snapshot yet == 0, so before any clear everything is visible).
+    const keywords = allKeywords.filter(k => k.count > Number(cleared[k.word] || 0));
+    // All-time max, INCLUDING hidden categories: bubble size is scaled
+    // against this so a category keeps the size it had before a clear
+    // instead of ballooning just because the visible ones are all small.
+    const maxKeywordCount = allKeywords.reduce((m, k) => Math.max(m, k.count), 0);
 
     let featured = SEED_SUBMISSION;
     const recentId = recentIds && recentIds[0];
@@ -69,6 +86,7 @@ module.exports = async (req, res) => {
 
     res.status(200).json({
       keywords,
+      maxKeywordCount,
       featured,
       peopleCount: Number(peopleCount) || SEED_PEOPLE_COUNT,
     });
@@ -78,6 +96,7 @@ module.exports = async (req, res) => {
     // screen — same "never show nothing" principle as the bus data.
     res.status(200).json({
       keywords: Object.entries(SEED_KEYWORDS).map(([word, count]) => ({ word, count })),
+      maxKeywordCount: Math.max(...Object.values(SEED_KEYWORDS)),
       featured: SEED_SUBMISSION,
       peopleCount: SEED_PEOPLE_COUNT,
       error: 'Live perspective data temporarily unavailable.',

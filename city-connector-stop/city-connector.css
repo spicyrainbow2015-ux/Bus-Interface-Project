@@ -303,6 +303,22 @@
 .cc-bubble--mint { --fill: var(--cc-mint); --text: var(--cc-ink); }
 .cc-bubble--pink { --fill: var(--cc-pink); --text: var(--cc-ink); }
 
+/* Bubbles pop in when created (page load, or returning after "Clear
+   bubbles") and fade/shrink out when removed. The element is dropped from
+   the physics loop right away and deleted from the DOM 450ms later, which
+   is what the .is-leaving transition below has to fit inside. */
+.cc-bubble { animation: cc-bubble-in .5s ease-out; }
+@keyframes cc-bubble-in {
+  from { opacity: 0; transform: scale(.4); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.cc-bubble.is-leaving {
+  animation: none;
+  opacity: 0;
+  transform: scale(.6);
+  transition: opacity .4s ease, transform .4s ease;
+}
+
 /* Green glow pulse — plays once when a just-processed submission's category
    lands on this bubble (see glowBubbles() in the script), so growth is
    obviously tied to "you did that" instead of easy to miss. Targets ::before
@@ -497,5 +513,7 @@
   .cc-postcard__tags { transition: none; }
   .cc-envelope.is-playing .cc-envelope__closed { animation: none; opacity: 0; }
   .cc-envelope.is-playing .cc-envelope__open { animation: cc-envelope-open-reduced 34s ease forwards; }
+  .cc-bubble { animation: none; }
+  .cc-bubble.is-leaving { transition: none; }
   .cc-bubble.is-glowing::before { animation: none; box-shadow: 0 0 calc(20px * var(--s)) calc(6px * var(--s)) rgba(215, 247, 91, .85); }
 }
