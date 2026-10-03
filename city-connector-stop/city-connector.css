@@ -201,14 +201,13 @@
   flex-shrink: 0;
   width: calc(96px * var(--s));
   height: calc(96px * var(--s));
-  border: calc(2px * var(--s)) solid var(--cc-ink);
+  /* A QR code needs dark modules on a LIGHT, blank surround to scan, so it
+     sits on a white tile (not directly on the lime) — and no outline, which
+     would eat into the blank border scanners rely on. The image itself already
+     includes that border. */
+  background: #fff;
   border-radius: calc(10px * var(--s));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--cc-font-label);
-  font-size: calc(11px * var(--s));
-  color: rgba(26, 26, 24, .6);
+  overflow: hidden;
 }
 .cc-prompt__qr img, .cc-prompt__qr svg { display: block; width: 100%; height: 100%; }
 
