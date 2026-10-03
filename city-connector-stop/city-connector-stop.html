@@ -94,8 +94,8 @@
       <div class="cc-postcard__tape"></div>
       <img class="cc-postcard__photo" data-bind-src="photo" src="images/featured.jpg" alt="">
       <p class="cc-postcard__quote">“<span data-bind="quote">Midway under snow storm!</span>”</p>
-      <!-- Shown only while .is-fresh (right after a new submission is
-           processed) — see swapPostcard()/playEnvelopeReveal() below. -->
+      <!-- Shown (.has-tags) whenever the featured submission has been
+           processed — filled in by renderFeaturedTags() below. -->
       <div class="cc-postcard__tags">
         <span class="cc-postcard__new-pill">New submission</span>
         <div class="cc-postcard__tag-list" id="postcardTagList"></div>
@@ -119,7 +119,7 @@
           <circle cx="206" cy="190" r="20" fill="var(--cc-lime)" stroke="#141310" stroke-width="3"/>
         </svg>
       </div>
-      <article class="cc-envelope__open cc-postcard is-fresh">
+      <article class="cc-envelope__open cc-postcard has-tags">
         <div class="cc-postcard__tape"></div>
         <img class="cc-postcard__photo" id="envPhoto" alt="">
         <p class="cc-postcard__quote" id="envQuote"></p>
@@ -178,7 +178,41 @@ const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
 // in api/refresh-themes.js, which drops the earliest-to-appear one when a
 // new category pushes past the cap. This page just draws what it's sent.)
 const MAX_D = 175, MIN_D = 58;
-let bubbleSprites = []; // { el, word, d, x, y, vx, vy }
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+let bubbleSprites = []; // { el, word, text, count, d, fs, targetD, targetFs, x, y, vx, vy }
+
+// How big a bubble is for its total. Log scale, so the first few responses
+// each make a clearly visible difference (1 -> 2 -> 3 mentions is roughly
+// +13px, +10px, +8px). The old scale was sqrt(count / all-time max), which
+// put every small category far below the minimum size — all clamped to the
+// same 58px — so a second response changed nothing on screen. The reference
+// max is capped so one huge category (e.g. 49 mentions) doesn't flatten
+// everything else; anything at or above the cap is full size.
+const GROWTH_REF_MAX = 30;
+function sizeFromCount(count, allTimeMax){
+  const ref = Math.max(1, Math.min(allTimeMax, GROWTH_REF_MAX));
+  const frac = Math.min(1, Math.log(1 + count) / Math.log(1 + ref));
+  return Math.round(MIN_D + (MAX_D - MIN_D) * frac);
+}
+
+// One place that writes a bubble's size/position to the DOM (the physics
+// tick does this every frame; it's also done once on creation so a bubble
+// is correctly placed even when the animation loop isn't running).
+function applyBubbleStyle(s){
+  s.el.style.setProperty('--d', s.d);
+  s.el.style.setProperty('--fs', s.fs);
+  s.el.style.setProperty('--x', s.x);
+  s.el.style.setProperty('--y', s.y);
+}
+
+// A quick "boing" on the bubble when it grows, on top of the size easing in
+// the tick — the permanent size change alone is easy to miss.
+function swell(el){
+  el.classList.remove('is-grew');
+  void el.offsetWidth; // reflow, so re-adding the class restarts the animation
+  el.classList.add('is-grew');
+  setTimeout(() => el.classList.remove('is-grew'), 1000);
+}
 
 function getScale(){
   const raw = getComputedStyle(document.querySelector('.cc-screen')).getPropertyValue('--s').trim();
@@ -266,24 +300,31 @@ function reconcileBubbles(keywords, allTimeMax){
   top.forEach((k) => {
     seenWords.add(k.word);
     const text = k.label || k.word;
-    const dFromCount = Math.round(Math.min(MAX_D, Math.max(MIN_D, MAX_D * Math.sqrt(k.count / maxCount))));
+    const dFromCount = sizeFromCount(k.count, maxCount);
     const { d, fs } = fitBubble(text, dFromCount);
     let sprite = bubbleSprites.find(s => s.word === k.word);
     if (sprite){
-      sprite.d = d; sprite.fs = fs; // size can change as its count/label changes; position keeps drifting undisturbed
+      // The size is only a TARGET: the tick eases the bubble toward it so
+      // growth is visibly animated; position keeps drifting undisturbed.
+      const grew = k.count > sprite.count;
+      sprite.count = k.count; sprite.targetD = d; sprite.targetFs = fs;
       if (sprite.text !== text){ sprite.text = text; sprite.el.firstElementChild.textContent = text; }
+      if (REDUCED_MOTION){ sprite.d = d; sprite.fs = fs; applyBubbleStyle(sprite); }
+      else if (grew) swell(sprite.el);
       return;
     }
     const el = document.createElement('div');
     el.className = `cc-bubble cc-bubble--${BUBBLE_COLORS[bubbleSprites.length % BUBBLE_COLORS.length]}`;
     el.innerHTML = `<span>${escapeHtml(text)}</span>`;
     bubblesEl.appendChild(el);
-    bubbleSprites.push({
-      el, word: k.word, text, d, fs,
+    const created = {
+      el, word: k.word, text, count: k.count, d, fs, targetD: d, targetFs: fs,
       x: BUBBLE_MARGIN + Math.random() * Math.max(1, bounds.width - d - BUBBLE_MARGIN * 2),
       y: bounds.top + Math.random() * Math.max(1, bounds.height - bounds.top - d - BUBBLE_MARGIN),
       ...randomVelocity(),
-    });
+    };
+    bubbleSprites.push(created);
+    applyBubbleStyle(created);
   });
 
   // A word that fell out of the list (cleared, or pushed out of the top N)
@@ -299,6 +340,15 @@ function reconcileBubbles(keywords, allTimeMax){
 
 function renderBubbles(keywords, allTimeMax) {
   reconcileBubbles(keywords, allTimeMax);
+}
+
+// Gives the bubbles for the FEATURED submission's categories (the ones named
+// in the white card's tags) a steady green glow, for as long as that
+// submission is the one on the card. Runs on every render, so it also holds
+// after a reload and for bubbles that appear later.
+function syncLinkedBubbles(words){
+  const linked = new Set(words || []);
+  bubbleSprites.forEach(s => s.el.classList.toggle('is-linked', linked.has(s.word)));
 }
 
 // Pulses a green glow on whichever bubble(s) a just-processed submission's
@@ -367,6 +417,10 @@ function tickBubbles(){
   const dt = 1 / 60; // fixed step keeps speeds predictable regardless of actual frame timing
 
   bubbleSprites.forEach(s => {
+    // ease toward the target size/font (~0.5s) so growth is seen happening
+    s.d += (s.targetD - s.d) * 0.12;
+    s.fs += (s.targetFs - s.fs) * 0.12;
+    if (Math.abs(s.targetD - s.d) < 0.3){ s.d = s.targetD; s.fs = s.targetFs; }
     s.x += s.vx * dt;
     s.y += s.vy * dt;
     constrainBubble(s, bounds, true);
@@ -395,12 +449,7 @@ function tickBubbles(){
     s.lastX = s.x; s.lastY = s.y;
   });
 
-  bubbleSprites.forEach(s => {
-    s.el.style.setProperty('--d', s.d);
-    s.el.style.setProperty('--fs', s.fs);
-    s.el.style.setProperty('--x', s.x);
-    s.el.style.setProperty('--y', s.y);
-  });
+  bubbleSprites.forEach(applyBubbleStyle);
 
   requestAnimationFrame(tickBubbles);
 }
@@ -424,7 +473,27 @@ function render(data) {
     }
     document.getElementById('bus2').hidden = !data.hasSecond;
   }
-  if (bubblesReady) renderBubbles(data.keywords, data.maxKeywordCount);
+  renderFeaturedTags(data.featuredThemes);
+  if (bubblesReady){
+    renderBubbles(data.keywords, data.maxKeywordCount);
+    syncLinkedBubbles(data.featuredKeywords);
+  }
+}
+
+// The white card's tags (category + label for each theme) stay up for as long
+// as that submission is the featured one — they used to retire on a timer
+// ~36s after the reveal. Driven from the data on every render, so they also
+// show after a page reload, not only right after "Refresh themes". A
+// submission that hasn't been processed yet has no themes, so no tag row.
+let lastTagsKey = '';
+function renderFeaturedTags(themes){
+  const list = themes || [];
+  const key = JSON.stringify(list);
+  if (key !== lastTagsKey){
+    lastTagsKey = key;
+    document.getElementById('postcardTagList').innerHTML = renderTagSpans(list);
+  }
+  document.getElementById('postcard').classList.toggle('has-tags', list.length > 0);
 }
 
 function escapeHtml(s) {
@@ -610,12 +679,13 @@ function renderTagSpans(themes){
 //   4. The clone holds, then starts fading out. The real postcard is
 //      revealed at that exact moment (ENVELOPE_REVEAL_AT_MS), already
 //      showing identical content, so the crossfade is seamless.
-//   5. A little after that, the tag row quietly retires on the real
-//      postcard, settling into the plain, permanent state.
+//   After that the card just stays: its tags remain for as long as it's
+//   the featured submission, and the bubbles for its categories keep a
+//   steady green glow (see syncLinkedBubbles) so it's clear which bubbles
+//   it fed.
 // ---------------------------------------------------------------------------
 const ENVELOPE_TOTAL_MS = 34000;
 const ENVELOPE_REVEAL_AT_MS = 32200; // must match the 94.71% keyframe in city-connector.css
-const POSTCARD_FRESH_EXTRA_MS = 4000; // how long the real postcard keeps its tag row after being revealed
 
 async function swapPostcard(freshlyProcessed){
   const postcard = document.getElementById('postcard');
@@ -630,10 +700,10 @@ async function swapPostcard(freshlyProcessed){
   // pending at once, the featured one isn't always processed[0].
   const match = (freshlyProcessed || []).find(p => p.id === perspectivesData.id);
   if (match){ perspectivesData.featuredKeywords = match.keywords; perspectivesData.featuredThemes = themesOf(match); }
-  glowBubbles(perspectivesData.featuredKeywords); // clear feedback: "this bubble is why"
+  syncLinkedBubbles(perspectivesData.featuredKeywords); // steady glow on the bubbles this submission fed
+  glowBubbles(perspectivesData.featuredKeywords);       // plus an attention pulse right now
 
-  document.getElementById('postcardTagList').innerHTML = renderTagSpans(perspectivesData.featuredThemes);
-  postcard.classList.add('is-fresh');
+  renderFeaturedTags(perspectivesData.featuredThemes);
   // postcard stays hidden (is-leaving) until playEnvelopeReveal's timer
   // reveals it — do NOT remove is-leaving here, that was the bug: it made
   // the real postcard fade back in before the envelope even appeared.
@@ -658,7 +728,6 @@ function playEnvelopeReveal(){
   envelope.classList.add('is-playing');
 
   setTimeout(() => postcard.classList.remove('is-leaving'), ENVELOPE_REVEAL_AT_MS);
-  setTimeout(() => postcard.classList.remove('is-fresh'), ENVELOPE_REVEAL_AT_MS + POSTCARD_FRESH_EXTRA_MS);
 }
 
 async function refreshThemes(){
@@ -730,7 +799,7 @@ fetchPerspectives();
 setInterval(fetchPerspectives, PERSPECTIVES_POLL_MS);
 updateClock();
 setInterval(updateClock, 30000);
-if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+if (!REDUCED_MOTION) {
   requestAnimationFrame(tickBubbles);
 }
 // Bubble sizes are fitted from measured text widths, which are only right once

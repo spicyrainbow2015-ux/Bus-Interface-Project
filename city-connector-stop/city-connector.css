@@ -319,15 +319,29 @@
   transition: opacity .4s ease, transform .4s ease;
 }
 
-/* Green glow pulse — plays once when a just-processed submission's category
-   lands on this bubble (see glowBubbles() in the script), so growth is
-   obviously tied to "you did that" instead of easy to miss. Targets ::before
-   (the circular colour fill) since it already has border-radius:50%, so the
-   glow reads as a ring around the bubble rather than a square shadow. */
-.cc-bubble.is-glowing::before { animation: cc-bubble-glow 2.4s ease-out 2; }
+/* Green glow, two layers (both on ::before — the circular colour fill, which
+   already has border-radius:50%, so the glow reads as a ring, not a square):
+   - .is-linked: a STEADY ring on the bubbles for the categories named in the
+     white card's tags, for as long as that submission is the featured one —
+     so it's clear which bubbles a submission fed (see syncLinkedBubbles()).
+   - .is-glowing: a brighter attention pulse for the first few seconds after a
+     submission is processed (see glowBubbles()). It starts and ends at the
+     steady ring's strength so it settles into it without a jump. */
+.cc-bubble.is-linked::before { box-shadow: 0 0 calc(18px * var(--s)) calc(5px * var(--s)) rgba(215, 247, 91, .55); }
+.cc-bubble.is-glowing::before { animation: cc-bubble-glow 2.4s ease-in-out 2; }
 @keyframes cc-bubble-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(215, 247, 91, 0); }
-  50%      { box-shadow: 0 0 calc(26px * var(--s)) calc(8px * var(--s)) rgba(215, 247, 91, .85); }
+  0%, 100% { box-shadow: 0 0 calc(18px * var(--s)) calc(5px * var(--s)) rgba(215, 247, 91, .55); }
+  50%      { box-shadow: 0 0 calc(40px * var(--s)) calc(14px * var(--s)) rgba(215, 247, 91, 1); }
+}
+
+/* "Boing" when a bubble grows (see swell() in the script). The size itself
+   also eases up over about half a second; this makes the moment unmissable. */
+.cc-bubble.is-grew { animation: cc-bubble-grow .9s ease-out; }
+@keyframes cc-bubble-grow {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.3); }
+  65%  { transform: scale(.94); }
+  100% { transform: scale(1); }
 }
 
 /* gentle floating — transform only, so it stays smooth on kiosk hardware */
@@ -412,16 +426,17 @@
 }
 
 /* "New submission" pill + its extracted tags — collapsed by default, shown
-   while .is-fresh (right after a submission is processed). Sits between
-   the quote and the meta row on the real postcard, and is always shown on
-   the envelope's open clone (see below). */
+   (.has-tags) whenever the featured submission has been processed, and
+   it stays for as long as that submission is the featured one. Sits
+   between the quote and the meta row on the real postcard, and is always
+   shown on the envelope's open clone (see below). */
 .cc-postcard__tags {
   display: flex; align-items: center; flex-wrap: wrap;
   gap: calc(8px * var(--s));
   max-height: 0; opacity: 0; overflow: hidden;
   transition: max-height .5s ease, opacity .4s ease;
 }
-.cc-postcard.is-fresh .cc-postcard__tags { max-height: calc(130px * var(--s)); opacity: 1; }  /* room for the pill + 2 categories and their labels over a few wrapped lines */
+.cc-postcard.has-tags .cc-postcard__tags { max-height: calc(130px * var(--s)); opacity: 1; }  /* room for the pill + 2 categories and their labels over a few wrapped lines */
 .cc-postcard__new-pill {
   background: #141310; color: var(--cc-paper);
   font-family: var(--cc-font-label); font-size: calc(12px * var(--s)); font-weight: 700;
@@ -514,6 +529,7 @@
   .cc-envelope.is-playing .cc-envelope__closed { animation: none; opacity: 0; }
   .cc-envelope.is-playing .cc-envelope__open { animation: cc-envelope-open-reduced 34s ease forwards; }
   .cc-bubble { animation: none; }
+  .cc-bubble.is-grew { animation: none; }
   .cc-bubble.is-leaving { transition: none; }
   .cc-bubble.is-glowing::before { animation: none; box-shadow: 0 0 calc(20px * var(--s)) calc(6px * var(--s)) rgba(215, 247, 91, .85); }
 }
