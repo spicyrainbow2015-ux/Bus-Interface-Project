@@ -177,22 +177,21 @@ const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
 // (How many bubbles show at once — currently 8 — is decided on the server,
 // in api/refresh-themes.js, which drops the earliest-to-appear one when a
 // new category pushes past the cap. This page just draws what it's sent.)
-const MAX_D = 175, MIN_D = 58;
+const MAX_D = 300; // biggest a bubble can get
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let bubbleSprites = []; // { el, word, text, count, d, fs, targetD, targetFs, x, y, vx, vy }
 
-// How big a bubble is for its total. Log scale, so the first few responses
-// each make a clearly visible difference (1 -> 2 -> 3 mentions is roughly
-// +13px, +10px, +8px). The old scale was sqrt(count / all-time max), which
-// put every small category far below the minimum size — all clamped to the
-// same 58px — so a second response changed nothing on screen. The reference
-// max is capped so one huge category (e.g. 49 mentions) doesn't flatten
-// everything else; anything at or above the cap is full size.
-const GROWTH_REF_MAX = 30;
-function sizeFromCount(count, allTimeMax){
-  const ref = Math.max(1, Math.min(allTimeMax, GROWTH_REF_MAX));
-  const frac = Math.min(1, Math.log(1 + count) / Math.log(1 + ref));
-  return Math.round(MIN_D + (MAX_D - MIN_D) * frac);
+// How big a bubble is for its total. Absolute: it depends ONLY on that
+// category's own mention count (not on how big the other categories are), so
+// every response adds a predictable step. A log curve, doubled from the
+// previous version: the first responses add the most and it tapers off —
+// roughly  1: 82px, then +27, +19, +14, +13, +10, +9, +8 ... — reaching the
+// 300px cap at about 50 mentions. Tune the whole feel with these two numbers.
+const START_D = 82;        // size at 1 mention
+const GROWTH_PER_LN = 66;  // px added per "ln unit" of mentions; bigger = bigger jumps
+function sizeFromCount(count){
+  const d = START_D + GROWTH_PER_LN * (Math.log(1 + count) - Math.LN2);
+  return Math.round(Math.min(MAX_D, Math.max(START_D, d)));
 }
 
 // One place that writes a bubble's size/position to the DOM (the physics
@@ -286,13 +285,8 @@ function fitBubble(text, dFromCount){
   return { d: MAX_D, fs: 10 };
 }
 
-// allTimeMax is the biggest total across ALL categories, including ones
-// currently hidden by "Clear bubbles" — sizing against it means a category
-// keeps the size it had before a clear (49 -> 50 stays full-size) instead of
-// being rescaled just because the visible ones are all small right now.
-function reconcileBubbles(keywords, allTimeMax){
+function reconcileBubbles(keywords){
   const top = [...keywords].sort((a, b) => b.count - a.count);
-  const maxCount = Math.max(allTimeMax || 0, top[0]?.count || 0) || 1;
   const bubblesEl = document.getElementById('bubbles');
   const bounds = getChamberBounds();
 
@@ -300,7 +294,7 @@ function reconcileBubbles(keywords, allTimeMax){
   top.forEach((k) => {
     seenWords.add(k.word);
     const text = k.label || k.word;
-    const dFromCount = sizeFromCount(k.count, maxCount);
+    const dFromCount = sizeFromCount(k.count);
     const { d, fs } = fitBubble(text, dFromCount);
     let sprite = bubbleSprites.find(s => s.word === k.word);
     if (sprite){
@@ -338,8 +332,8 @@ function reconcileBubbles(keywords, allTimeMax){
   });
 }
 
-function renderBubbles(keywords, allTimeMax) {
-  reconcileBubbles(keywords, allTimeMax);
+function renderBubbles(keywords) {
+  reconcileBubbles(keywords);
 }
 
 // Gives the bubbles for the FEATURED submission's categories (the ones named
@@ -475,7 +469,7 @@ function render(data) {
   }
   renderFeaturedTags(data.featuredThemes);
   if (bubblesReady){
-    renderBubbles(data.keywords, data.maxKeywordCount);
+    renderBubbles(data.keywords);
     syncLinkedBubbles(data.featuredKeywords);
   }
 }
@@ -614,7 +608,6 @@ async function fetchPerspectives(){
       // An empty list is a real answer now (everything cleared) — only fall
       // back to the sample bubbles if the field is missing entirely.
       keywords: Array.isArray(data.keywords) ? data.keywords : SAMPLE_DATA.keywords,
-      maxKeywordCount: data.maxKeywordCount || 0,
       quote: (data.featured && data.featured.quote) || SAMPLE_DATA.quote,
       author: (data.featured && data.featured.author) || SAMPLE_DATA.author,
       date: (data.featured && data.featured.timestamp) ? formatSubmissionDateTime(data.featured.timestamp) : SAMPLE_DATA.date,
