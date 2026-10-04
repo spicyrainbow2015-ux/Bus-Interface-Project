@@ -528,6 +528,8 @@ let perspectivesData = { ...SAMPLE_DATA };
 // reload would flash the sample bubbles for a moment and then fade them out
 // — very visible after a "Clear bubbles", when the real answer is empty.
 let bubblesReady = false;
+function loadSeenId(){ try { return localStorage.getItem('cc:lastFeaturedId'); } catch (e) { return null; } }
+function saveSeenId(id){ try { localStorage.setItem('cc:lastFeaturedId', id); } catch (e) {} }
 let lastFeaturedId = null;       // which submission the card currently shows (null until the first load)
 let isNewSubmission = false;
 let revealTimer = null;
@@ -605,8 +607,17 @@ async function fetchPerspectives(){
     // if it's still untagged after a minute the AI call failed; show it).
     if (lastFeaturedId !== null && f && f.status === 'pending' && f.id !== lastFeaturedId
         && Date.now() - Date.parse(f.timestamp) < 60000) return;
-    isNewSubmission = lastFeaturedId !== null && !!(f && f.id) && f.id !== lastFeaturedId;
+    // "New" = different from the card this page last showed. On the very first
+    // load that's whatever this browser showed before the page was reloaded
+    // (remembered below), so reloading to check on a fresh submission still
+    // plays the envelope — but only if it's recent, so reopening the kiosk
+    // days later doesn't replay an old one.
+    const first = lastFeaturedId === null;
+    const known = first ? loadSeenId() : lastFeaturedId;
+    const recent = !!(f && f.timestamp) && Date.now() - Date.parse(f.timestamp) < 10 * 60000;
+    isNewSubmission = !!(f && f.id) && known !== null && f.id !== known && (!first || (recent && f.status !== 'pending'));
     lastFeaturedId = (f && f.id) || lastFeaturedId;
+    if (lastFeaturedId) saveSeenId(lastFeaturedId);
     perspectivesData = {
       stopName: SAMPLE_DATA.stopName,
       id: (data.featured && data.featured.id) || null,
