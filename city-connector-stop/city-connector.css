@@ -194,9 +194,15 @@
   background: var(--cc-lime);
   color: var(--cc-ink);
 }
-.cc-prompt__text { display: flex; flex-direction: column; gap: calc(10px * var(--s)); min-width: 0; }
 .cc-prompt__title { font-family: var(--cc-font-people); font-size: calc(40px * var(--s)); font-weight: 800; line-height: 1.15; text-wrap: balance; }
 .cc-prompt__sub { font-family: var(--cc-font-label); font-size: calc(18px * var(--s)); color: rgba(26, 26, 24, .72); }
+.cc-prompt__text { display: flex; flex-wrap: wrap; align-items: center; gap: calc(8px * var(--s)) calc(14px * var(--s)); min-width: 0; }
+.cc-prompt__title { flex-basis: 100%; }
+.cc-prompt__scan {
+  flex-shrink: 0; padding: calc(4px * var(--s)) calc(12px * var(--s));
+  border-radius: 999px; background: var(--cc-ink); color: var(--cc-lime);
+  font-family: var(--cc-font-label); font-size: calc(13px * var(--s)); font-weight: 500; letter-spacing: .02em;
+}
 
 /* ---------- Highlight label (sits between the prompt and the chamber,
    doubling as the chamber's visual top border) -------------------------- */
