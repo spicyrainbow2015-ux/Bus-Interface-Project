@@ -1,11 +1,9 @@
-// Phase 1 of 2 — CAPTURE ONLY. Stores a submitted perspective (quote +
-// optional author) in Redis with status "pending". No AI call happens
-// here, on purpose: the submitter shouldn't have to wait on an API round
-// trip, and this keeps API calls fully under manual control (see
-// api/refresh-themes.js, which is Phase 2 and does the actual Claude
-// call). Flipping this to fully automatic later is a one-line change —
-// call the same processing function this endpoint intentionally does NOT
-// call — not a rearchitecture.
+// Saves a submitted perspective (quote + optional author) in Redis, then
+// immediately tags it with Claude (lib/themes.js) so the kiosk can show it,
+// with its tags and bubbles, on its next poll. The submission is saved
+// FIRST: if the AI call fails or times out, the submitter still gets a
+// success and the record just stays "pending" (api/refresh-themes.js can
+// retry it). Only the quote text goes to Claude — never the author or date.
 //
 // Redis keys used (all under the "perspectives:" namespace so they don't
 // collide with anything else that might land in this KV store later):
@@ -14,12 +12,13 @@
 //                                  keywords: []}
 //   perspectives:submissionIds    LIST    ids, newest first, capped at 50
 //   perspectives:keywords         HASH    keyword -> mention count
-//                                  (only written during Phase 2)
+//                                  (written when the submission is tagged)
 //   perspectives:peopleCount      STRING  running total of submissions —
 //                                  counts everyone who submitted, whether
 //                                  or not their text has been processed yet
 
 const { Redis } = require('@upstash/redis');
+const { processOne } = require('../lib/themes');
 
 const redis = Redis.fromEnv();
 
@@ -48,6 +47,14 @@ module.exports = async (req, res) => {
     await redis.lpush('perspectives:submissionIds', id);
     await redis.ltrim('perspectives:submissionIds', 0, 49); // keep the list from growing forever
     const peopleCount = await redis.incr('perspectives:peopleCount');
+
+    // Must finish before responding — a serverless function can be frozen
+    // the moment the response is sent. Failure here never fails the submission.
+    try {
+      await processOne(id);
+    } catch (err) {
+      console.error(`submit-perspective: tagging ${id} failed, leaving it pending:`, err);
+    }
 
     res.status(200).json({ ok: true, id, peopleCount });
   } catch (err) {

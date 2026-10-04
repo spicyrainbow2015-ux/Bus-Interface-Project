@@ -105,7 +105,7 @@
       </div>
     </article>
 
-    <!-- Plays once whenever a submission finishes Phase 2 ("Refresh themes")
+    <!-- Plays once whenever the kiosk notices a new submission
          — see playEnvelopeReveal() in the script. The "open" state is a
          clone of #postcard itself (same classes: tilt, conditional photo,
          tag row, meta) so opening the envelope really does look like it's
@@ -136,18 +136,13 @@
 
 </main>
 
-<!-- Testing scaffolding, not part of the projection design — fixed so it
-     doesn't disturb the .cc-screen grid centering. Real submissions (via
-     /submit.html) already appear here on their own within ~15s (the
-     regular fetchPerspectives poll) — no button needed for that. This is
-     just the one manual step that's still deliberate: "Refresh themes" is
-     Phase 2, the only thing that calls Claude, and only runs when clicked. -->
-<div id="devstrip" style="position:fixed; left:12px; bottom:12px; z-index:10; background:rgba(255,255,255,.94); border:1px dashed #999; border-radius:8px; padding:10px 12px; font:12px/1.4 system-ui, sans-serif; max-width:320px; color:#222;">
-  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button id="refreshBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Refresh themes (real AI call)</button>
-    <button id="clearBtn" style="font:inherit; font-weight:700; padding:6px 12px; border-radius:999px; border:1px solid #999; background:#fff; cursor:pointer;">Clear bubbles</button>
-  </div>
-  <div id="simulateStatus" style="margin-top:6px; color:#555;"></div>
+<!-- Operator control, not part of the projection design — fixed so it doesn't
+     disturb the .cc-screen grid centering. Kept deliberately faint; it
+     brightens on hover. New submissions need no button: the page picks them
+     up on its regular poll and plays the envelope reveal by itself. -->
+<div id="devstrip" style="position:fixed; left:10px; bottom:8px; z-index:10; font:11px/1.4 system-ui, sans-serif; color:#888; opacity:.28; transition:opacity .2s;" onmouseenter="this.style.opacity=.9" onmouseleave="this.style.opacity=.28">
+  <button id="clearBtn" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Clear bubbles</button>
+  <span id="simulateStatus" style="margin-left:6px;"></span>
 </div>
 
 <script>
@@ -174,7 +169,7 @@ const BUBBLE_COLORS = ['mint', 'red', 'pink', 'blue'];
 const BUBBLE_SPEED_RANGE = [16, 30]; // design px/second
 const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
 // (How many bubbles show at once — currently 8 — is decided on the server,
-// in api/refresh-themes.js, which drops the earliest-to-appear one when a
+// in lib/themes.js, which drops the earliest-to-appear one when a
 // new category pushes past the cap. This page just draws what it's sent.)
 const MAX_D = 300; // biggest a bubble can get
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -347,7 +342,7 @@ function syncLinkedBubbles(words){
 // Pulses a green glow on whichever bubble(s) a just-processed submission's
 // categories landed on — growth by itself was hard to notice, so this
 // gives a direct "this is why" moment tied to the submission that caused
-// it. A category that was bumped off screen again within the same refresh
+// it. A category that was bumped off screen again within the same update
 // (a big batch of submissions) has no bubble to glow; no-op for it.
 function glowBubbles(words){
   if (!words || !words.length) return;
@@ -476,7 +471,7 @@ function render(data) {
 // The white card's tags (category + label for each theme) stay up for as long
 // as that submission is the featured one — they used to retire on a timer
 // ~36s after the reveal. Driven from the data on every render, so they also
-// show after a page reload, not only right after "Refresh themes". A
+// show after a page reload, not only right after a new submission. A
 // submission that hasn't been processed yet has no themes, so no tag row.
 let lastTagsKey = '';
 function renderFeaturedTags(themes){
@@ -533,6 +528,9 @@ let perspectivesData = { ...SAMPLE_DATA };
 // reload would flash the sample bubbles for a moment and then fade them out
 // — very visible after a "Clear bubbles", when the real answer is empty.
 let bubblesReady = false;
+let lastFeaturedId = null;       // which submission the card currently shows (null until the first load)
+let isNewSubmission = false;
+let revealTimer = null;
 let busData = { route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…', hasSecond: false };
 
 function renderAll(){
@@ -601,6 +599,14 @@ async function fetchPerspectives(){
   try {
     const res = await fetch(`${API_BASE}/api/perspectives`);
     const data = await res.json();
+    const f = data.featured;
+    // A submission is saved a moment before its AI tagging finishes. Don't put
+    // the untagged card on screen in that gap — wait for the next poll (but
+    // if it's still untagged after a minute the AI call failed; show it).
+    if (lastFeaturedId !== null && f && f.status === 'pending' && f.id !== lastFeaturedId
+        && Date.now() - Date.parse(f.timestamp) < 60000) return;
+    isNewSubmission = lastFeaturedId !== null && !!(f && f.id) && f.id !== lastFeaturedId;
+    lastFeaturedId = (f && f.id) || lastFeaturedId;
     perspectivesData = {
       stopName: SAMPLE_DATA.stopName,
       id: (data.featured && data.featured.id) || null,
@@ -623,14 +629,12 @@ async function fetchPerspectives(){
     return;
   }
   bubblesReady = true;
+  if (isNewSubmission){ isNewSubmission = false; await swapPostcard(); return; } // someone just submitted: play the reveal
   renderAll();
 }
 
 // ---------------------------------------------------------------------------
-// "Refresh themes" is Phase 2 — the manual trigger that calls Claude on
-// whatever's still pending. Real submissions (via /submit.html) already
-// show up here on their own via the regular fetchPerspectives poll below;
-// this button is the only deliberately-manual step left.
+// Tags and the new-submission reveal
 // ---------------------------------------------------------------------------
 const TAG_COLORS = ['cc-postcard__tag--0', 'cc-postcard__tag--1', 'cc-postcard__tag--2', 'cc-postcard__tag--3'];
 
@@ -658,8 +662,8 @@ function renderTagSpans(themes){
 }
 
 // ---------------------------------------------------------------------------
-// "New submission dropped" sequence, run once per "Refresh themes" call that
-// actually processed something. Order matters here (see the CSS comment
+// "New submission dropped" sequence, run whenever a poll finds that the featured
+// (most recent) submission has changed. Order matters here (see the CSS comment
 // above cc-envelope-closed/-open for the exact timeline):
 //   1. The real postcard fades out (.is-leaving) and its data is swapped
 //      while invisible — nothing changes on screen yet.
@@ -679,19 +683,12 @@ function renderTagSpans(themes){
 const ENVELOPE_TOTAL_MS = 34000;
 const ENVELOPE_REVEAL_AT_MS = 32200; // must match the 94.71% keyframe in city-connector.css
 
-async function swapPostcard(freshlyProcessed){
+async function swapPostcard(){
   const postcard = document.getElementById('postcard');
   postcard.classList.add('is-leaving');
   await new Promise(resolve => setTimeout(resolve, 650)); // matches the 0.6s CSS transition
-  await fetchPerspectives(); // swaps quote/author/date/photo/id while invisible
+  renderAll(); // swaps quote/author/date/photo/id (and the bubbles) while the card is invisible
 
-  // Prefer refresh-themes.js's own response for the featured submission's
-  // tags over whatever this fetch returned (it used to be edge-cached and
-  // could lag behind; it's no-store now, but this stays as a safeguard).
-  // Match by id rather than assuming order — with more than one submission
-  // pending at once, the featured one isn't always processed[0].
-  const match = (freshlyProcessed || []).find(p => p.id === perspectivesData.id);
-  if (match){ perspectivesData.featuredKeywords = match.keywords; perspectivesData.featuredThemes = themesOf(match); }
   syncLinkedBubbles(perspectivesData.featuredKeywords); // steady glow on the bubbles this submission fed
   glowBubbles(perspectivesData.featuredKeywords);       // plus an attention pulse right now
 
@@ -719,32 +716,8 @@ function playEnvelopeReveal(){
   void envelope.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
   envelope.classList.add('is-playing');
 
-  setTimeout(() => postcard.classList.remove('is-leaving'), ENVELOPE_REVEAL_AT_MS);
-}
-
-async function refreshThemes(){
-  const btn = document.getElementById('refreshBtn');
-  const status = document.getElementById('simulateStatus');
-  btn.disabled = true;
-  status.textContent = 'Sending pending submissions to Claude…';
-  try {
-    const res = await fetch(`${API_BASE}/api/refresh-themes`, { method: 'POST' });
-    const result = await res.json();
-    if (result.ok){
-      status.textContent = result.processedCount
-        ? `Processed ${result.processedCount}: ` + result.processed.map(p => themesOf(p).map(t => t.label && t.label !== t.category ? `${t.category} → ${t.label}` : t.category).join(', ')).join(' | ')
-        : 'Nothing pending to process.';
-      if (result.processedCount){
-        await swapPostcard(result.processed);
-      }
-    } else {
-      status.textContent = result.error || 'Failed to refresh.';
-    }
-  } catch (err) {
-    console.error('refreshThemes failed:', err);
-    status.textContent = 'Failed — see console.';
-  }
-  btn.disabled = false;
+  clearTimeout(revealTimer); // a newer submission restarts the sequence; the old timer must not reveal early
+  revealTimer = setTimeout(() => postcard.classList.remove('is-leaving'), ENVELOPE_REVEAL_AT_MS);
 }
 
 // Clears the bubbles from the display only — the server keeps every
@@ -761,7 +734,7 @@ async function clearBubbles(){
     const result = await res.json();
     if (result.ok){
       await fetchPerspectives(); // server now returns no visible categories
-      status.textContent = 'Cleared. Totals and the response count are kept — a category comes back when a new response lands on it.';
+      status.textContent = 'Cleared.';
     } else {
       status.textContent = result.error || 'Failed to clear.';
     }
@@ -772,7 +745,6 @@ async function clearBubbles(){
   btn.disabled = false;
 }
 
-document.getElementById('refreshBtn').addEventListener('click', refreshThemes);
 document.getElementById('clearBtn').addEventListener('click', clearBubbles);
 
 function updateClock(){

@@ -440,8 +440,8 @@
 .cc-postcard__tag--3 { background: var(--cc-red); color: var(--cc-paper); }
 
 /* ---------- New-submission envelope ---------------------------------------
-   Plays over the postcard's footprint when Phase 2 ("Refresh themes")
-   finishes tagging a submission: a closed envelope pops in and holds
+   Plays over the postcard's footprint when the kiosk notices a new,
+   already-tagged submission: a closed envelope pops in and holds
    (the real postcard stays hidden underneath — see .is-leaving above and
    playEnvelopeReveal() in the script), then the envelope's open layer — a
    clone of #postcard itself, same classes — fades in, holds ~30s, and
