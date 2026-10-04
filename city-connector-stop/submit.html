@@ -45,9 +45,9 @@
 </head>
 <body>
 <div class="wrap">
-  <!-- The question people answer — also the title on the kiosk screen
-       (city-connector-stop.html), so change it in both places. -->
-  <h1>What are you looking forward to this fall?</h1>
+  <!-- The question people answer. This wording is only the fallback: the live
+       question is fetched from /api/prompt (changed from the kiosk page). -->
+  <h1 id="question">What are you looking forward to this fall?</h1>
   <p class="stop">Leave a thought for someone nearby</p>
 
   <form id="form">
@@ -70,6 +70,10 @@
   // page is only ever reached by scanning the QR code, never opened as a
   // standalone file, so (unlike the kiosk page) there's no need for the
   // absolute-URL trick used elsewhere in this project.
+  fetch('/api/prompt').then(r => r.json()).then(d => {
+    if (d && d.question) document.getElementById('question').textContent = d.question;
+  }).catch(() => {}); // keep the built-in wording if this fails
+
   const form = document.getElementById('form');
   const quoteEl = document.getElementById('quote');
   const authorEl = document.getElementById('author');

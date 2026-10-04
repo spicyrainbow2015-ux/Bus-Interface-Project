@@ -19,6 +19,7 @@
 //                                  bubble_label (what the bubble shows);
 //                                  also holds the setup-done marker field
 //   perspectives:peopleCount      STRING  running total of submissions
+//   perspectives:question         STRING  the current prompt (set by api/prompt.js)
 //
 // The "featured" submission is just the most recent one by submission
 // order — it doesn't need to be processed (tagged) yet to be featured,
@@ -95,7 +96,7 @@ async function ensureInitialized(){
   await redis.hset(LABELS_KEY, { [LABELS_INIT_FIELD]: '1' });
 }
 
-// The 5 reads every request makes (the 6th command is fetching the featured
+// The 6 reads every request makes (the 7th command is fetching the featured
 // submission itself, once its id is known).
 const readAll = () => Promise.all([
   redis.hgetall('perspectives:keywords'),
@@ -103,6 +104,7 @@ const readAll = () => Promise.all([
   redis.hgetall(LABELS_KEY),
   redis.lrange('perspectives:submissionIds', 0, 0), // most recent submission id
   redis.get('perspectives:peopleCount'),
+  redis.get('perspectives:question'), // the current prompt, so the kiosk needs no extra request
 ]);
 
 module.exports = async (req, res) => {
@@ -114,10 +116,10 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
-    let [keywordsMap, onScreen, labelsMap, recentIds, peopleCount] = await readAll();
+    let [keywordsMap, onScreen, labelsMap, recentIds, peopleCount, question] = await readAll();
     if (!(labelsMap && labelsMap[LABELS_INIT_FIELD])) {
       await ensureInitialized();
-      [keywordsMap, onScreen, labelsMap, recentIds, peopleCount] = await readAll();
+      [keywordsMap, onScreen, labelsMap, recentIds, peopleCount, question] = await readAll();
     }
 
     const totals = keywordsMap || {};
@@ -150,6 +152,7 @@ module.exports = async (req, res) => {
       maxKeywordCount,
       featured,
       peopleCount: Number(peopleCount) || SEED_PEOPLE_COUNT,
+      question: question ? String(question) : null,
     });
   } catch (err) {
     console.error('perspectives error:', err);

@@ -64,9 +64,10 @@
        the vertical space that used to be spent on the CTA + bus rows. -->
   <section class="cc-prompt">
     <div class="cc-prompt__text">
-      <!-- The question people answer — also appears as the heading on
-           submit.html, so change it in both places. -->
-      <div class="cc-prompt__title">What are you looking forward to this fall?</div>
+      <!-- The question people answer. This wording is only the fallback: the live
+           question comes from the server (set with "Edit question" below) and
+           replaces it, here and on submit.html. -->
+      <div class="cc-prompt__title" id="promptTitle">What are you looking forward to this fall?</div>
       <div class="cc-prompt__sub">Leave a thought for someone nearby</div>
       <div class="cc-prompt__scan">Scan the QR code to answer</div>
     </div>
@@ -143,6 +144,11 @@
      up on its regular poll and plays the envelope reveal by itself. -->
 <div id="devstrip" style="position:fixed; left:10px; bottom:8px; z-index:10; font:11px/1.4 system-ui, sans-serif; color:#888; opacity:.28; transition:opacity .2s;" onmouseenter="this.style.opacity=.9" onmouseleave="this.style.opacity=.28">
   <button id="clearBtn" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Clear bubbles</button>
+  <button id="editQBtn" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Edit question</button>
+  <form id="editQForm" style="display:none; gap:4px; margin-left:4px;">
+    <input id="editQInput" maxlength="70" size="34" placeholder="New question" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:#111; color:#eee;">
+    <button type="submit" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Save</button>
+  </form>
   <span id="simulateStatus" style="margin-left:6px;"></span>
 </div>
 
@@ -598,11 +604,17 @@ function formatSubmissionDateTime(iso){
   return `${formatDate(iso)}  ${time}`;
 }
 
+function setQuestion(q){
+  const el = document.getElementById('promptTitle');
+  if (el.textContent !== q) el.textContent = q;
+}
+
 async function fetchPerspectives(){
   try {
     const res = await fetch(`${API_BASE}/api/perspectives`);
     const data = await res.json();
     const f = data.featured;
+    if (typeof data.question === 'string' && data.question) setQuestion(data.question);
     // A submission is saved a moment before its AI tagging finishes. Don't put
     // the untagged card on screen in that gap — wait for the next poll (but
     // if it's still untagged after a minute the AI call failed; show it).
@@ -758,6 +770,29 @@ async function clearBubbles(){
 }
 
 document.getElementById('clearBtn').addEventListener('click', clearBubbles);
+
+// Changes the question for everyone: saved on the server, so the submit page
+// shows it too and any other open kiosk picks it up on its next poll.
+const editQForm = document.getElementById('editQForm');
+const editQInput = document.getElementById('editQInput');
+document.getElementById('editQBtn').addEventListener('click', () => {
+  editQForm.style.display = editQForm.style.display === 'none' ? 'inline-flex' : 'none';
+  if (editQForm.style.display !== 'none'){ editQInput.value = document.getElementById('promptTitle').textContent; editQInput.focus(); editQInput.select(); }
+});
+editQForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const status = document.getElementById('simulateStatus');
+  status.textContent = 'Saving…';
+  try {
+    const res = await fetch(`${API_BASE}/api/prompt`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ question: editQInput.value }) });
+    const result = await res.json();
+    if (result.ok){ setQuestion(result.question); editQForm.style.display = 'none'; status.textContent = 'Saved.'; }
+    else status.textContent = result.error || 'Could not save.';
+  } catch (err) {
+    console.error('save question failed:', err);
+    status.textContent = 'Failed — see console.';
+  }
+});
 
 function updateClock(){
   const now = new Date();
