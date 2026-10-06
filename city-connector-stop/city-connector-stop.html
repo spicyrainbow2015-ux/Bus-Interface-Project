@@ -408,14 +408,21 @@ function constrainBubble(s, bounds, reflect){
   if (s.y + s.d > bounds.height - BUBBLE_MARGIN){ s.y = bounds.height - BUBBLE_MARGIN - s.d; if (reflect) s.vy = -Math.abs(s.vy); }
 }
 
+let lastBubbleTick = null;
 function tickBubbles(){
   const bounds = getChamberBounds();
-  const dt = 1 / 60; // fixed step keeps speeds predictable regardless of actual frame timing
+  // Real elapsed time, so the motion is the same speed on a 60Hz iPad and a
+  // 120Hz laptop (a fixed per-frame step ran twice as fast at 120Hz). Clamped
+  // so a stalled frame (hidden tab, slow device) doesn't make a big jump.
+  const now = performance.now();
+  const dt = lastBubbleTick === null ? 1 / 60 : Math.min((now - lastBubbleTick) / 1000, 0.05);
+  lastBubbleTick = now;
+  const ease = 1 - Math.pow(1 - 0.12, dt * 60); // the 0.12-per-frame easing, expressed per second
 
   bubbleSprites.forEach(s => {
     // ease toward the target size/font (~0.5s) so growth is seen happening
-    s.d += (s.targetD - s.d) * 0.12;
-    s.fs += (s.targetFs - s.fs) * 0.12;
+    s.d += (s.targetD - s.d) * ease;
+    s.fs += (s.targetFs - s.fs) * ease;
     if (Math.abs(s.targetD - s.d) < 0.3){ s.d = s.targetD; s.fs = s.targetFs; }
     s.x += s.vx * dt;
     s.y += s.vy * dt;
@@ -437,10 +444,10 @@ function tickBubbles(){
   // sit frozen indefinitely.
   bubbleSprites.forEach(s => {
     const moved = Math.hypot(s.x - (s.lastX ?? s.x), s.y - (s.lastY ?? s.y));
-    s.stuckFrames = moved < 0.3 ? (s.stuckFrames || 0) + 1 : 0;
-    if (s.stuckFrames > 45){
+    s.stuckTime = moved < 0.3 * dt * 60 ? (s.stuckTime || 0) + dt : 0; // < ~18 design px/s
+    if (s.stuckTime > 0.75){
       Object.assign(s, randomVelocity());
-      s.stuckFrames = 0;
+      s.stuckTime = 0;
     }
     s.lastX = s.x; s.lastY = s.y;
   });
