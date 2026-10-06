@@ -144,6 +144,7 @@
      up on its regular poll and plays the envelope reveal by itself. -->
 <div id="devstrip" style="position:fixed; left:10px; bottom:8px; z-index:10; font:11px/1.4 system-ui, sans-serif; color:#888; opacity:.28; transition:opacity .2s;" onmouseenter="this.style.opacity=.9" onmouseleave="this.style.opacity=.28">
   <button id="clearBtn" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Clear bubbles</button>
+  <button id="refillBtn" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Refill bubbles</button>
   <button id="editQBtn" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:transparent; color:inherit; cursor:pointer;">Edit question</button>
   <form id="editQForm" style="display:none; gap:4px; margin-left:4px;">
     <input id="editQInput" maxlength="70" size="34" placeholder="New question" style="font:inherit; padding:2px 8px; border-radius:999px; border:1px solid #555; background:#111; color:#eee;">
@@ -175,7 +176,7 @@ const SHOW_BUS_INFO = false;
 const BUBBLE_COLORS = ['mint', 'red', 'pink', 'blue'];
 const BUBBLE_SPEED_RANGE = [16, 30]; // design px/second
 const BUBBLE_MARGIN = 6; // design px kept clear of the chamber's own edges
-// (How many bubbles show at once — currently 8 — is decided on the server,
+// (How many bubbles show at once — currently 15 — is decided on the server,
 // in lib/themes.js, which drops the earliest-to-appear one when a
 // new category pushes past the cap. This page just draws what it's sent.)
 const MAX_D = 300; // biggest a bubble can get
@@ -367,7 +368,7 @@ function glowBubbles(words){
 }
 
 // Simple circle-circle collision: separates any two overlapping bubbles by
-// nudging their positions apart. O(n²) over at most 8 bubbles, so
+// nudging their positions apart. O(n²) over at most 15 bubbles, so
 // trivially cheap per frame. Deliberately positional-only, with no
 // velocity exchange: an earlier version reflected velocity too (a "real"
 // elastic collision), but several bubbles pressed together against a wall
@@ -424,7 +425,7 @@ function tickBubbles(){
   // A bubble wedged against a wall by a neighbor can need more than one
   // round to settle — a single pass could leave it oscillating in place.
   // A few relaxation iterations resolves this within the same frame;
-  // still trivially cheap at up to 8 bubbles.
+  // still trivially cheap at up to 15 bubbles.
   for (let i = 0; i < 4; i++){
     resolveBubbleCollisions();
     bubbleSprites.forEach(s => constrainBubble(s, bounds, false));
@@ -770,6 +771,30 @@ async function clearBubbles(){
 }
 
 document.getElementById('clearBtn').addEventListener('click', clearBubbles);
+
+// Puts the bubbles back from the most recent answers (newest first, up to the
+// 15-bubble limit) — see api/refill-bubbles.js.
+async function refillBubbles(){
+  const btn = document.getElementById('refillBtn');
+  const status = document.getElementById('simulateStatus');
+  btn.disabled = true;
+  status.textContent = 'Refilling…';
+  try {
+    const res = await fetch(`${API_BASE}/api/refill-bubbles`, { method: 'POST' });
+    const result = await res.json();
+    if (result.ok){
+      await fetchPerspectives();
+      status.textContent = `${result.count} bubbles, from the latest ${result.answers} answers.`;
+    } else {
+      status.textContent = result.error || 'Failed to refill.';
+    }
+  } catch (err) {
+    console.error('refillBubbles failed:', err);
+    status.textContent = 'Failed — see console.';
+  }
+  btn.disabled = false;
+}
+document.getElementById('refillBtn').addEventListener('click', refillBubbles);
 
 // Changes the question for everyone: saved on the server, so the submit page
 // shows it too and any other open kiosk picks it up on its next poll.

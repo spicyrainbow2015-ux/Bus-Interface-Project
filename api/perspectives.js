@@ -56,7 +56,7 @@ const LABELS_INIT_FIELD = '__initV2__';
 // present, the on-screen list was already built — don't build it again.
 const PREVIOUS_INIT_KEY = 'perspectives:initV2';
 // Same cap/key as refresh-themes.js — keep them in sync.
-const MAX_ON_SCREEN = 8;
+const MAX_ON_SCREEN = 15;
 
 // One-time setup. Only runs on the first request after deploying (a normal
 // request sees the marker and skips this entirely). It does two things:
