@@ -376,6 +376,11 @@
   z-index: -1;
 }
 .cc-postcard.is-leaving { opacity: 0; }
+/* The real postcard is never shown on its own: the screen is just the moving
+   bubbles, and a new submission's message appears only inside the envelope
+   sequence below (which holds it for about 10 seconds). It stays in the page
+   so the script can keep filling it in and the envelope can clone its look. */
+#postcard.cc-postcard { visibility: hidden; pointer-events: none; }
 /* No photo (real submissions via /submit.html don't collect one) — the
    quote is now the first thing in the card, so it needs more breathing
    room above it than the base 12px padding (which was tuned assuming the
@@ -450,7 +455,7 @@
    already-tagged submission: a closed envelope pops in and holds
    (the real postcard stays hidden underneath — see .is-leaving above and
    playEnvelopeReveal() in the script), then the envelope's open layer — a
-   clone of #postcard itself, same classes — fades in, holds ~30s, and
+   clone of #postcard itself, same classes — fades in, holds 10s, and
    fades out again. The real postcard is revealed at that exact moment,
    already showing identical content, so the handoff is seamless: the
    envelope visually "becomes" the new postcard, never a separate overlay.
@@ -481,29 +486,28 @@
   opacity: 0;
   transition: none; /* this layer's opacity is animation-driven, not the fade used for postcard swaps */
 }
-.cc-envelope.is-playing .cc-envelope__closed { animation: cc-envelope-closed 34s cubic-bezier(.22, .8, .25, 1) forwards; }
-.cc-envelope.is-playing .cc-envelope__open   { animation: cc-envelope-open   34s cubic-bezier(.22, .8, .25, 1) forwards; }
+.cc-envelope.is-playing .cc-envelope__closed { animation: cc-envelope-closed 14.4s cubic-bezier(.22, .8, .25, 1) forwards; }
+.cc-envelope.is-playing .cc-envelope__open   { animation: cc-envelope-open   14.4s cubic-bezier(.22, .8, .25, 1) forwards; }
 
 .cc-envelope__svg { width: 100%; height: 100%; filter: drop-shadow(0 0 calc(20px * var(--s)) rgba(215, 247, 91, .6)); }
 
-/* pop in -> hold closed -> cross-fade open -> hold ~30s -> fade out, 34s total.
+/* pop in -> hold closed -> cross-fade open -> hold 10s -> fade out, 14.4s total.
    Timeline: 0.6s pop, settle by 0.9s, hold closed until 2.6s, open fully
-   visible by 3.2s, hold until 32.2s, faded out by 33.4s. */
+   visible by 3.2s, hold until 13.2s (10 seconds on screen), faded out by 14.4s. */
 @keyframes cc-envelope-closed {
-  0%     { opacity: 0; transform: scale(.6) translateY(calc(20px * var(--s))); }
-  1.76%  { opacity: 1; transform: scale(1.04) translateY(0); }
-  2.65%  { opacity: 1; transform: scale(1); }
-  7.65%  { opacity: 1; transform: scale(1); }
-  9.41%  { opacity: 0; transform: scale(.94); }
-  100%   { opacity: 0; }
+  0%      { opacity: 0; transform: scale(.6) translateY(calc(20px * var(--s))); }
+  4.17%   { opacity: 1; transform: scale(1.04) translateY(0); }
+  6.25%   { opacity: 1; transform: scale(1); }
+  18.06%  { opacity: 1; transform: scale(1); }
+  22.22%  { opacity: 0; transform: scale(.94); }
+  100%    { opacity: 0; }
 }
 @keyframes cc-envelope-open {
-  0%     { opacity: 0; transform: scale(.94) translateY(calc(10px * var(--s))); }
-  7.65%  { opacity: 0; transform: scale(.94) translateY(calc(10px * var(--s))); }
-  9.41%  { opacity: 1; transform: scale(1) translateY(0); }
-  94.71% { opacity: 1; transform: scale(1); }
-  98.24% { opacity: 0; transform: scale(.96); }
-  100%   { opacity: 0; }
+  0%      { opacity: 0; transform: scale(.94) translateY(calc(10px * var(--s))); }
+  18.06%  { opacity: 0; transform: scale(.94) translateY(calc(10px * var(--s))); }
+  22.22%  { opacity: 1; transform: scale(1) translateY(0); }
+  91.67%  { opacity: 1; transform: scale(1); }
+  100%    { opacity: 0; transform: scale(.96); }
 }
 
 @keyframes cc-envelope-open-reduced {
@@ -519,7 +523,7 @@
   .cc-postcard { transition: none; }
   .cc-postcard__tags { transition: none; }
   .cc-envelope.is-playing .cc-envelope__closed { animation: none; opacity: 0; }
-  .cc-envelope.is-playing .cc-envelope__open { animation: cc-envelope-open-reduced 34s ease forwards; }
+  .cc-envelope.is-playing .cc-envelope__open { animation: cc-envelope-open-reduced 14.4s ease forwards; }
   .cc-bubble { animation: none; }
   .cc-bubble.is-grew { animation: none; }
   .cc-bubble.is-leaving { transition: none; }

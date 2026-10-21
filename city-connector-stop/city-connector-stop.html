@@ -547,7 +547,6 @@ function loadSeenId(){ try { return localStorage.getItem('cc:lastFeaturedId'); }
 function saveSeenId(id){ try { localStorage.setItem('cc:lastFeaturedId', id); } catch (e) {} }
 let lastFeaturedId = null;       // which submission the card currently shows (null until the first load)
 let isNewSubmission = false;
-let revealTimer = null;
 let busData = { route: '21', destination: 'Columbus-Dock', minutes: '–', isLive: false, arrivalNote: 'loading…', hasSecond: false };
 
 function renderAll(){
@@ -697,43 +696,31 @@ function renderTagSpans(themes){
 // "New submission dropped" sequence, run whenever a poll finds that the featured
 // (most recent) submission has changed. Order matters here (see the CSS comment
 // above cc-envelope-closed/-open for the exact timeline):
-//   1. The real postcard fades out (.is-leaving) and its data is swapped
-//      while invisible — nothing changes on screen yet.
-//   2. The closed envelope pops in and holds — the postcard stays hidden
-//      underneath, so only the envelope is visible.
-//   3. The envelope "opens": its open layer is a clone of #postcard itself
-//      (same classes — tilt, conditional photo, tag row, meta), so this is
-//      the actual reveal of the new content.
-//   4. The clone holds, then starts fading out. The real postcard is
-//      revealed at that exact moment (ENVELOPE_REVEAL_AT_MS), already
-//      showing identical content, so the crossfade is seamless.
-//   After that the card just stays: its tags remain for as long as it's
-//   the featured submission, and the bubbles for its categories keep a
-//   steady green glow (see syncLinkedBubbles) so it's clear which bubbles
-//   it fed.
+//   1. The new submission's data is filled in; nothing is visible yet — the
+//      screen is just the moving bubbles until now.
+//   2. The closed envelope pops in and holds for a couple of seconds.
+//   3. The envelope "opens": its open layer is a clone of #postcard (same
+//      classes — tilt, conditional photo, tag row, meta), showing the message
+//      for about 10 seconds.
+//   4. It fades out, back to just the bubbles. The standalone #postcard is
+//      never shown (see the CSS), so the message is on screen only during
+//      this sequence. The bubbles for the submission's categories keep a
+//      steady green glow (see syncLinkedBubbles) so it's clear which bubbles
+//      it fed.
 // ---------------------------------------------------------------------------
-const ENVELOPE_TOTAL_MS = 34000;
-const ENVELOPE_REVEAL_AT_MS = 32200; // must match the 94.71% keyframe in city-connector.css
 
 async function swapPostcard(){
-  const postcard = document.getElementById('postcard');
-  postcard.classList.add('is-leaving');
-  await new Promise(resolve => setTimeout(resolve, 650)); // matches the 0.6s CSS transition
-  renderAll(); // swaps quote/author/date/photo/id (and the bubbles) while the card is invisible
+  renderAll(); // fills in the new quote/author/date/photo/id (and updates the bubbles)
 
   syncLinkedBubbles(perspectivesData.featuredKeywords); // steady glow on the bubbles this submission fed
   glowBubbles(perspectivesData.featuredKeywords);       // plus an attention pulse right now
 
   renderFeaturedTags(perspectivesData.featuredThemes);
-  // postcard stays hidden (is-leaving) until playEnvelopeReveal's timer
-  // reveals it — do NOT remove is-leaving here, that was the bug: it made
-  // the real postcard fade back in before the envelope even appeared.
   playEnvelopeReveal();
 }
 
 function playEnvelopeReveal(){
   const envelope = document.getElementById('envelope');
-  const postcard = document.getElementById('postcard');
 
   document.getElementById('envQuote').textContent = `“${perspectivesData.quote}”`;
   document.getElementById('envAuthor').textContent = perspectivesData.author || 'Anonymous';
@@ -747,9 +734,6 @@ function playEnvelopeReveal(){
   envelope.classList.remove('is-playing');
   void envelope.offsetWidth; // reflow, so re-adding the class restarts the CSS animation
   envelope.classList.add('is-playing');
-
-  clearTimeout(revealTimer); // a newer submission restarts the sequence; the old timer must not reveal early
-  revealTimer = setTimeout(() => postcard.classList.remove('is-leaving'), ENVELOPE_REVEAL_AT_MS);
 }
 
 // Clears the bubbles from the display only — the server keeps every
