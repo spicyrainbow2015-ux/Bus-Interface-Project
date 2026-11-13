@@ -19,7 +19,7 @@ Pick one under **Source → Input**:
 - **Paper + camera:** draw on real paper under a camera (described below).
 - **Draw on screen:** draw with a mouse, trackpad or stylus on the pad in the operator window.
   Pick a brush, colour and size; stylus pressure changes the size.
-  Brushes: **Pen** (plain line), **Dots** (stippled pointillism), **Spray** (soft cloud of fine dots),
+  Brushes: **Pen** (plain line), **Spray** (soft cloud of fine dots),
   **Hatch** (short dashes across the stroke; circles become radiating rings), **Ripple**
   (parallel contour lines), **Polka** (big evenly spaced dots) and **Triangles** (scattered solid triangles). **Colour mix** spreads each mark's hue and lightness around the chosen colour. Lines become particles the
   moment you draw them, and Clear wipes the pad along with the output.

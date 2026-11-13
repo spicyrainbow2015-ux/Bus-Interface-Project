@@ -3,7 +3,6 @@
 // marks, so the same random texture lands on both the visible pad and the capture canvas.
 //
 //   pen    — a plain round line
-//   dots   — stippled dots scattered along the stroke (pointillism)
 //   spray  — a soft cloud of fine dots, dense in the middle, fading at the edges
 //   hatch  — short dashes across the stroke; drawing in circles makes radiating rings
 //   ripple — several parallel lines that follow the stroke, like contour bands
@@ -12,7 +11,6 @@
 
 export const BRUSHES = [
   { id: 'pen', label: 'Pen' },
-  { id: 'dots', label: 'Dots' },
   { id: 'spray', label: 'Spray' },
   { id: 'hatch', label: 'Hatch' },
   { id: 'ripple', label: 'Ripple' },
@@ -69,7 +67,6 @@ export function createStroke(opts) {
   let stampNo = 0;
 
   function spacing(sz) {
-    if (brush === 'dots') return Math.max(1, sz * 0.35);
     if (brush === 'spray') return Math.max(1, sz * 0.3);
     if (brush === 'hatch') return Math.max(1.5, sz * 0.4);
     if (brush === 'polka') return Math.max(3, sz * 1.5);
@@ -94,13 +91,7 @@ export function createStroke(opts) {
       poly(pts, shade());
       return;
     }
-    if (brush === 'dots') {
-      const n = 3;
-      for (let k = 0; k < n; k++) {
-        const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * sz * 1.1;
-        dot(x + Math.cos(a) * d, y + Math.sin(a) * d, (0.7 + Math.random() * 0.8) * Math.max(0.8, sz * 0.09), shade());
-      }
-    } else if (brush === 'spray') {
+    if (brush === 'spray') {
       const n = Math.max(3, Math.round(sz * 1.3));
       for (let k = 0; k < n; k++) {
         const ox = gauss() * sz * 0.75, oy = gauss() * sz * 0.75;

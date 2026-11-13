@@ -24,6 +24,7 @@ const MAX_POINTS = 140000;
 let S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch {}
 if (!S.doorwayIntroduced) { S.outlineSrc = 'door'; S.outlineOn = true; S.doorwayIntroduced = true; }
+if (S.padBrush === 'dots') S.padBrush = 'spray'; // Dots brush was folded into Spray
 function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {} }
 
 // ---------- Elements ----------
