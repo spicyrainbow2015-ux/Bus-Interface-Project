@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ink Projector · Output</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    body.idle { cursor: none; }
+    .hint {
+      position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+      font: 14px -apple-system, BlinkMacSystemFont, sans-serif; color: #9aa0aa;
+      background: rgba(20, 22, 26, 0.85); border: 1px solid #2a2d35; border-radius: 999px;
+      padding: 8px 16px; transition: opacity 0.8s; white-space: nowrap;
+    }
+    .hint.gone { opacity: 0; pointer-events: none; }
+    .preview .hint { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="out"></canvas>
+  <div class="hint" id="hint">Drag this window to the projector, then press F (or double-click) for full screen</div>
+  <script type="module" src="output.js"></script>
+</body>
+</html>

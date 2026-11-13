@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ink Projector · Operator</title>
+  <link rel="stylesheet" href="operator.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Ink Projector</h1>
+    <div class="pills">
+      <span class="pill" id="pillPaper">Paper: —</span>
+      <span class="pill" id="pillOutput">Output: none open</span>
+      <span class="pill" id="pillStats">— fps</span>
+    </div>
+    <button id="btnOpenOutput" class="primary">Open output window</button>
+  </header>
+
+  <main class="layout">
+    <section class="col-main">
+      <div class="panel">
+        <div class="panel-head">
+          <h2 id="camTitle">Camera</h2>
+          <span class="hint" id="camHint">Drag the corner dots to fit the paper outline</span>
+        </div>
+        <div class="pad-tools" id="padTools" hidden>
+          <div class="brushes" id="brushes"></div>
+          <div class="swatches" id="swatches"></div>
+          <label class="pad-size">Size <input type="range" data-key="padSize" min="2" max="36" step="1"></label>
+          <label class="pad-size">Colour mix <input type="range" data-key="padMix" min="0" max="1" step="0.05"></label>
+        </div>
+        <div class="stage cam-stage" id="camStage">
+          <canvas id="cam" width="1280" height="720"></canvas>
+          <div class="empty" id="camEmpty">Choose a source and press Start</div>
+        </div>
+        <div class="stage pad-stage" id="padStage" hidden>
+          <canvas id="pad"></canvas>
+        </div>
+      </div>
+
+      <div class="row2" id="paperRow">
+        <div class="panel">
+          <div class="panel-head"><h2>Paper, flattened</h2></div>
+          <div class="stage dark"><canvas id="paper" width="480" height="340"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Ink detected</h2>
+            <span class="legend"><i class="sw sw-captured"></i>captured <i class="sw sw-settling"></i>settling</span>
+          </div>
+          <div class="stage dark"><canvas id="ink" width="480" height="340"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="col-side">
+      <div class="panel">
+        <div class="panel-head"><h2>Output preview</h2><span class="hint">What the projector shows</span></div>
+        <div class="stage preview"><iframe id="preview" src="output.html?preview=1" title="Output preview"></iframe></div>
+      </div>
+
+      <button id="btnClear" class="clear">Clear drawing <kbd>Space</kbd></button>
+      <div class="banner" id="awaitBanner" hidden>
+        <span>Cleared. Waiting for a fresh sheet before capturing again.</span>
+        <button id="btnRecapture">Use this sheet anyway</button>
+      </div>
+
+      <details class="panel group" open>
+        <summary>Source</summary>
+        <div class="fields">
+          <label class="field">
+            <span>Input</span>
+            <select data-key="source">
+              <option value="camera">Paper + camera</option>
+              <option value="draw">Draw on screen</option>
+              <option value="sim">Simulated paper drawing (no camera)</option>
+              <option value="image">Photo file</option>
+            </select>
+          </label>
+          <label class="field" id="fieldDevice">
+            <span>Camera</span>
+            <select id="selDevice"><option value="">Default camera</option></select>
+          </label>
+          <label class="field" id="fieldFile">
+            <span>Photo</span>
+            <input type="file" id="fileInput" accept="image/*">
+          </label>
+          <label class="check"><input type="checkbox" data-key="mirror"> Mirror image</label>
+          <button id="btnStart" class="primary">Start</button>
+        </div>
+      </details>
+
+      <details class="panel group" open>
+        <summary>Building outline</summary>
+        <div class="fields">
+          <label class="check"><input type="checkbox" data-key="outlineOn"> Use a building outline</label>
+          <div class="fields-sub" id="outlineFields">
+            <label class="field">
+              <span>Building</span>
+              <select data-key="outlineSrc">
+                <option value="door">Doorway (traced from your photo)</option>
+                <option value="sample">Sample building</option>
+                <option value="upload">My image</option>
+              </select>
+            </label>
+            <label class="field" id="fieldBuildingFile">
+              <span>Image of the building</span>
+              <input type="file" id="buildingFile" accept="image/*">
+            </label>
+            <label class="field" id="fieldOutlineMode">
+              <span>The image is a…</span>
+              <select data-key="outlineMode">
+                <option value="photo">Photo (find the edges)</option>
+                <option value="lines">Line drawing (use its dark lines)</option>
+              </select>
+            </label>
+            <label class="field range" id="fieldOutlineDetail">
+              <span>Edge detail <output data-for="outlineDetail" data-pct></output></span>
+              <input type="range" data-key="outlineDetail" min="0" max="1" step="0.05">
+            </label>
+            <label class="field">
+              <span>Drawing limits</span>
+              <select data-key="drawLimit">
+                <option value="shape">Stay inside each shape (colouring book)</option>
+                <option value="inside">Stay inside the doorway</option>
+                <option value="free">Draw anywhere</option>
+              </select>
+            </label>
+            <label class="field range">
+              <span>Guide on drawing pad <output data-for="guideOpacity" data-pct></output></span>
+              <input type="range" data-key="guideOpacity" min="0" max="1" step="0.05">
+            </label>
+            <label class="check"><input type="checkbox" data-key="outlineOut"> Show glowing outline on output</label>
+            <label class="field range">
+              <span>Outline brightness <output data-for="outlineGlow" data-pct></output></span>
+              <input type="range" data-key="outlineGlow" min="0" max="1" step="0.05">
+            </label>
+            <button id="btnTemplate">Print paper template</button>
+            <p class="note">For paper drawing: print the template, draw on it with a dark marker. Its light-blue lines are too faint to be captured, so only your drawing is projected.</p>
+          </div>
+        </div>
+      </details>
+
+      <details class="panel group" open>
+        <summary>Paper</summary>
+        <div class="fields">
+          <div class="btn-row">
+            <button id="btnAuto">Auto-detect</button>
+            <button id="btnLock">Lock</button>
+            <button id="btnFull">Use full frame</button>
+            <button id="btnRotate">Rotate 90°</button>
+          </div>
+          <label class="field">
+            <span>Paper size</span>
+            <select data-key="paper">
+              <option value="a4">A4</option>
+              <option value="letter">US Letter</option>
+              <option value="square">Square</option>
+            </select>
+          </label>
+          <p class="note">Detection looks for a white sheet on a darker surface. Press Lock once the outline fits, so a hand at the edge can't move it.</p>
+        </div>
+      </details>
+
+      <details class="panel group" open>
+        <summary>Ink detection</summary>
+        <div class="fields">
+          <label class="field range">
+            <span>Darkness threshold <output data-for="threshold"></output></span>
+            <input type="range" data-key="threshold" min="0.12" max="0.8" step="0.01">
+          </label>
+          <label class="field range">
+            <span>Hold time <output data-for="hold" data-unit="s"></output></span>
+            <input type="range" data-key="hold" min="0.1" max="2" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Ignore paper edge <output data-for="margin" data-pct></output></span>
+            <input type="range" data-key="margin" min="0" max="0.1" step="0.005">
+          </label>
+          <label class="field range">
+            <span>Particle density <output data-for="density" data-pct></output></span>
+            <input type="range" data-key="density" min="0.1" max="1" step="0.05">
+          </label>
+          <label class="check"><input type="checkbox" data-key="ignoreSkin"> Ignore skin-coloured pixels (hands)</label>
+          <label class="check"><input type="checkbox" data-key="waitStill"> Wait until nearby movement stops (pen, hand)</label>
+          <p class="note">Ink is captured once it has stayed put for the hold time with nothing moving close to it, so the pen and hand aren't picked up.</p>
+        </div>
+      </details>
+
+      <details class="panel group" open>
+        <summary>Particles</summary>
+        <div class="fields">
+          <label class="field">
+            <span>Colour</span>
+            <select data-key="colorMode">
+              <option value="ink">Ink colours</option>
+              <option value="white">White</option>
+              <option value="neon">Neon gradient</option>
+            </select>
+          </label>
+          <label class="field range">
+            <span>Shimmer <output data-for="motion" data-pct></output></span>
+            <input type="range" data-key="motion" min="0" max="1" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Wisps <output data-for="wisps" data-pct></output></span>
+            <input type="range" data-key="wisps" min="0" max="1" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Glow <output data-for="glow" data-pct></output></span>
+            <input type="range" data-key="glow" min="0" max="1" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Glow pulse <output data-for="pulse" data-pct></output></span>
+            <input type="range" data-key="pulse" min="0" max="1" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Trails <output data-for="trails" data-pct></output></span>
+            <input type="range" data-key="trails" min="0" max="1" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Brightness <output data-for="brightness" data-pct></output></span>
+            <input type="range" data-key="brightness" min="0.2" max="1.5" step="0.05">
+          </label>
+          <label class="field range">
+            <span>Fade on clear <output data-for="fade" data-unit="s"></output></span>
+            <input type="range" data-key="fade" min="0.5" max="10" step="0.5">
+          </label>
+          <label class="field">
+            <span>Particle size</span>
+            <select data-key="size">
+              <option value="1">Fine</option>
+              <option value="2">Bold</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" data-key="showFrame"> Show paper outline on output</label>
+        </div>
+      </details>
+
+      <p class="note foot">Keys: <kbd>Space</kbd> or <kbd>C</kbd> clears (works in this window and the output window). A USB button set to send Space works as a physical clear button.</p>
+    </aside>
+  </main>
+
+  <video id="video" playsinline muted hidden></video>
+  <script type="module" src="control.js"></script>
+</body>
+</html>
