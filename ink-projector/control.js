@@ -1437,10 +1437,32 @@ function placePart(it) {
     const op = placeIn(areaAspect(), outlineMargin());
     const kx = (op.w * rw) / 485, ky = (op.h * rh) / 752;
     const [l, t, r, b] = part.box;
-    const boxAspect = (r - l + 1) / (b - t + 1), imgAspect = img.width / img.height;
-    const template = Math.abs(Math.log(imgAspect / boxAspect)) < 0.15;
+    const boxAspect = (r - l + 1) / (b - t + 1);
+    const template = Math.abs(Math.log((img.width / img.height) / boxAspect)) < 0.15;
     const toArea = (px, py) => [op.x * rw + (px - 220) * kx, op.y * rh + py * ky];
     const k = (kx + ky) / 2;
+
+    // A plain-paper drawing is turned sideways when that makes it much bigger in its part
+    // (a tall drawing laid along the arch, a wide one stood up in a door). Template photos never turn.
+    let src = img;
+    const arcStrip = part.polar ? (Math.PI * ((part.polar.r0 + part.polar.r1) / 2)) / (part.polar.r0 - part.polar.r1) : 0;
+    const sizeFor = (a) => {
+      if (part.polar) { const h = Math.min(arcStrip / a, 1); return h * h * a; }
+      const R = bestRectIn(part, a); const h = Math.min(R.w / a, R.h); return h * h * a;
+    };
+    if (!template) {
+      const a0 = img.width / img.height;
+      if (sizeFor(1 / a0) > sizeFor(a0) * 1.3) {
+        const c = document.createElement('canvas');
+        c.width = img.height; c.height = img.width;
+        const x = c.getContext('2d');
+        x.translate(0, img.width);
+        x.rotate(-Math.PI / 2); // a quarter turn left: the drawing's top ends up on the left
+        x.drawImage(img, 0, 0);
+        src = c;
+      }
+    }
+    const imgAspect = src.width / src.height;
 
     // Draw the image at a target size and read its ink. When it's shrunk a lot, thicken thin
     // lines by a pixel so they stay solid strokes instead of breaking into dots.
@@ -1449,9 +1471,9 @@ function placePart(it) {
       c.width = dw; c.height = dh;
       const x = c.getContext('2d', { willReadFrequently: true });
       x.imageSmoothingEnabled = true;
-      x.drawImage(img, 0, 0, dw, dh);
+      x.drawImage(src, 0, 0, dw, dh);
       const d = x.getImageData(0, 0, dw, dh).data;
-      if (dw / img.width < 0.6) {
+      if (dw / src.width < 0.6) {
         const src = new Uint8ClampedArray(d);
         for (let y = 0; y < dh; y++) {
           for (let x2 = 0; x2 < dw; x2++) {
@@ -1475,8 +1497,8 @@ function placePart(it) {
       // A plain-paper drawing on the arch: unroll the band into a strip, fit the drawing, bend it back
       const { cx, cy, r0, r1 } = part.polar;
       const L = Math.PI * ((r0 + r1) / 2) * k, T = (r0 - r1) * k;
-      const s2 = Math.min((L * 0.94) / img.width, (T * 0.9) / img.height);
-      const dw = Math.max(1, Math.round(img.width * s2)), dh = Math.max(1, Math.round(img.height * s2));
+      const s2 = Math.min((L * 0.94) / src.width, (T * 0.9) / src.height);
+      const dw = Math.max(1, Math.round(src.width * s2)), dh = Math.max(1, Math.round(src.height * s2));
       const sw = Math.round(dw * (r0 / ((r0 + r1) / 2))); // sample along the outer edge so the curve has no gaps
       const d = sample(sw, dh);
       gw = sw; gh = dh;
