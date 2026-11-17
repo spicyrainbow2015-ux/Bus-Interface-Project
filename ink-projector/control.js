@@ -1334,19 +1334,69 @@ function placeSubmission(it) {
 }
 
 // ---------- Phone drawings into doorway parts ----------
-// Visitors choose a part on their phone. Each part is a fixed area of the traced doorway,
-// in the photo's pixel coordinates (see makeDoorway). An approved drawing is fitted inside
-// its part's area without stretching, and replaces (fades out) that part's previous drawing.
-const partRect = (l, t, r, b) => ({ x: (l - 220) / 485, y: t / 752, w: (r - l) / 485, h: (b - t) / 752 });
+// Visitors choose a part on their phone. Each part is a real shape on the traced doorway,
+// in the photo's pixel coordinates (see makeDoorway). An approved drawing is fitted inside its
+// shape without stretching and trimmed at the shape's edge; on the arch it's bent along the curve.
+// A new drawing for a part replaces (fades out) that part's previous drawing.
+function doorHalf(x0, x1, cx, cy, r, left) {
+  const p = new Path2D();
+  p.moveTo(x0, 600);
+  p.lineTo(x0, cy);
+  // Up the outer edge, around the quarter arch to its top, then straight down the centre line
+  if (left) p.arc(cx, cy, r, Math.PI, Math.PI * 1.5); else p.arc(cx, cy, r, 0, Math.PI * 1.5, true);
+  p.lineTo(x1, 600);
+  p.closePath();
+  return p;
+}
+function polyPath(pts) {
+  const p = new Path2D();
+  pts.forEach(([x, y], k) => (k ? p.lineTo(x, y) : p.moveTo(x, y)));
+  p.closePath();
+  return p;
+}
 const DOOR_PARTS = {
-  'left-door': partRect(372, 278, 458, 597),
-  'right-door': partRect(464, 278, 550, 597),
-  'arch': partRect(342, 143, 580, 266),
-  'left-column': partRect(280, 152, 333, 523),
-  'right-column': partRect(590, 152, 648, 518),
-  'steps': partRect(234, 643, 686, 742),
+  'left-door': { path: doorHalf(370, 461, 461, 270, 91, true), box: [370, 179, 460, 598] },
+  'right-door': { path: doorHalf(552, 461, 461, 270, 91, false), box: [462, 179, 552, 598] },
+  'arch': { polar: { cx: 461, cy: 267, r0: 121, r1: 96 } },
+  'left-column': { path: polyPath([[281, 153], [332, 153], [332, 522], [281, 522]]), box: [281, 153, 332, 522] },
+  'right-column': { path: polyPath([[591, 153], [647, 153], [647, 517], [591, 517]]), box: [591, 153, 647, 517] },
+  'steps': {
+    path: polyPath([[317, 642], [603, 642], [603, 675], [645, 675], [645, 708], [688, 708], [688, 743],
+      [232, 743], [232, 708], [277, 708], [277, 675], [317, 675]]),
+    box: [232, 642, 688, 743],
+  },
 };
 const partChunks = new Map(); // part id -> Float32Array of its current drawing's particles
+const pathCtx = document.createElement('canvas').getContext('2d');
+
+// The rectangle inside a shape that lets a drawing of this aspect be largest.
+// Scans the shape on a 1px grid and checks every maximal rectangle (histogram method).
+function bestRectIn(part, drawAspect) {
+  const [l, t, r, b] = part.box;
+  const w = r - l + 1, h = b - t + 1;
+  const heights = new Int32Array(w);
+  let best = { x: l, y: t, w: 1, h: 1, scale: 0 };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) heights[x] = pathCtx.isPointInPath(part.path, l + x + 0.5, t + y + 0.5) ? heights[x] + 1 : 0;
+    const stack = [];
+    for (let x = 0; x <= w; x++) {
+      const hx = x < w ? heights[x] : 0;
+      let start = x;
+      while (stack.length && stack[stack.length - 1][1] >= hx) {
+        const [sx, sh] = stack.pop();
+        const rw_ = x - sx, rh_ = sh;
+        const scale = Math.min(rw_ / drawAspect, rh_);
+        // Biggest drawing wins; on a tie, the bigger rectangle, so the drawing sits centred in the shape
+        if (scale > best.scale * 1.04 || (scale > best.scale * 0.96 && rw_ * rh_ > best.w * best.h)) {
+          best = { x: l + sx, y: t + y - sh + 1, w: rw_, h: rh_, scale: Math.max(scale, best.scale) };
+        }
+        start = sx;
+      }
+      stack.push([start, hx]);
+    }
+  }
+  return best;
+}
 
 function placePart(it) {
   const part = DOOR_PARTS[it.frame];
@@ -1354,24 +1404,58 @@ function placePart(it) {
   placed.add(it.id);
   const img = new Image();
   img.onload = () => {
-    // The part's area on the drawing area (the doorway fills it in this mode)
+    // Photo pixel (doorway trace) -> drawing-area pixel
     const op = placeIn(areaAspect(), outlineMargin());
-    const R = { x: op.x + part.x * op.w, y: op.y + part.y * op.h, w: part.w * op.w, h: part.h * op.h };
-    const pw = R.w * rw, ph = R.h * rh;
-    const s = Math.min((pw * 0.92) / img.width, (ph * 0.92) / img.height);
-    const dw = Math.max(1, Math.round(img.width * s)), dh = Math.max(1, Math.round(img.height * s));
-    const ox = R.x * rw + (pw - dw) / 2, oy = R.y * rh + (ph - dh) / 2;
-    const c = document.createElement('canvas');
-    c.width = dw; c.height = dh;
-    const x = c.getContext('2d', { willReadFrequently: true });
-    x.imageSmoothingEnabled = true;
-    x.drawImage(img, 0, 0, dw, dh);
-    const d = x.getImageData(0, 0, dw, dh).data;
+    const kx = (op.w * rw) / 485, ky = (op.h * rh) / 752;
+    const ax = (px) => op.x * rw + (px - 220) * kx, ay = (py) => op.y * rh + py * ky;
+    const k = (kx + ky) / 2;
+
+    // Lay the drawing out in its target space and read its ink pixels
+    const sample = (dw, dh) => {
+      const c = document.createElement('canvas');
+      c.width = dw; c.height = dh;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.imageSmoothingEnabled = true;
+      x.drawImage(img, 0, 0, dw, dh);
+      return x.getImageData(0, 0, dw, dh).data;
+    };
     const pts = [];
-    for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
-      if (d[j + 3] < 60) continue;
-      pts.push((ox + (i % dw) + 0.5) / rw, (oy + ((i / dw) | 0) + 0.5) / rh, d[j], d[j + 1], d[j + 2]);
+    const aspect = img.width / img.height;
+
+    if (part.polar) {
+      // Unroll the arch into a strip (length x thickness), fit the drawing in it, bend it back
+      const { cx, cy, r0, r1 } = part.polar;
+      const L = Math.PI * ((r0 + r1) / 2) * k, T = (r0 - r1) * k;
+      const s = Math.min((L * 0.94) / img.width, (T * 0.88) / img.height);
+      const dw = Math.max(1, Math.round(img.width * s)), dh = Math.max(1, Math.round(img.height * s));
+      // Sample along the outer edge's length so the curve has no gaps
+      const over = r0 / ((r0 + r1) / 2);
+      const sw = Math.round(dw * over);
+      const d = sample(sw, dh);
+      const u0 = (L - dw) / 2 / L, v0 = (T - dh) / 2 / T;
+      for (let i = 0, j = 0; i < sw * dh; i++, j += 4) {
+        if (d[j + 3] < 60) continue;
+        const u = u0 + (((i % sw) + 0.5) / sw) * (dw / L), v = v0 + ((((i / sw) | 0) + 0.5) / dh) * (dh / T);
+        const a = Math.PI + u * Math.PI, rr = r0 - v * (r0 - r1);
+        pts.push(ax(cx + Math.cos(a) * rr) / rw, ay(cy + Math.sin(a) * rr) / rh, d[j], d[j + 1], d[j + 2]);
+      }
+    } else {
+      // Biggest rectangle inside the shape for this drawing, then trim anything outside the shape
+      const R = bestRectIn(part, aspect);
+      const rx = ax(R.x), ry = ay(R.y), rwp = R.w * kx, rhp = R.h * ky;
+      const s = Math.min((rwp * 0.92) / img.width, (rhp * 0.92) / img.height);
+      const dw = Math.max(1, Math.round(img.width * s)), dh = Math.max(1, Math.round(img.height * s));
+      const ox = rx + (rwp - dw) / 2, oy = ry + (rhp - dh) / 2;
+      const d = sample(dw, dh);
+      for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
+        if (d[j + 3] < 60) continue;
+        const X = ox + (i % dw) + 0.5, Y = oy + ((i / dw) | 0) + 0.5;
+        const pxp = 220 + (X - op.x * rw) / kx, pyp = (Y - op.y * rh) / ky;
+        if (!pathCtx.isPointInPath(part.path, pxp, pyp)) continue;
+        pts.push(X / rw, Y / rh, d[j], d[j + 1], d[j + 2]);
+      }
     }
+
     const old = partChunks.get(it.frame);
     if (old) {
       CH.postMessage({ type: 'release', group: it.frame });
@@ -1381,12 +1465,21 @@ function placePart(it) {
     partChunks.set(it.frame, arr);
     pointCount += arr.length / 5;
     CH.postMessage({ type: 'add', aspect: rw / rh, res: Math.max(rw, rh), pts: arr, group: it.frame });
-    // Operator's view
-    const k = pad.width / rw;
-    padCtx.clearRect(R.x * pad.width, R.y * pad.height, R.w * pad.width, R.h * pad.height);
-    padCtx.drawImage(img, ox * k, oy * k, dw * k, dh * k);
+    redrawPartsOnPad();
   };
   img.src = it.png;
+}
+
+// Operator's view: paint every part's current drawing from its particles
+function redrawPartsOnPad() {
+  padCtx.clearRect(0, 0, pad.width, pad.height);
+  const kx = pad.width, ky = pad.height, dot = Math.max(1.5, pad.width / rw);
+  for (const arr of partChunks.values()) {
+    for (let i = 0; i < arr.length; i += 5) {
+      padCtx.fillStyle = `rgb(${arr[i + 2] | 0},${arr[i + 3] | 0},${arr[i + 4] | 0})`;
+      padCtx.fillRect(arr[i] * kx - dot / 2, arr[i + 1] * ky - dot / 2, dot, dot);
+    }
+  }
 }
 
 function replayApproved() {
