@@ -104,7 +104,7 @@ function updateSourceFields() {
   $('subsPanel').hidden = !photos;
   $('camTitle').textContent = photos ? 'Doorway' : draw ? 'Drawing pad' : 'Camera';
   $('camHint').textContent = photos
-    ? 'Click a shape to open it for drawing. Approved drawings appear here and on the output.'
+    ? 'Approved phone drawings appear here and on the output, in the part each visitor chose.'
     : draw
       ? 'Draw with a mouse, trackpad or stylus. Lines appear on the output as you draw.'
       : 'Drag the corner dots to fit the paper outline';
@@ -371,6 +371,7 @@ function doClear(local) {
   if (sim) sim.reset();
   clearPad();
   placed.clear();
+  partChunks.clear();
   if (autoLocked) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   // The old drawing is probably still under the camera. Don't capture it again
   // until it disappears (sheet removed or swapped).
@@ -435,7 +436,7 @@ function drawPaperAndInk() {
 
 function updateStatus() {
   const pp = $('pillPaper');
-  if (S.source === 'photos') { pp.textContent = activeSection ? 'Section open for drawing' : 'No section open'; pp.className = activeSection ? 'pill ok' : 'pill warn'; }
+  if (S.source === 'photos') { pp.textContent = 'Taking phone drawings'; pp.className = 'pill ok'; }
   else if (S.source === 'draw') { pp.textContent = 'Drawing on screen'; pp.className = 'pill ok'; }
   else if (!corners) { pp.textContent = 'Paper: searching…'; pp.className = 'pill warn'; }
   else if (paperMode === 'locked') { pp.textContent = autoLocked ? 'Paper: found & locked' : 'Paper: locked (manual)'; pp.className = 'pill ok'; }
@@ -662,7 +663,7 @@ const pressureOf = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressur
 let padStrokeObj = null;
 
 pad.addEventListener('pointerdown', (e) => {
-  if (S.source === 'photos') { pickSection(padPos(e)); return; }
+  if (S.source === 'photos') return; // visitors choose the part on their phone
   padDrawing = true;
   pad.setPointerCapture(e.pointerId);
   strokeClip = clipForStroke(padPos(e));
@@ -714,7 +715,8 @@ function sendSync(to) {
   const all = new Float32Array(pointCount * 5);
   let o = 0;
   for (const c of chunks) { all.set(c, o); o += c.length; }
-  CH.postMessage({ type: 'sync', to, aspect: rw && rh ? rw / rh : PAPER_RATIO[S.paper], res: Math.max(rw, rh) || LONG_SIDE, pts: all });
+  const groups = [...partChunks].map(([group, pts]) => ({ group, pts }));
+  CH.postMessage({ type: 'sync', to, aspect: rw && rh ? rw / rh : PAPER_RATIO[S.paper], res: Math.max(rw, rh) || LONG_SIDE, pts: all, groups });
   CH.postMessage(settingsMsg());
 }
 
@@ -1257,7 +1259,7 @@ function sendHighlight(to) {
 }
 
 function sendQr(to) {
-  CH.postMessage({ type: 'qr', to, on: S.source === 'photos' && !!S.showQr && !!activeSection, url: submitUrl() });
+  CH.postMessage({ type: 'qr', to, on: S.source === 'photos' && !!S.showQr, url: submitUrl() });
 }
 
 async function pollQueue() {
@@ -1302,7 +1304,7 @@ async function decide(it, approve, card) {
   card.querySelectorAll('button').forEach((b) => (b.disabled = true));
   try {
     await api('decide', { id: it.id, approve });
-    if (approve) placeSubmission(it);
+    if (approve) (it.frame ? placePart(it) : placeSubmission(it));
     queueIds = null;
     pollQueue();
   } catch (e) {
@@ -1331,13 +1333,69 @@ function placeSubmission(it) {
   img.src = it.png;
 }
 
+// ---------- Phone drawings into doorway parts ----------
+// Visitors choose a part on their phone. Each part is a fixed area of the traced doorway,
+// in the photo's pixel coordinates (see makeDoorway). An approved drawing is fitted inside
+// its part's area without stretching, and replaces (fades out) that part's previous drawing.
+const partRect = (l, t, r, b) => ({ x: (l - 220) / 485, y: t / 752, w: (r - l) / 485, h: (b - t) / 752 });
+const DOOR_PARTS = {
+  'left-door': partRect(372, 278, 458, 597),
+  'right-door': partRect(464, 278, 550, 597),
+  'arch': partRect(342, 143, 580, 266),
+  'left-column': partRect(280, 152, 333, 523),
+  'right-column': partRect(590, 152, 648, 518),
+  'steps': partRect(234, 643, 686, 742),
+};
+const partChunks = new Map(); // part id -> Float32Array of its current drawing's particles
+
+function placePart(it) {
+  const part = DOOR_PARTS[it.frame];
+  if (!part || placed.has(it.id) || !building || !rw) return;
+  placed.add(it.id);
+  const img = new Image();
+  img.onload = () => {
+    // The part's area on the drawing area (the doorway fills it in this mode)
+    const op = placeIn(areaAspect(), outlineMargin());
+    const R = { x: op.x + part.x * op.w, y: op.y + part.y * op.h, w: part.w * op.w, h: part.h * op.h };
+    const pw = R.w * rw, ph = R.h * rh;
+    const s = Math.min((pw * 0.92) / img.width, (ph * 0.92) / img.height);
+    const dw = Math.max(1, Math.round(img.width * s)), dh = Math.max(1, Math.round(img.height * s));
+    const ox = R.x * rw + (pw - dw) / 2, oy = R.y * rh + (ph - dh) / 2;
+    const c = document.createElement('canvas');
+    c.width = dw; c.height = dh;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingEnabled = true;
+    x.drawImage(img, 0, 0, dw, dh);
+    const d = x.getImageData(0, 0, dw, dh).data;
+    const pts = [];
+    for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
+      if (d[j + 3] < 60) continue;
+      pts.push((ox + (i % dw) + 0.5) / rw, (oy + ((i / dw) | 0) + 0.5) / rh, d[j], d[j + 1], d[j + 2]);
+    }
+    const old = partChunks.get(it.frame);
+    if (old) {
+      CH.postMessage({ type: 'release', group: it.frame });
+      pointCount -= old.length / 5;
+    }
+    const arr = new Float32Array(pts);
+    partChunks.set(it.frame, arr);
+    pointCount += arr.length / 5;
+    CH.postMessage({ type: 'add', aspect: rw / rh, res: Math.max(rw, rh), pts: arr, group: it.frame });
+    // Operator's view
+    const k = pad.width / rw;
+    padCtx.clearRect(R.x * pad.width, R.y * pad.height, R.w * pad.width, R.h * pad.height);
+    padCtx.drawImage(img, ox * k, oy * k, dw * k, dh * k);
+  };
+  img.src = it.png;
+}
+
 function replayApproved() {
   pendingReplay = false;
   if (S.source !== 'photos' || !building || !building.bbox) return;
   api('approved')
     .then(async ({ ids }) => {
       for (const id of ids) {
-        try { placeSubmission(await api(`item&id=${encodeURIComponent(id)}`)); } catch {}
+        try { const it = await api(`item&id=${encodeURIComponent(id)}`); it.frame ? placePart(it) : placeSubmission(it); } catch {}
       }
     })
     .catch(() => {});

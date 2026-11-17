@@ -26,7 +26,10 @@ const nx = new Float32Array(CAP), ny = new Float32Array(CAP); // home position, 
 const cr = new Float32Array(CAP), cg = new Float32Array(CAP), cb = new Float32Array(CAP);
 const al = new Float32Array(CAP), seed = new Float32Array(CAP);
 const st = new Uint8Array(CAP); // 1 = on the drawing, 2 = released by Clear, 3 = wisp
-const ALL = [px, py, vx, vy, nx, ny, cr, cg, cb, al, seed, st];
+const grp = new Uint8Array(CAP); // which phone drawing group (doorway part) a particle belongs to; 0 = none
+const ALL = [px, py, vx, vy, nx, ny, cr, cg, cb, al, seed, st, grp];
+const groupIds = new Map();
+const groupId = (name) => { if (!name) return 0; if (!groupIds.has(name)) groupIds.set(name, Math.min(255, groupIds.size + 1)); return groupIds.get(name); };
 let count = 0;
 let alive = 0;
 let aspect = 1.4142;
@@ -95,7 +98,8 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------- Adding and releasing ----------
-function addPoints(arr, animate) {
+function addPoints(arr, animate, group) {
+  const gid = groupId(group);
   const { ox, oy, w, h } = layout;
   const unit = W / 1000;
   for (let k = 0; k + 4 < arr.length && count < CAP; k += 5) {
@@ -115,13 +119,15 @@ function addPoints(arr, animate) {
     vx[i] = 0; vy[i] = 0;
     seed[i] = Math.random();
     st[i] = 1;
+    grp[i] = gid;
   }
 }
 
-function releaseAll() {
+function releaseAll(group) {
   const unit = W / 1000;
+  const gid = group ? groupId(group) : 0;
   for (let i = 0; i < count; i++) {
-    if (st[i] !== 1) continue;
+    if (st[i] !== 1 || (gid && grp[i] !== gid)) continue;
     st[i] = 2;
     vx[i] += (Math.random() - 0.5) * 50 * unit;
     vy[i] += (Math.random() - 0.7) * 40 * unit;
@@ -354,11 +360,14 @@ CH.onmessage = ({ data: m }) => {
   if (m.res) res = m.res;
   if (m.type === 'add') {
     if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
-    addPoints(m.pts, true);
+    addPoints(m.pts, true, m.group);
+  } else if (m.type === 'release') {
+    releaseAll(m.group);
   } else if (m.type === 'sync' && m.to === ID) {
     if (m.aspect) { aspect = m.aspect; relayout(); }
     count = 0;
     addPoints(m.pts, true);
+    for (const g of m.groups || []) addPoints(g.pts, true, g.group);
   } else if (m.type === 'highlight') {
     if (m.to && m.to !== ID) return;
     if (!m.on) { highlight = null; return; }

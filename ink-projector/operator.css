@@ -229,3 +229,5 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 button.approve { background: #1f4a33; border-color: #2f7a52; }
 button.reject { background: #4a1d20; border-color: #7a2c31; }
 #submitLink { color: var(--accent); word-break: break-all; }
+
+.open-section[hidden], .btn-row[hidden] { display: none; }

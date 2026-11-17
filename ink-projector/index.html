@@ -64,11 +64,12 @@
       <div class="panel" id="subsPanel" hidden>
         <div class="panel-head"><h2>Photo submissions</h2><span class="hint" id="subsStatus">Checking…</span></div>
         <div class="fields">
-          <div class="open-section">
+          <p class="note">Visitors scan the QR code, choose a part of the doorway on their phone and send a photo of their drawing. Approved drawings appear in that part, replacing its previous drawing.</p>
+          <div class="open-section" hidden>
             <img id="sectionThumb" alt="" hidden>
             <p id="sectionText">No section is open. Click a shape on the doorway to open it for drawing.</p>
           </div>
-          <div class="btn-row">
+          <div class="btn-row" hidden>
             <button id="btnTemplateSection" disabled>Print template for this section</button>
             <button id="btnCloseSection" disabled>Stop taking drawings</button>
           </div>
