@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Draw on the Doorway</title>
+  <style>
+    :root {
+      --bg: #101114; --card: #1a1c21; --line: #2c2f37; --text: #f1f1f3; --muted: #9a9ea8;
+      --accent: #ffd27a; --btn: #f3efe6; --btn-text: #15161a; --danger: #ff7a7a;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); }
+    body {
+      font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      padding: max(20px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+      max-width: 520px; margin: 0 auto;
+    }
+    h1 { font-size: 24px; margin: 4px 0 4px; letter-spacing: -0.01em; }
+    .lede { color: var(--muted); margin: 0 0 18px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+    .section { display: flex; gap: 14px; align-items: center; }
+    .section img { width: 92px; height: auto; border-radius: 8px; background: #fff; flex: none; }
+    .section p { margin: 0; }
+    .section .tag { color: var(--accent); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    ol { margin: 0; padding-left: 20px; color: var(--muted); }
+    ol li { margin: 6px 0; }
+    ol b { color: var(--text); font-weight: 600; }
+    button, .file-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; min-height: 52px; padding: 12px 16px; border-radius: 14px;
+      font: 600 17px -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer;
+      background: var(--btn); color: var(--btn-text); border: 0;
+    }
+    button.secondary, .file-btn.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+    button:disabled { opacity: 0.5; }
+    .stack { display: flex; flex-direction: column; gap: 10px; }
+    .row { display: flex; gap: 10px; }
+    .row > * { flex: 1; }
+    input[type="file"] { display: none; }
+    .preview { width: 100%; height: auto; display: block; border-radius: 10px; background: #f6f3ec; }
+    .msg { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+    .msg.warn { color: var(--accent); }
+    .msg.err { color: var(--danger); }
+    label.slider { display: block; font-size: 14px; color: var(--muted); margin-top: 12px; }
+    label.slider input { width: 100%; accent-color: var(--accent); margin-top: 6px; }
+    .done { text-align: center; padding: 28px 16px; }
+    .done .big { font-size: 44px; margin-bottom: 6px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Draw on the Doorway</h1>
+  <p class="lede">Your drawing will be projected onto the glowing part of the doorway.</p>
+
+  <div class="card" id="closedCard" hidden>
+    <p>Nothing is open for drawing right now. Check back in a moment.</p>
+  </div>
+
+  <div class="card section" id="sectionCard" hidden>
+    <img id="thumb" alt="The doorway, with the part you're drawing for highlighted">
+    <div>
+      <p class="tag">Now drawing</p>
+      <p>The highlighted part of the doorway.</p>
+    </div>
+  </div>
+
+  <div id="stepCapture">
+    <div class="card">
+      <ol>
+        <li>Draw <b>inside the shape</b> on the template sheet with a <b>dark marker</b>.</li>
+        <li>Lay the sheet on a <b>darker surface</b> in good light.</li>
+        <li>Take a photo of the <b>whole sheet</b> from straight above.</li>
+      </ol>
+    </div>
+    <div class="stack">
+      <label class="file-btn" id="btnTake">Take a photo<input type="file" id="fileTake" accept="image/*" capture="environment"></label>
+      <label class="file-btn secondary" id="btnPick">Choose from photos<input type="file" id="filePick" accept="image/*"></label>
+    </div>
+  </div>
+
+  <div id="stepReview" hidden>
+    <div class="card">
+      <canvas class="preview" id="preview"></canvas>
+      <p class="msg" id="reviewMsg"></p>
+      <label class="slider">Line pickup
+        <input type="range" id="threshold" min="0.15" max="0.7" step="0.01" value="0.38">
+      </label>
+    </div>
+    <div class="stack">
+      <button id="btnSend">Send to the doorway</button>
+      <div class="row">
+        <button class="secondary" id="btnFlip">Turn upside down</button>
+        <button class="secondary" id="btnRetake">Retake</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card done" id="stepDone" hidden>
+    <div class="big">✓</div>
+    <p><b>Sent!</b></p>
+    <p class="msg">It will appear on the doorway once it's approved.</p>
+    <div class="stack" style="margin-top:16px">
+      <button id="btnAnother">Send another drawing</button>
+    </div>
+  </div>
+
+  <script type="module" src="submit.js"></script>
+</body>
+</html>

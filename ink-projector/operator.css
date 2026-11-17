@@ -217,3 +217,15 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 .fields-sub { display: flex; flex-direction: column; gap: 12px; }
 .fields-sub[hidden] { display: none; }
+
+.open-section { display: flex; gap: 12px; align-items: center; }
+.open-section img { width: 70px; border-radius: 6px; background: #fff; flex: none; }
+.open-section p { margin: 0; font-size: 13px; }
+.queue { display: flex; flex-direction: column; gap: 10px; }
+.sub-card { display: flex; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: #121418; }
+.sub-card img { width: 96px; max-height: 120px; object-fit: contain; background: #f6f3ec; border-radius: 6px; flex: none; }
+.sub-card .meta { flex: 1; font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 8px; }
+.sub-card .meta .btn-row button { flex: 1; }
+button.approve { background: #1f4a33; border-color: #2f7a52; }
+button.reject { background: #4a1d20; border-color: #7a2c31; }
+#submitLink { color: var(--accent); word-break: break-all; }

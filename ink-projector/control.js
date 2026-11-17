@@ -13,12 +13,14 @@ const DEFAULTS = {
   padColor: '#17171d', padSize: 6, padBrush: 'pen', padMix: 0.35,
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
-  fade: 3, size: '1', showFrame: false,
+  fade: 3, size: '1', showFrame: false, showQr: true,
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
 const PAPER_RATIO = { a4: 1.4142, letter: 1.2941, square: 1 };
 const LONG_SIDE = 480;
+const PHOTO_LONG_SIDE = 800; // photo submissions get more detail, since each fills only part of the doorway
+const isPad = () => S.source === 'draw' || S.source === 'photos';
 const MAX_POINTS = 140000;
 
 let S = { ...DEFAULTS };
@@ -80,27 +82,32 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     save();
     refreshOutputs();
     if (OUTPUT_KEYS.includes(key)) sendSettings();
-    if (key === 'source') { if (pointCount) doClear(); updateSourceFields(); start(); afterOutlineChange(); }
+    if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); }
     if (OUTLINE_KEYS.includes(key)) buildOutline();
     if (key === 'guideOpacity') updatePadGuide();
     if (key === 'outlineOut') sendOutline();
+    if (key === 'showQr') sendQr();
     if (key === 'paper') resetBuffers();
   });
 });
 refreshOutputs();
 
 function updateSourceFields() {
-  const draw = S.source === 'draw';
+  const draw = isPad();
+  const photos = S.source === 'photos';
   $('fieldDevice').hidden = S.source !== 'camera';
   $('fieldFile').hidden = S.source !== 'image';
   $('camStage').hidden = draw;
   $('paperRow').hidden = draw;
   $('padStage').hidden = !draw;
-  $('padTools').hidden = !draw;
-  $('camTitle').textContent = draw ? 'Drawing pad' : 'Camera';
-  $('camHint').textContent = draw
-    ? 'Draw with a mouse, trackpad or stylus. Lines appear on the output as you draw.'
-    : 'Drag the corner dots to fit the paper outline';
+  $('padTools').hidden = !draw || photos;
+  $('subsPanel').hidden = !photos;
+  $('camTitle').textContent = photos ? 'Doorway' : draw ? 'Drawing pad' : 'Camera';
+  $('camHint').textContent = photos
+    ? 'Click a shape to open it for drawing. Approved drawings appear here and on the output.'
+    : draw
+      ? 'Draw with a mouse, trackpad or stylus. Lines appear on the output as you draw.'
+      : 'Drag the corner dots to fit the paper outline';
 }
 updateSourceFields();
 
@@ -112,7 +119,7 @@ async function start() {
   if (S.source === 'sim') {
     sim = createSim(1280, 720);
     running = true;
-  } else if (S.source === 'draw') {
+  } else if (isPad()) {
     running = true;
   } else if (S.source === 'camera') {
     try {
@@ -251,7 +258,7 @@ function resetBuffers() { rw = rh = 0; }
 
 function ensureBuffers(w, h) {
   if (w === rw && h === rh) return;
-  if (pointCount) doClear(); // the paper's shape changed, so old points no longer line up
+  if (pointCount) doClear(true); // the paper's shape changed, so old points no longer line up
   rw = w; rh = h;
   rect = new ImageData(w, h);
   inkView = new ImageData(w, h);
@@ -301,7 +308,7 @@ function updateCommit(inkCount, now) {
     const arr = new Float32Array(pts);
     chunks.push(arr);
     pointCount += arr.length / 5;
-    CH.postMessage({ type: 'add', aspect: rw / rh, pts: arr });
+    CH.postMessage({ type: 'add', aspect: rw / rh, res: Math.max(rw, rh), pts: arr });
   }
 }
 
@@ -351,9 +358,10 @@ function endAwaiting() {
   $('awaitBanner').hidden = true;
 }
 
-function doClear() {
+function doClear(local) {
   const now = performance.now();
   if (now - lastClear < 400) return;
+  if (S.source === 'photos' && local !== true) api('clear', {}).catch(() => {}); // forget approved drawings too
   lastClear = now;
   if (committed) committed.fill(0);
   if (hold) hold.fill(0);
@@ -362,10 +370,11 @@ function doClear() {
   CH.postMessage({ type: 'clear' });
   if (sim) sim.reset();
   clearPad();
+  placed.clear();
   if (autoLocked) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   // The old drawing is probably still under the camera. Don't capture it again
   // until it disappears (sheet removed or swapped).
-  if (!sim && S.source !== 'draw' && lastInkCount > 80) {
+  if (!sim && !isPad() && lastInkCount > 80) {
     awaiting = { baseline: lastInkCount, lowSince: 0 };
     $('awaitBanner').hidden = false;
   }
@@ -374,7 +383,7 @@ function doClear() {
   setTimeout(() => b.classList.remove('flash'), 180);
 }
 
-$('btnClear').addEventListener('click', doClear);
+$('btnClear').addEventListener('click', () => doClear());
 $('btnRecapture').addEventListener('click', endAwaiting);
 
 // ---------- Drawing the operator views ----------
@@ -426,7 +435,8 @@ function drawPaperAndInk() {
 
 function updateStatus() {
   const pp = $('pillPaper');
-  if (S.source === 'draw') { pp.textContent = 'Drawing on screen'; pp.className = 'pill ok'; }
+  if (S.source === 'photos') { pp.textContent = activeSection ? 'Section open for drawing' : 'No section open'; pp.className = activeSection ? 'pill ok' : 'pill warn'; }
+  else if (S.source === 'draw') { pp.textContent = 'Drawing on screen'; pp.className = 'pill ok'; }
   else if (!corners) { pp.textContent = 'Paper: searching…'; pp.className = 'pill warn'; }
   else if (paperMode === 'locked') { pp.textContent = autoLocked ? 'Paper: found & locked' : 'Paper: locked (manual)'; pp.className = 'pill ok'; }
   else { pp.textContent = paperSeen ? 'Paper: found (auto)' : 'Paper: not visible'; pp.className = paperSeen ? 'pill ok' : 'pill warn'; }
@@ -450,7 +460,7 @@ function tick(now) {
   requestAnimationFrame(tick);
   if (!running || now - lastProc < 1000 / 30 - 2) return;
   lastProc = now;
-  if (S.source === 'draw') {
+  if (isPad()) {
     padTick();
     if (++frameNo % 10 === 0) updateStatus();
     return;
@@ -488,7 +498,7 @@ $('btnFull').addEventListener('click', () => {
 $('btnRotate').addEventListener('click', () => {
   S.rotation = (S.rotation + 1) % 4;
   save();
-  if (pointCount) doClear();
+  if (pointCount) doClear(true);
   resetBuffers();
 });
 
@@ -533,12 +543,14 @@ let padDirty = false, padDrawing = false;
 
 function padTick() {
   const a = areaAspect();
-  const w = a >= 1 ? LONG_SIDE : Math.round(LONG_SIDE * a), h = a >= 1 ? Math.round(LONG_SIDE / a) : LONG_SIDE;
+  const L = S.source === 'photos' ? PHOTO_LONG_SIDE : LONG_SIDE;
+  const w = a >= 1 ? L : Math.round(L * a), h = a >= 1 ? Math.round(L / a) : L;
   ensureBuffers(w, h);
   if (padRaster.width !== w || padRaster.height !== h) {
     padRaster.width = w; padRaster.height = h;
     pad.width = w * PAD_SCALE; pad.height = h * PAD_SCALE;
   }
+  if (pendingReplay) replayApproved();
   if (!padDirty) return;
   padDirty = false;
   const d = padRctx.getImageData(0, 0, w, h).data;
@@ -554,7 +566,7 @@ function padTick() {
     const arr = new Float32Array(pts);
     chunks.push(arr);
     pointCount += arr.length / 5;
-    CH.postMessage({ type: 'add', aspect: w / h, pts: arr });
+    CH.postMessage({ type: 'add', aspect: w / h, res: Math.max(w, h), pts: arr });
   }
 }
 
@@ -621,7 +633,12 @@ function drawMarks(marks) {
     padDirty = true;
     return;
   }
-  const bb = marksBounds(marks);
+  paintClipped(marksBounds(marks), strokeClip, (g, s) => paintMarks(g, s, marks));
+}
+
+// Paints into both pad canvases through a clip mask (a canvas whose alpha is the allowed area,
+// stretched over the whole pad). bb is the area touched, in capture pixels.
+function paintClipped(bb, clip, paint) {
   for (const [c, s, scratch] of [[padRctx, 1, scratchR], [padCtx, PAD_SCALE, scratchD]]) {
     const W = c.canvas.width, H = c.canvas.height;
     if (scratch.width !== W || scratch.height !== H) { scratch.width = W; scratch.height = H; }
@@ -631,10 +648,10 @@ function drawMarks(marks) {
     const g = scratch.getContext('2d');
     g.globalCompositeOperation = 'source-over';
     g.clearRect(sx, sy, ex - sx, ey - sy);
-    paintMarks(g, s, marks);
+    paint(g, s);
     g.globalCompositeOperation = 'destination-in';
-    const kx = strokeClip.width / W, ky = strokeClip.height / H;
-    g.drawImage(strokeClip, sx * kx, sy * ky, (ex - sx) * kx, (ey - sy) * ky, sx, sy, ex - sx, ey - sy);
+    const kx = clip.width / W, ky = clip.height / H;
+    g.drawImage(clip, sx * kx, sy * ky, (ex - sx) * kx, (ey - sy) * ky, sx, sy, ex - sx, ey - sy);
     g.globalCompositeOperation = 'source-over';
     c.drawImage(scratch, sx, sy, ex - sx, ey - sy, sx, sy, ex - sx, ey - sy);
   }
@@ -645,6 +662,7 @@ const pressureOf = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressur
 let padStrokeObj = null;
 
 pad.addEventListener('pointerdown', (e) => {
+  if (S.source === 'photos') { pickSection(padPos(e)); return; }
   padDrawing = true;
   pad.setPointerCapture(e.pointerId);
   strokeClip = clipForStroke(padPos(e));
@@ -696,15 +714,15 @@ function sendSync(to) {
   const all = new Float32Array(pointCount * 5);
   let o = 0;
   for (const c of chunks) { all.set(c, o); o += c.length; }
-  CH.postMessage({ type: 'sync', to, aspect: rw && rh ? rw / rh : PAPER_RATIO[S.paper], pts: all });
+  CH.postMessage({ type: 'sync', to, aspect: rw && rh ? rw / rh : PAPER_RATIO[S.paper], res: Math.max(rw, rh) || LONG_SIDE, pts: all });
   CH.postMessage(settingsMsg());
 }
 
 CH.onmessage = ({ data: m }) => {
   if (!m) return;
-  if (m.type === 'hello') { outputs.set(m.id, { preview: m.preview, last: performance.now() }); sendSync(m.id); sendOutline(m.id); }
+  if (m.type === 'hello') { outputs.set(m.id, { preview: m.preview, last: performance.now() }); sendSync(m.id); sendOutline(m.id); sendHighlight(m.id); sendQr(m.id); }
   else if (m.type === 'ping') {
-    if (!outputs.has(m.id)) { sendSync(m.id); sendOutline(m.id); }
+    if (!outputs.has(m.id)) { sendSync(m.id); sendOutline(m.id); sendHighlight(m.id); sendQr(m.id); }
     outputs.set(m.id, { preview: m.preview, last: performance.now() });
   }
   else if (m.type === 'bye') outputs.delete(m.id);
@@ -886,26 +904,27 @@ function updateOutlineFields() {
 
 // Shape of the drawing area (width / height)
 function areaAspect() {
-  if (S.source === 'draw') return building ? building.aspect : (PAPER_RATIO[S.paper] || 1.4142);
+  if (isPad()) return building ? building.aspect : (PAPER_RATIO[S.paper] || 1.4142);
   return rw && rh ? rw / rh : (PAPER_RATIO[S.paper] || 1.4142);
 }
 
 // Where the building sits inside an area of this shape, as fractions of the area.
 // On screen it fills the pad; on paper it keeps a margin so it prints and detects cleanly.
-function placeIn(aspect, margin) {
-  let bw = (1 - 2 * margin) * aspect, bh = bw / building.aspect;
-  if (bh > 1 - 2 * margin) { bh = 1 - 2 * margin; bw = bh * building.aspect; }
+function placeIn(aspect, margin, objAspect = building.aspect) {
+  let bw = (1 - 2 * margin) * aspect, bh = bw / objAspect;
+  if (bh > 1 - 2 * margin) { bh = 1 - 2 * margin; bw = bh * objAspect; }
   return { x: (aspect - bw) / 2 / aspect, y: (1 - bh) / 2, w: bw / aspect, h: bh };
 }
-const outlineMargin = () => (S.source === 'draw' ? 0 : 0.08);
+const outlineMargin = () => (isPad() ? 0 : 0.08);
 
 function afterOutlineChange() {
   updatePadGuide();
   sendOutline();
+  sendHighlight();
 }
 
 function updatePadGuide() {
-  if (!building || S.source !== 'draw' || S.guideOpacity <= 0) { pad.style.backgroundImage = 'none'; return; }
+  if (!building || !isPad() || S.guideOpacity <= 0) { pad.style.backgroundImage = 'none'; return; }
   const g = document.createElement('canvas');
   g.width = building.w; g.height = building.h;
   const gx = g.getContext('2d');
@@ -913,6 +932,10 @@ function updatePadGuide() {
   gx.globalCompositeOperation = 'source-in';
   gx.fillStyle = `rgba(60, 110, 210, ${S.guideOpacity})`;
   gx.fillRect(0, 0, g.width, g.height);
+  if (S.source === 'photos' && activeSection) {
+    gx.globalCompositeOperation = 'destination-over';
+    gx.drawImage(tintCanvas(regionCanvas(activeSection), 'rgba(255, 179, 71, 0.35)'), 0, 0);
+  }
   pad.style.backgroundImage = `url(${g.toDataURL()})`;
 }
 
@@ -1009,6 +1032,19 @@ function computeRegions() {
     }
     outside[L] = edge;
   }
+  // Bounding box of every shape, in outline pixels
+  const bbox = new Int32Array((next + 1) * 4);
+  for (let L = 1; L <= next; L++) { bbox[L * 4] = w; bbox[L * 4 + 1] = h; bbox[L * 4 + 2] = -1; bbox[L * 4 + 3] = -1; }
+  for (let i = 0; i < n; i++) {
+    const L = labels[i];
+    if (!L) continue;
+    const x = i % w, y = (i / w) | 0, o = L * 4;
+    if (x < bbox[o]) bbox[o] = x;
+    if (y < bbox[o + 1]) bbox[o + 1] = y;
+    if (x > bbox[o + 2]) bbox[o + 2] = x;
+    if (y > bbox[o + 3]) bbox[o + 3] = y;
+  }
+  building.bbox = bbox;
   building.labels = labels;
   building.outside = outside;
   building.regionCache = new Map();
@@ -1046,10 +1082,310 @@ function clipForStroke(p) {
     }
   }
   if (!L || outside[L]) return EMPTY_CLIP; // outside the doorway: nothing is drawn
+  return regionCanvas(L);
+}
+
+function regionCanvas(L) {
   let c = building.regionCache.get(L);
-  if (!c) { c = maskCanvas((i) => labels[i] === L); building.regionCache.set(L, c); }
+  if (!c) { c = maskCanvas((i) => building.labels[i] === L); building.regionCache.set(L, c); }
   return c;
+}
+
+function labelAt(p) {
+  const { w, h, labels } = building;
+  const bx = Math.round((p[0] / padRaster.width) * w), by = Math.round((p[1] / padRaster.height) * h);
+  for (let r = 0; r <= 10; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = bx + dx, y = by + dy;
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        if (labels[y * w + x]) return labels[y * w + x];
+      }
+    }
+  }
+  return 0;
+}
+
+// ---------- Photo submissions ----------
+// You open one shape of the doorway at a time. It glows on the output next to a QR code.
+// Visitors draw on that shape's printed template, photograph it on their phone (submit.html),
+// and the phone sends just the ink. Drawings wait here until you approve them; approved ones
+// are fitted into the shape, cut to its outline, and become particles like everything else.
+const API = '/api/ink';
+const OPKEY_STORE = 'inkProjector.opKey';
+let activeSection = 0;       // label of the open shape (0 = none)
+let pendingReplay = false;   // re-draw approved drawings after a reload
+let pollTimer = 0;
+let queueIds = null;
+const placed = new Set();    // submission ids already drawn on the pad
+
+async function api(op, body) {
+  let key = '';
+  try { key = localStorage.getItem(OPKEY_STORE) || ''; } catch {}
+  const opts = body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-operator-key': key }, body: JSON.stringify(body) }
+    : { headers: { 'x-operator-key': key }, cache: 'no-store' };
+  const r = await fetch(`${API}?op=${op}`, opts);
+  if (r.status === 404 && op.startsWith('item')) throw new Error('missing');
+  if (r.status === 401) {
+    const k = prompt('Enter the operator key for photo submissions:');
+    if (k) { try { localStorage.setItem(OPKEY_STORE, k); } catch {} return api(op, body); }
+    throw new Error('operator key required');
+  }
+  if (r.status === 404) throw new Error('offline');
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+const submitUrl = () => new URL('submit.html', location.href).href;
+function setSubsStatus(t) { $('subsStatus').textContent = t; }
+
+function photosModeChanged() {
+  clearInterval(pollTimer);
+  if (S.source !== 'photos') { sendHighlight(); sendQr(); updatePadGuide(); return; }
+  if (!S.outlineOn) {
+    S.outlineOn = true;
+    save();
+    document.querySelector('[data-key="outlineOn"]').checked = true;
+    buildOutline();
+  }
+  $('submitLink').href = submitUrl();
+  $('submitLink').textContent = submitUrl();
+  placed.clear();
+  pendingReplay = true;
+  queueIds = null;
+  api('state')
+    .then((st) => {
+      const L = st && st.section;
+      setActive(building && L && L < building.outside.length && !building.outside[L] ? L : 0, false);
+    })
+    .catch(() => setActive(0, false));
+  pollQueue();
+  pollTimer = setInterval(pollQueue, 2500);
+}
+
+function sectionBox(L) {
+  const b = building.bbox, o = L * 4;
+  return { x: b[o], y: b[o + 1], w: b[o + 2] - b[o] + 1, h: b[o + 3] - b[o + 1] + 1 };
+}
+const sectionAspect = (L) => { const b = sectionBox(L); return b.w / b.h; };
+
+function tintCanvas(src, color) {
+  const t = document.createElement('canvas');
+  t.width = src.width; t.height = src.height;
+  const x = t.getContext('2d');
+  x.drawImage(src, 0, 0);
+  x.globalCompositeOperation = 'source-in';
+  x.fillStyle = color;
+  x.fillRect(0, 0, t.width, t.height);
+  return t;
+}
+
+// The doorway with one shape filled in: for the phone page and the printed template
+function locatorCanvas(L, lineColor, fillColor, bg) {
+  const c = document.createElement('canvas');
+  c.width = building.w; c.height = building.h;
+  const x = c.getContext('2d');
+  if (bg) { x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height); }
+  x.drawImage(tintCanvas(regionCanvas(L), fillColor), 0, 0);
+  x.drawImage(tintCanvas(outlineCv, lineColor), 0, 0);
+  return c;
+}
+
+function sectionThumb(L) {
+  const src = locatorCanvas(L, '#2c2f37', '#ffb347', '#ffffff');
+  const t = document.createElement('canvas');
+  t.height = 260; t.width = Math.round(260 * building.aspect);
+  const x = t.getContext('2d');
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(src, 0, 0, t.width, t.height);
+  return t.toDataURL('image/png');
+}
+
+function setActive(L, push = true) {
+  activeSection = L;
+  const thumb = L ? sectionThumb(L) : '';
+  $('sectionThumb').hidden = !L;
+  if (L) $('sectionThumb').src = thumb;
+  $('sectionText').textContent = L
+    ? 'This shape is open for drawing and glows on the output. Click another shape to switch.'
+    : 'No section is open. Click a shape on the doorway to open it for drawing.';
+  $('btnTemplateSection').disabled = $('btnCloseSection').disabled = !L;
+  updatePadGuide();
+  sendHighlight();
+  sendQr();
+  queueIds = null; // re-label queue items for the new section
+  updateStatus();
+  if (push) {
+    api('setState', { section: L || null, aspect: L ? sectionAspect(L) : 1, paperRatio: PAPER_RATIO[S.paper] || 1.4142, thumb })
+      .catch((e) => setSubsStatus(`Couldn't update the phones: ${e.message}`));
+  }
+}
+
+function pickSection(p) {
+  if (!building || !building.labels) return;
+  const L = labelAt(p);
+  if (!L || building.outside[L]) return;
+  setActive(L);
+}
+
+$('btnCloseSection').addEventListener('click', () => setActive(0));
+$('btnTemplateSection').addEventListener('click', () => { if (activeSection) printSectionTemplate(activeSection); });
+
+function sendHighlight(to) {
+  if (S.source !== 'photos' || !building || !building.bbox || !activeSection) {
+    CH.postMessage({ type: 'highlight', to, on: false });
+    return;
+  }
+  const L = activeSection, bx = sectionBox(L);
+  const mask = new Uint8Array(bx.w * bx.h);
+  for (let y = 0; y < bx.h; y++) {
+    for (let x = 0; x < bx.w; x++) {
+      if (building.labels[(bx.y + y) * building.w + bx.x + x] === L) mask[y * bx.w + x] = 255;
+    }
+  }
+  const area = areaAspect(), op = placeIn(area, outlineMargin());
+  CH.postMessage({
+    type: 'highlight', to, on: true, aspect: area,
+    place: {
+      x: op.x + (bx.x / building.w) * op.w, y: op.y + (bx.y / building.h) * op.h,
+      w: (bx.w / building.w) * op.w, h: (bx.h / building.h) * op.h,
+    },
+    w: bx.w, h: bx.h, mask,
+  });
+}
+
+function sendQr(to) {
+  CH.postMessage({ type: 'qr', to, on: S.source === 'photos' && !!S.showQr && !!activeSection, url: submitUrl() });
+}
+
+async function pollQueue() {
+  if (S.source !== 'photos') return;
+  try {
+    const { items } = await api('pending');
+    setSubsStatus(items.length ? `${items.length} waiting` : 'Listening for drawings');
+    renderQueue(items);
+  } catch (e) {
+    setSubsStatus(e.message === 'offline' ? 'Needs the local server or Vercel' : "Can't reach the server");
+  }
+}
+
+function renderQueue(items) {
+  const ids = items.map((i) => i.id).join(',');
+  if (ids === queueIds) return;
+  queueIds = ids;
+  const q = $('queue');
+  if (!items.length) { q.innerHTML = '<p class="note">No drawings waiting.</p>'; return; }
+  q.innerHTML = '';
+  for (const it of [...items].reverse()) { // oldest first
+    const card = document.createElement('div');
+    card.className = 'sub-card';
+    const img = new Image();
+    img.src = it.png;
+    img.alt = 'Submitted drawing';
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    const time = new Date(it.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    meta.innerHTML = `<span>${time}${it.section === activeSection ? '' : ' · for a different shape'}</span>` +
+      '<div class="btn-row"><button class="approve">Approve</button><button class="reject">Reject</button></div>';
+    meta.querySelector('.approve').addEventListener('click', () => decide(it, true, card));
+    meta.querySelector('.reject').addEventListener('click', () => decide(it, false, card));
+    card.append(img, meta);
+    q.append(card);
+  }
+}
+
+async function decide(it, approve, card) {
+  card.style.opacity = '0.4';
+  card.querySelectorAll('button').forEach((b) => (b.disabled = true));
+  try {
+    await api('decide', { id: it.id, approve });
+    if (approve) placeSubmission(it);
+    queueIds = null;
+    pollQueue();
+  } catch (e) {
+    card.style.opacity = '';
+    card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+    setSubsStatus(`Couldn't save that: ${e.message}`);
+  }
+}
+
+// Fit an approved drawing into its shape's box and cut it to the shape's outline
+function placeSubmission(it) {
+  if (placed.has(it.id) || !building || !building.bbox) return;
+  const L = it.section;
+  if (!L || L >= building.outside.length || building.outside[L]) return;
+  placed.add(it.id);
+  const img = new Image();
+  img.onload = () => {
+    const bx = sectionBox(L);
+    const kx = padRaster.width / building.w, ky = padRaster.height / building.h;
+    const bb = { x0: bx.x * kx, y0: bx.y * ky, x1: (bx.x + bx.w) * kx, y1: (bx.y + bx.h) * ky };
+    paintClipped(bb, regionCanvas(L), (g, s) => {
+      g.imageSmoothingEnabled = true;
+      g.drawImage(img, bb.x0 * s, bb.y0 * s, (bb.x1 - bb.x0) * s, (bb.y1 - bb.y0) * s);
+    });
+  };
+  img.src = it.png;
+}
+
+function replayApproved() {
+  pendingReplay = false;
+  if (S.source !== 'photos' || !building || !building.bbox) return;
+  api('approved')
+    .then(async ({ ids }) => {
+      for (const id of ids) {
+        try { placeSubmission(await api(`item&id=${encodeURIComponent(id)}`)); } catch {}
+      }
+    })
+    .catch(() => {});
+}
+
+// A sheet with just this shape on it (light blue, so it isn't captured as ink),
+// placed exactly where the phone page expects it, plus a small map of the doorway.
+function printSectionTemplate(L) {
+  const ratio = PAPER_RATIO[S.paper] || 1.4142;
+  const aspect = sectionAspect(L);
+  const landscape = aspect >= 1;
+  const W = landscape ? 2400 : Math.round(2400 / ratio), H = landscape ? Math.round(2400 / ratio) : 2400;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, W, H);
+
+  const bx = sectionBox(L);
+  const crop = document.createElement('canvas');
+  crop.width = bx.w; crop.height = bx.h;
+  crop.getContext('2d').drawImage(regionCanvas(L), bx.x, bx.y, bx.w, bx.h, 0, 0, bx.w, bx.h);
+  const p = placeIn(W / H, 0.08, aspect);
+  const dx = p.x * W, dy = p.y * H, dw = p.w * W, dh = p.h * H;
+  x.imageSmoothingEnabled = true;
+  const edge = tintCanvas(crop, '#a9cdf9');
+  const k = Math.max(4, Math.round(W / 400));
+  for (let a = 0; a < 16; a++) {
+    const ang = (a / 16) * Math.PI * 2;
+    x.drawImage(edge, dx + Math.cos(ang) * k, dy + Math.sin(ang) * k, dw, dh);
+  }
+  x.drawImage(tintCanvas(crop, '#f1f7fe'), dx, dy, dw, dh);
+
+  const lh = Math.round(Math.min(W, H) * 0.06), lw = Math.round(lh * building.aspect);
+  const lx = Math.round(W * 0.03), ly = H - lh - Math.round(Math.min(W, H) * 0.012);
+  x.drawImage(locatorCanvas(L, '#a9cdf9', '#d3e5fd'), lx, ly, lw, lh);
+  x.fillStyle = '#a9cdf9';
+  x.font = `${Math.round(lh * 0.3)}px -apple-system, Helvetica, sans-serif`;
+  x.textBaseline = 'middle';
+  x.fillText('Draw inside the shape with a dark marker, then scan the QR code by the doorway to send it.', lx + lw + 24, ly + lh / 2);
+
+  const url = c.toDataURL('image/png');
+  const size = S.paper === 'letter' ? 'letter' : 'A4';
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(`<!doctype html><title>Section template</title><style>@page{size:${size} ${landscape ? 'landscape' : 'portrait'};margin:0}html,body{margin:0;height:100%}img{width:100%;height:100%;object-fit:contain;display:block}</style><img src="${url}" onload="setTimeout(()=>print(),300)">`);
+  win.document.close();
 }
 
 buildOutline();
 start();
+photosModeChanged();

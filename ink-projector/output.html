@@ -16,11 +16,25 @@
     }
     .hint.gone { opacity: 0; pointer-events: none; }
     .preview .hint { display: none; }
+    .qr {
+      position: fixed; right: 3vmin; bottom: 3vmin; width: clamp(90px, 15vmin, 260px);
+      display: flex; flex-direction: column; align-items: center; gap: 1vmin;
+      font: 600 clamp(9px, 1.5vmin, 22px)/1.25 -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #ffe2b0; text-align: center;
+    }
+    .qr[hidden] { display: none; }
+    .qr canvas { width: 100%; height: auto; display: block; image-rendering: pixelated; border-radius: 4px; }
+    .qr p { margin: 0; }
   </style>
 </head>
 <body>
   <canvas id="out"></canvas>
   <div class="hint" id="hint">Drag this window to the projector, then press F (or double-click) for full screen</div>
+  <div class="qr" id="qr" hidden>
+    <canvas></canvas>
+    <p>Scan to draw the<br>glowing part</p>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
   <script type="module" src="output.js"></script>
 </body>
 </html>

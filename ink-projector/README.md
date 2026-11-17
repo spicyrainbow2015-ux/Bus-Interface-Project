@@ -24,6 +24,28 @@ Pick one under **Source → Input**:
   (parallel contour lines), **Polka** (big evenly spaced dots) and **Triangles** (scattered solid triangles). **Colour mix** spreads each mark's hue and lightness around the chosen colour. Lines become particles the
   moment you draw them, and Clear wipes the pad along with the output.
 
+## Photo submissions (phones)
+
+Set **Input** to **Photo submissions (phones)**. Visitors draw on paper and send a photo from their phone.
+
+1. **Open a section:** click a shape on the doorway (a door panel, the arch, a step…). It glows on the
+   output, and a QR code appears in the corner.
+2. **Print its template:** **Print template for this section** prints just that shape in light blue,
+   with a small map of the doorway showing where it goes. Light blue is too faint to count as ink.
+3. **Visitors:** draw inside the shape with a dark marker, scan the QR code, and photograph the sheet.
+   Their phone (`submit.html`) finds the sheet, straightens it, keeps only the ink inside the shape and
+   shows a preview before sending. Only that small image is uploaded.
+4. **Approve:** drawings wait in the **Photo submissions** panel. **Approve** fits the drawing into the
+   shape it was drawn for, cut to its outline, and it turns into particles. **Reject** deletes it.
+5. **Clear** wipes the projection and the saved approved drawings. Approved drawings survive reloading
+   the operator page.
+
+The server part is `api/ink.js` (Vercel + the project's Upstash Redis), with its logic in
+`lib/ink-api.js`. Locally, `serve.js` runs the same logic in memory, but phones can't reach `localhost`,
+so test with real phones on the deployed site. To stop strangers from approving drawings through the
+API, set `INK_OPERATOR_KEY` in the Vercel project's environment variables. The operator page then asks
+for the key once.
+
 ## Building outline
 
 Turn on **Building outline** to draw on a building instead of a blank page. Use the **Sample building**,

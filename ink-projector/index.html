@@ -61,6 +61,23 @@
       </div>
 
       <button id="btnClear" class="clear">Clear drawing <kbd>Space</kbd></button>
+      <div class="panel" id="subsPanel" hidden>
+        <div class="panel-head"><h2>Photo submissions</h2><span class="hint" id="subsStatus">Checking…</span></div>
+        <div class="fields">
+          <div class="open-section">
+            <img id="sectionThumb" alt="" hidden>
+            <p id="sectionText">No section is open. Click a shape on the doorway to open it for drawing.</p>
+          </div>
+          <div class="btn-row">
+            <button id="btnTemplateSection" disabled>Print template for this section</button>
+            <button id="btnCloseSection" disabled>Stop taking drawings</button>
+          </div>
+          <label class="check"><input type="checkbox" data-key="showQr"> Show QR code on output</label>
+          <p class="note">Phone page: <a id="submitLink" target="_blank" rel="noopener"></a></p>
+          <div class="queue" id="queue"><p class="note">No drawings waiting.</p></div>
+        </div>
+      </div>
+
       <div class="banner" id="awaitBanner" hidden>
         <span>Cleared. Waiting for a fresh sheet before capturing again.</span>
         <button id="btnRecapture">Use this sheet anyway</button>
@@ -74,6 +91,7 @@
             <select data-key="source">
               <option value="camera">Paper + camera</option>
               <option value="draw">Draw on screen</option>
+              <option value="photos">Photo submissions (phones)</option>
               <option value="sim">Simulated paper drawing (no camera)</option>
               <option value="image">Photo file</option>
             </select>

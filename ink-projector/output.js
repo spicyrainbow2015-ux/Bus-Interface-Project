@@ -14,6 +14,8 @@ const octx = off.getContext('2d');
 
 const S = { colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4, fade: 3, size: '1', showFrame: false, outlineGlow: 0.45 };
 let outline = null; // { cv, place } glowing building outline
+let highlight = null; // { cv, place } the shape open for photo submissions
+let res = 480; // capture resolution along the long side (particles are sized from it)
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch {}
 
 // ---------- Particles (structure of arrays for speed) ----------
@@ -195,7 +197,7 @@ function render(t) {
   const pulseAmp = S.pulse * 0.45, pulseT = t * 1.4;
   // Particles grow with the output so strokes stay solid at any window size.
   // (The operator captures ink at 480 px along the paper's long side.)
-  const cell = Math.max(layout.w, layout.h) / 480;
+  const cell = Math.max(layout.w, layout.h) / res;
   const R = Math.max(0.7, cell * 0.6) * (bold ? 1.6 : 1);
   const disc = R > 1.05;
   const Rc = Math.ceil(R), Rf = R + 0.5;
@@ -291,6 +293,23 @@ function render(t) {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
   }
+  if (highlight) {
+    // The shape that's open for drawing: a warm fill that slowly breathes, with a soft halo
+    const sx = cw / W, sy = ch / H;
+    const x = (layout.ox + highlight.place.x * layout.w) * sx, y = (layout.oy + highlight.place.y * layout.h) * sy;
+    const w = highlight.place.w * layout.w * sx, h = highlight.place.h * layout.h * sy;
+    const b = 0.5 + 0.5 * Math.sin(t * 2.1);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.imageSmoothingEnabled = true;
+    ctx.globalAlpha = 0.18 + 0.22 * b;
+    ctx.filter = `blur(${Math.max(3, Math.round(18 * cw / 1920))}px)`;
+    ctx.drawImage(highlight.cv, x, y, w, h);
+    ctx.filter = 'none';
+    ctx.globalAlpha = 0.1 + 0.16 * b;
+    ctx.drawImage(highlight.cv, x, y, w, h);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+  }
   if (outline && S.outlineGlow > 0.01) {
     // Building outline: a soft, slowly breathing glow behind a crisp line
     const sx = cw / W, sy = ch / H;
@@ -332,6 +351,7 @@ requestAnimationFrame(frame);
 // ---------- Messages from the operator ----------
 CH.onmessage = ({ data: m }) => {
   if (!m) return;
+  if (m.res) res = m.res;
   if (m.type === 'add') {
     if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
     addPoints(m.pts, true);
@@ -339,6 +359,22 @@ CH.onmessage = ({ data: m }) => {
     if (m.aspect) { aspect = m.aspect; relayout(); }
     count = 0;
     addPoints(m.pts, true);
+  } else if (m.type === 'highlight') {
+    if (m.to && m.to !== ID) return;
+    if (!m.on) { highlight = null; return; }
+    if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
+    const cv = document.createElement('canvas');
+    cv.width = m.w; cv.height = m.h;
+    const c = cv.getContext('2d');
+    const id = c.createImageData(m.w, m.h);
+    for (let i = 0, j = 0; i < m.w * m.h; i++, j += 4) {
+      id.data[j] = 255; id.data[j + 1] = 196; id.data[j + 2] = 110; id.data[j + 3] = m.mask[i];
+    }
+    c.putImageData(id, 0, 0);
+    highlight = { cv, place: m.place };
+  } else if (m.type === 'qr') {
+    if (m.to && m.to !== ID) return;
+    showQr(m.on ? m.url : null);
   } else if (m.type === 'outline') {
     if (m.to && m.to !== ID) return;
     if (!m.on) { outline = null; return; }
@@ -387,3 +423,24 @@ window.addEventListener('mousemove', () => {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => document.body.classList.add('idle'), 2000);
 });
+
+// ---------- QR code for photo submissions ----------
+const qrBox = document.getElementById('qr');
+let qrUrl = null;
+function showQr(url) {
+  if (url === qrUrl) return;
+  qrUrl = url;
+  if (!url || typeof window.qrcode !== 'function') { qrBox.hidden = true; return; }
+  const qr = window.qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  const n = qr.getModuleCount(), q = 2, px = 8;
+  const c = qrBox.querySelector('canvas');
+  c.width = c.height = (n + q * 2) * px;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, c.width, c.height);
+  x.fillStyle = '#000';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) x.fillRect((k + q) * px, (r + q) * px, px, px);
+  qrBox.hidden = false;
+}
