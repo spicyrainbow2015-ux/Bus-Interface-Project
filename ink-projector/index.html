@@ -74,6 +74,13 @@
             <button id="btnCloseSection" disabled>Stop taking drawings</button>
           </div>
           <label class="check"><input type="checkbox" data-key="autoApprove"> Auto-approve (show drawings as soon as they arrive)</label>
+          <label class="field">
+            <span>Size in its part</span>
+            <select data-key="partFit">
+              <option value="fill">Fill the whole part (stretch)</option>
+              <option value="fit">Keep proportions</option>
+            </select>
+          </label>
           <button id="btnPartTemplates">Print templates (one page per part)</button>
           <p class="note">Set <b>Paper size</b> (in the Paper section) to the paper you print on.</p>
           <label class="check"><input type="checkbox" data-key="showQr"> Show QR code on output</label>
@@ -213,6 +220,10 @@
       <details class="panel group" open>
         <summary>Particles</summary>
         <div class="fields">
+          <div class="btn-row">
+            <button id="btnCrisp">Crisp lines</button>
+            <button id="btnDreamy">Dreamy (default look)</button>
+          </div>
           <label class="field">
             <span>Colour</span>
             <select data-key="colorMode">
@@ -269,6 +280,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js?v=7"></script>
+  <script type="module" src="control.js?v=9"></script>
 </body>
 </html>

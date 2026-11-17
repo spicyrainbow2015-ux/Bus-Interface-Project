@@ -13,7 +13,7 @@ const DEFAULTS = {
   padColor: '#17171d', padSize: 6, padBrush: 'pen', padMix: 0.35,
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
-  fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4,
+  fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4, partFit: 'fill',
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
@@ -87,6 +87,7 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     if (key === 'guideOpacity') updatePadGuide();
     if (key === 'outlineOut') sendOutline();
     if (key === 'showQr') sendQr();
+    if (key === 'partFit') refitParts();
     if (key === 'paper') { resetBuffers(); if (S.source === 'photos') sendPaperSize(); }
   });
 });
@@ -371,6 +372,8 @@ function doClear(local) {
   if (sim) sim.reset();
   clearPad();
   placed.clear();
+  seenApproved.clear();
+  clearedAt = now;
   partChunks.clear();
   if (autoLocked) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   // The old drawing is probably still under the camera. Don't capture it again
@@ -1160,6 +1163,7 @@ function photosModeChanged() {
   $('submitLink').href = submitUrl();
   $('submitLink').textContent = submitUrl();
   placed.clear();
+  seenApproved.clear();
   pendingReplay = true;
   queueIds = null;
   sendPaperSize();
@@ -1235,6 +1239,20 @@ function pickSection(p) {
 
 $('btnCloseSection').addEventListener('click', () => setActive(0));
 $('btnPartTemplates').addEventListener('click', printPartTemplates);
+
+// One click to make drawings easy to read: still, solid dots with only a soft glow
+function applyPreset(values) {
+  for (const [key, v] of Object.entries(values)) {
+    S[key] = v;
+    const el = document.querySelector(`[data-key="${key}"]`);
+    if (el) { if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
+  }
+  save();
+  refreshOutputs();
+  sendSettings();
+}
+$('btnCrisp').addEventListener('click', () => applyPreset({ motion: 0, wisps: 0, trails: 0, glow: 0.2, pulse: 0.1, size: '2', brightness: 0.9 }));
+$('btnDreamy').addEventListener('click', () => applyPreset({ motion: 0.5, wisps: 0.3, trails: 0.55, glow: 0.6, pulse: 0.4, size: '1', brightness: 0.8 }));
 $('btnTemplateSection').addEventListener('click', () => { if (activeSection) printSectionTemplate(activeSection); });
 
 function sendHighlight(to) {
@@ -1278,10 +1296,12 @@ async function pollQueue() {
       }
       setSubsStatus(`Auto-approved ${items.length}`);
       renderQueue([]);
+      await syncApproved();
       return;
     }
     setSubsStatus(items.length ? `${items.length} waiting` : 'Listening for drawings');
     renderQueue(items);
+    await syncApproved();
   } catch (e) {
     setSubsStatus(e.message === 'offline' ? 'Needs the local server or Vercel' : "Can't reach the server");
   } finally {
@@ -1450,9 +1470,14 @@ function placePart(it) {
       if (part.polar) { const h = Math.min(arcStrip / a, 1); return h * h * a; }
       const R = bestRectIn(part, a); const h = Math.min(R.w / a, R.h); return h * h * a;
     };
+    const fill = S.partFit !== 'fit';
+    const targetAspect = part.polar ? arcStrip : boxAspect;
     if (!template) {
       const a0 = img.width / img.height;
-      if (sizeFor(1 / a0) > sizeFor(a0) * 1.3) {
+      const turn = fill
+        ? Math.abs(Math.log(1 / a0 / targetAspect)) < Math.abs(Math.log(a0 / targetAspect)) - 0.2 // less stretching
+        : sizeFor(1 / a0) > sizeFor(a0) * 1.3; // bigger
+      if (turn) {
         const c = document.createElement('canvas');
         c.width = img.height; c.height = img.width;
         const x = c.getContext('2d');
@@ -1498,7 +1523,8 @@ function placePart(it) {
       const { cx, cy, r0, r1 } = part.polar;
       const L = Math.PI * ((r0 + r1) / 2) * k, T = (r0 - r1) * k;
       const s2 = Math.min((L * 0.94) / src.width, (T * 0.9) / src.height);
-      const dw = Math.max(1, Math.round(src.width * s2)), dh = Math.max(1, Math.round(src.height * s2));
+      let dw = Math.max(1, Math.round(src.width * s2)), dh = Math.max(1, Math.round(src.height * s2));
+      if (fill) { dw = Math.max(1, Math.round(L * 0.96)); dh = Math.max(1, Math.round(T * 0.92)); } // stretch along the whole arch
       const sw = Math.round(dw * (r0 / ((r0 + r1) / 2))); // sample along the outer edge so the curve has no gaps
       const d = sample(sw, dh);
       gw = sw; gh = dh;
@@ -1517,6 +1543,10 @@ function placePart(it) {
       let fx, fy, fw, fh;
       if (template) {
         fx = l; fy = t; fw = r - l + 1; fh = b - t + 1;
+      } else if (fill) {
+        // Stretch over the biggest rectangle inside the part (its whole area for doors and columns)
+        const R = bestRectIn(part, boxAspect);
+        fx = R.x + R.w * 0.02; fy = R.y + R.h * 0.02; fw = R.w * 0.96; fh = R.h * 0.96;
       } else {
         const R = bestRectIn(part, imgAspect);
         const sc = Math.min((R.w * 0.94) / imgAspect, R.h * 0.94);
@@ -1676,16 +1706,36 @@ function redrawPartsOnPad() {
   }
 }
 
+// Show every approved drawing, including ones approved by another window or device,
+// in the order they were approved (a later drawing for a part replaces an earlier one).
+const seenApproved = new Set();
+let clearedAt = 0;
+async function syncApproved() {
+  if (S.source !== 'photos' || !building || !building.bbox) return;
+  if (performance.now() - clearedAt < 2500) return; // let the server finish forgetting them first
+  const { ids } = await api('approved');
+  for (const id of ids) {
+    if (seenApproved.has(id)) continue;
+    seenApproved.add(id);
+    try { const it = await api(`item&id=${encodeURIComponent(id)}`); it.frame ? placePart(it) : placeSubmission(it); } catch {}
+  }
+}
+
+// Re-place everything on the doorway (after the sizing setting changes)
+function refitParts() {
+  for (const [group, arr] of partChunks) {
+    CH.postMessage({ type: 'release', group });
+    pointCount -= arr.length / 5;
+  }
+  partChunks.clear();
+  placed.clear();
+  seenApproved.clear();
+  syncApproved().catch(() => {});
+}
+
 function replayApproved() {
   pendingReplay = false;
-  if (S.source !== 'photos' || !building || !building.bbox) return;
-  api('approved')
-    .then(async ({ ids }) => {
-      for (const id of ids) {
-        try { const it = await api(`item&id=${encodeURIComponent(id)}`); it.frame ? placePart(it) : placeSubmission(it); } catch {}
-      }
-    })
-    .catch(() => {});
+  syncApproved().catch(() => {});
 }
 
 // A sheet with just this shape on it (light blue, so it isn't captured as ink),
