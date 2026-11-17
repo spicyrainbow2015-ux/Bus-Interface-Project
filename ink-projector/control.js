@@ -1287,7 +1287,8 @@ function renderQueue(items) {
     const meta = document.createElement('div');
     meta.className = 'meta';
     const time = new Date(it.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    meta.innerHTML = `<span>${time}${it.section === activeSection ? '' : ' · for a different shape'}</span>` +
+    const where = it.frameName ? ` · for <b>${it.frameName}</b>` : it.section === activeSection ? '' : ' · for a different shape';
+    meta.innerHTML = `<span>${time}${where}</span>` +
       '<div class="btn-row"><button class="approve">Approve</button><button class="reject">Reject</button></div>';
     meta.querySelector('.approve').addEventListener('click', () => decide(it, true, card));
     meta.querySelector('.reject').addEventListener('click', () => decide(it, false, card));
@@ -1361,14 +1362,26 @@ function printSectionTemplate(L) {
   crop.getContext('2d').drawImage(regionCanvas(L), bx.x, bx.y, bx.w, bx.h, 0, 0, bx.w, bx.h);
   const p = placeIn(W / H, 0.08, aspect);
   const dx = p.x * W, dy = p.y * H, dw = p.w * W, dh = p.h * H;
+  // The shape mask is small, so enlarging it gives stair-stepped curves. Blur it at full
+  // print size and cut it at half opacity: the steps melt into smooth edges.
+  const smooth = document.createElement('canvas');
+  smooth.width = Math.round(dw); smooth.height = Math.round(dh);
+  const sx = smooth.getContext('2d', { willReadFrequently: true });
+  sx.imageSmoothingEnabled = true;
+  sx.filter = `blur(${Math.max(2, Math.round((dw / bx.w) * 0.9))}px)`;
+  sx.drawImage(crop, 0, 0, smooth.width, smooth.height);
+  sx.filter = 'none';
+  const sd = sx.getImageData(0, 0, smooth.width, smooth.height);
+  for (let j = 3; j < sd.data.length; j += 4) sd.data[j] = Math.min(255, Math.max(0, (sd.data[j] - 110) * 7));
+  sx.putImageData(sd, 0, 0);
   x.imageSmoothingEnabled = true;
-  const edge = tintCanvas(crop, '#a9cdf9');
+  const edge = tintCanvas(smooth, '#a9cdf9');
   const k = Math.max(4, Math.round(W / 400));
   for (let a = 0; a < 16; a++) {
     const ang = (a / 16) * Math.PI * 2;
-    x.drawImage(edge, dx + Math.cos(ang) * k, dy + Math.sin(ang) * k, dw, dh);
+    x.drawImage(edge, dx + Math.cos(ang) * k, dy + Math.sin(ang) * k);
   }
-  x.drawImage(tintCanvas(crop, '#f1f7fe'), dx, dy, dw, dh);
+  x.drawImage(tintCanvas(smooth, '#f1f7fe'), dx, dy);
 
   const lh = Math.round(Math.min(W, H) * 0.06), lw = Math.round(lh * building.aspect);
   const lx = Math.round(W * 0.03), ly = H - lh - Math.round(Math.min(W, H) * 0.012);

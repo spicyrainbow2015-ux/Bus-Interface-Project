@@ -1,6 +1,6 @@
 // Ink Projector photo submissions: active section, queue, approvals.
 // All logic lives in lib/ink-api.js (shared with the local dev server).
-//   GET  /api/ink?op=state        current open section (public)
+//   GET  /api/ink?op=state        parts to choose from + open section (public)
 //   POST /api/ink?op=submit       a visitor's extracted drawing (public)
 //   POST /api/ink?op=setState     open/close a section        (operator)
 //   GET  /api/ink?op=pending      queue awaiting approval      (operator)
