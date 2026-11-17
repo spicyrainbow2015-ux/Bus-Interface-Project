@@ -13,7 +13,7 @@ const DEFAULTS = {
   padColor: '#17171d', padSize: 6, padBrush: 'pen', padMix: 0.35,
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
-  fade: 3, size: '1', showFrame: false, showQr: true,
+  fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true,
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
@@ -1162,14 +1162,9 @@ function photosModeChanged() {
   pendingReplay = true;
   queueIds = null;
   sendPaperSize();
-  api('state')
-    .then((st) => {
-      const L = st && st.section;
-      setActive(building && L && L < building.outside.length && !building.outside[L] ? L : 0, false);
-    })
-    .catch(() => setActive(0, false));
+  setActive(0, false); // visitors choose the part on their phone; nothing is "opened" here
   pollQueue();
-  pollTimer = setInterval(pollQueue, 2500);
+  pollTimer = setInterval(pollQueue, 1500);
 }
 
 function sectionBox(L) {
@@ -1268,14 +1263,28 @@ function sendQr(to) {
   CH.postMessage({ type: 'qr', to, on: S.source === 'photos' && !!S.showQr, url: submitUrl() });
 }
 
+let pollBusy = false;
 async function pollQueue() {
-  if (S.source !== 'photos') return;
+  if (S.source !== 'photos' || pollBusy) return;
+  pollBusy = true;
   try {
     const { items } = await api('pending');
+    if (S.autoApprove && items.length) {
+      // Testing mode: show drawings as soon as they arrive, oldest first
+      for (const it of [...items].reverse()) {
+        await api('decide', { id: it.id, approve: true });
+        it.frame ? placePart(it) : placeSubmission(it);
+      }
+      setSubsStatus(`Auto-approved ${items.length}`);
+      renderQueue([]);
+      return;
+    }
     setSubsStatus(items.length ? `${items.length} waiting` : 'Listening for drawings');
     renderQueue(items);
   } catch (e) {
     setSubsStatus(e.message === 'offline' ? 'Needs the local server or Vercel' : "Can't reach the server");
+  } finally {
+    pollBusy = false;
   }
 }
 
@@ -1372,7 +1381,7 @@ function archBand(cx, cy, r0, r1) {
 const DOOR_PARTS = {
   'left-door': { name: 'Left door', path: doorHalf(370, 461, 461, 270, 91, true), box: [370, 179, 460, 598] },
   'right-door': { name: 'Right door', path: doorHalf(552, 461, 461, 270, 91, false), box: [462, 179, 552, 598] },
-  'arch': { name: 'Arch', path: archBand(461, 267, 121, 96), box: [340, 146, 582, 267] },
+  'arch': { name: 'Arch', path: archBand(461, 267, 121, 96), box: [340, 146, 582, 267], polar: { cx: 461, cy: 267, r0: 121, r1: 96 } },
   'left-column': { name: 'Left column', path: polyPath([[281, 153], [332, 153], [332, 522], [281, 522]]), box: [281, 153, 332, 522] },
   'right-column': { name: 'Right column', path: polyPath([[591, 153], [647, 153], [647, 517], [591, 517]]), box: [591, 153, 647, 517] },
   'steps': {
@@ -1385,6 +1394,36 @@ const DOOR_PARTS = {
 const partChunks = new Map(); // part id -> Float32Array of its current drawing's particles
 const pathCtx = document.createElement('canvas').getContext('2d');
 
+// The rectangle inside a shape that lets a drawing of this aspect be largest.
+// Scans the shape on a 1px grid and checks every maximal rectangle (histogram method).
+function bestRectIn(part, drawAspect) {
+  const [l, t, r, b] = part.box;
+  const w = r - l + 1, h = b - t + 1;
+  const heights = new Int32Array(w);
+  let best = { x: l, y: t, w: 1, h: 1, scale: 0 };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) heights[x] = pathCtx.isPointInPath(part.path, l + x + 0.5, t + y + 0.5) ? heights[x] + 1 : 0;
+    const stack = [];
+    for (let x = 0; x <= w; x++) {
+      const hx = x < w ? heights[x] : 0;
+      let start = x;
+      while (stack.length && stack[stack.length - 1][1] >= hx) {
+        const [sx, sh] = stack.pop();
+        const rw_ = x - sx, rh_ = sh;
+        const scale = Math.min(rw_ / drawAspect, rh_);
+        // Biggest drawing wins; on a tie, the bigger rectangle, so the drawing sits centred in the shape
+        if (scale > best.scale * 1.04 || (scale > best.scale * 0.96 && rw_ * rh_ > best.w * best.h)) {
+          best = { x: l + sx, y: t + y - sh + 1, w: rw_, h: rh_, scale: Math.max(scale, best.scale) };
+        }
+        start = sx;
+      }
+      stack.push([start, hx]);
+    }
+  }
+  return best;
+}
+
+
 function placePart(it) {
   const part = DOOR_PARTS[it.frame];
   if (!part || placed.has(it.id) || !building || !rw) return;
@@ -1395,20 +1434,76 @@ function placePart(it) {
     const op = placeIn(areaAspect(), outlineMargin());
     const kx = (op.w * rw) / 485, ky = (op.h * rh) / 752;
     const [l, t, r, b] = part.box;
-    const bx = op.x * rw + (l - 220) * kx, by = op.y * rh + t * ky;
-    const dw = Math.max(1, Math.round((r - l + 1) * kx)), dh = Math.max(1, Math.round((b - t + 1) * ky));
-    const c = document.createElement('canvas');
-    c.width = dw; c.height = dh;
-    const x = c.getContext('2d', { willReadFrequently: true });
-    x.imageSmoothingEnabled = true;
-    x.drawImage(img, 0, 0, dw, dh); // the template area and the part's box have the same shape
-    const d = x.getImageData(0, 0, dw, dh).data;
+    const boxAspect = (r - l + 1) / (b - t + 1), imgAspect = img.width / img.height;
+    const template = Math.abs(Math.log(imgAspect / boxAspect)) < 0.15;
+    const toArea = (px, py) => [op.x * rw + (px - 220) * kx, op.y * rh + py * ky];
+    const k = (kx + ky) / 2;
+
+    // Draw the image at a target size and read its ink. When it's shrunk a lot, thicken thin
+    // lines by a pixel so they stay solid strokes instead of breaking into dots.
+    const sample = (dw, dh) => {
+      const c = document.createElement('canvas');
+      c.width = dw; c.height = dh;
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.imageSmoothingEnabled = true;
+      x.drawImage(img, 0, 0, dw, dh);
+      const d = x.getImageData(0, 0, dw, dh).data;
+      if (dw / img.width < 0.6) {
+        const src = new Uint8ClampedArray(d);
+        for (let y = 0; y < dh; y++) {
+          for (let x2 = 0; x2 < dw; x2++) {
+            const j = (y * dw + x2) * 4;
+            if (src[j + 3] >= 60) continue;
+            for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const xx = x2 + ox, yy = y + oy;
+              if (xx < 0 || yy < 0 || xx >= dw || yy >= dh) continue;
+              const q = (yy * dw + xx) * 4;
+              if (src[q + 3] >= 60) { d[j] = src[q]; d[j + 1] = src[q + 1]; d[j + 2] = src[q + 2]; d[j + 3] = 255; break; }
+            }
+          }
+        }
+      }
+      return d;
+    };
     const pts = [];
-    for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
-      if (d[j + 3] < 60) continue;
-      const u = (i % dw) + 0.5, v = ((i / dw) | 0) + 0.5;
-      if (!pathCtx.isPointInPath(part.path, l + u / kx, t + v / ky)) continue; // cut at the border
-      pts.push((bx + u) / rw, (by + v) / rh, d[j], d[j + 1], d[j + 2]);
+
+    if (!template && part.polar) {
+      // A plain-paper drawing on the arch: unroll the band into a strip, fit the drawing, bend it back
+      const { cx, cy, r0, r1 } = part.polar;
+      const L = Math.PI * ((r0 + r1) / 2) * k, T = (r0 - r1) * k;
+      const s2 = Math.min((L * 0.94) / img.width, (T * 0.9) / img.height);
+      const dw = Math.max(1, Math.round(img.width * s2)), dh = Math.max(1, Math.round(img.height * s2));
+      const sw = Math.round(dw * (r0 / ((r0 + r1) / 2))); // sample along the outer edge so the curve has no gaps
+      const d = sample(sw, dh);
+      const u0 = (L - dw) / 2 / L, v0 = (T - dh) / 2 / T;
+      for (let i = 0, j = 0; i < sw * dh; i++, j += 4) {
+        if (d[j + 3] < 60) continue;
+        const u = u0 + (((i % sw) + 0.5) / sw) * (dw / L), v = v0 + ((((i / sw) | 0) + 0.5) / dh) * (dh / T);
+        const ang = Math.PI + u * Math.PI, rr = r0 - v * (r0 - r1);
+        const [X, Y] = toArea(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
+        pts.push(X / rw, Y / rh, d[j], d[j + 1], d[j + 2]);
+      }
+    } else {
+      // A template photo maps one-to-one onto the part's box; anything else is fitted inside the
+      // part without squashing. Either way, anything past the part's outline is cut off.
+      let fx, fy, fw, fh;
+      if (template) {
+        fx = l; fy = t; fw = r - l + 1; fh = b - t + 1;
+      } else {
+        const R = bestRectIn(part, imgAspect);
+        const sc = Math.min((R.w * 0.94) / imgAspect, R.h * 0.94);
+        fw = sc * imgAspect; fh = sc;
+        fx = R.x + (R.w - fw) / 2; fy = R.y + (R.h - fh) / 2;
+      }
+      const [bx, by] = toArea(fx, fy);
+      const dw = Math.max(1, Math.round(fw * kx)), dh = Math.max(1, Math.round(fh * ky));
+      const d = sample(dw, dh);
+      for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
+        if (d[j + 3] < 60) continue;
+        const u = (i % dw) + 0.5, v = ((i / dw) | 0) + 0.5;
+        if (!pathCtx.isPointInPath(part.path, fx + u / kx, fy + v / ky)) continue; // cut at the border
+        pts.push((bx + u) / rw, (by + v) / rh, d[j], d[j + 1], d[j + 2]);
+      }
     }
     const old = partChunks.get(it.frame);
     if (old) {

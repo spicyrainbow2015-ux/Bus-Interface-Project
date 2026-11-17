@@ -73,6 +73,7 @@
             <button id="btnTemplateSection" disabled>Print template for this section</button>
             <button id="btnCloseSection" disabled>Stop taking drawings</button>
           </div>
+          <label class="check"><input type="checkbox" data-key="autoApprove"> Auto-approve (show drawings as soon as they arrive)</label>
           <button id="btnPartTemplates">Print templates (one page per part)</button>
           <p class="note">Set <b>Paper size</b> (in the Paper section) to the paper you print on.</p>
           <label class="check"><input type="checkbox" data-key="showQr"> Show QR code on output</label>
@@ -264,6 +265,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js"></script>
+  <script type="module" src="control.js?v=4"></script>
 </body>
 </html>
