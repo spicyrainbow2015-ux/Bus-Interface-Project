@@ -1,14 +1,17 @@
-// Phone page: choose a part of the doorway, photograph a drawing on any paper, pull out
-// just the ink, trim to the drawing, and send it to the operator's approval queue.
+// Phone page: choose a part of the doorway, photograph the drawing made on that part's printed
+// template, pull out just the ink inside the template's shape area, and send it to the
+// operator's approval queue. The drawing lands on the doorway exactly where it was drawn;
+// anything outside the part's border is cut off there.
 // All image processing happens on the phone, so only a small transparent PNG is uploaded.
 import { detectPaper, warpQuad, extractInk, makeInkBuffers } from './vision.js';
 
 const $ = (id) => document.getElementById(id);
 const API = '/api/ink';
 const RECT_LONG = 1000;   // flattened sheet resolution (long side)
-const PAD = 0.04;         // breathing room around the trimmed drawing
+const TEMPLATE_MARGIN = 0.08; // must match the operator's printed templates
 
 let frames = [];
+let paperRatio = 1.2941;  // the operator's paper size (US Letter unless set otherwise)
 let frame = null;         // { id, name } the visitor picked
 let photo = null;         // loaded <img>
 let turns = 0;            // quarter turns applied by the Rotate button
@@ -23,7 +26,9 @@ function show(step) {
 async function loadFrames() {
   try {
     const r = await fetch(`${API}?op=state`, { cache: 'no-store' });
-    frames = (await r.json()).frames || [];
+    const st = await r.json();
+    frames = st.frames || [];
+    if (st.paperRatio) paperRatio = st.paperRatio;
   } catch { frames = []; }
   const box = $('frames');
   if (!frames.length) {
@@ -82,48 +87,38 @@ function processPhoto() {
   for (let t = 0; t < turns; t++) corners = [corners[3], corners[0], corners[1], corners[2]]; // quarter turn
   const q = corners.map(([x, y]) => [x * fw, y * fh]);
 
-  // Flatten it, keeping the sheet's own proportions (any paper size works)
+  // Flatten it at the template's paper shape, in whichever orientation it was photographed
   const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const across = (d(q[0], q[1]) + d(q[3], q[2])) / 2, down = (d(q[0], q[3]) + d(q[1], q[2])) / 2;
-  const s = RECT_LONG / Math.max(across, down);
-  const rw = Math.max(50, Math.round(across * s)), rh = Math.max(50, Math.round(down * s));
+  const [rw, rh] = across >= down
+    ? [RECT_LONG, Math.round(RECT_LONG / paperRatio)]
+    : [Math.round(RECT_LONG / paperRatio), RECT_LONG];
   const rect = new ImageData(rw, rh);
   warpQuad(frameData, q, rect);
 
-  // Ink only (ignore a thin band at the sheet's edges, where shadows sit)
+  // Ink only
   const buf = makeInkBuffers(rw, rh);
-  extractInk(rect, { threshold: parseFloat($('threshold').value), margin: found ? 0.025 : 0.01, ignoreSkin: true }, buf);
+  extractInk(rect, { threshold: parseFloat($('threshold').value), margin: 0.01, ignoreSkin: true }, buf);
   const mask = buf.mask;
 
-  // Trim to the drawing. Ignore the outermost 0.5% of ink on each side so a stray speck
-  // or smudge near the edge doesn't stretch the box.
-  const cols = new Uint32Array(rw), rows = new Uint32Array(rh);
+  // The part's shape area on the template (same placement the operator prints)
+  const aspect = frame.aspect || rw / rh;
+  let bw = (1 - 2 * TEMPLATE_MARGIN) * (rw / rh), bh = bw / aspect;
+  if (bh > 1 - 2 * TEMPLATE_MARGIN) { bh = 1 - 2 * TEMPLATE_MARGIN; bw = bh * aspect; }
+  const cw = Math.max(1, Math.round((bw / (rw / rh)) * rw)), ch = Math.max(1, Math.round(bh * rh));
+  const cx = Math.round((rw - cw) / 2), cy = Math.round((rh - ch) / 2);
   let total = 0;
-  for (let y = 0; y < rh; y++) {
-    for (let x = 0; x < rw; x++) {
-      if (mask[y * rw + x]) { cols[x]++; rows[y]++; total++; }
-    }
-  }
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (mask[(cy + y) * rw + cx + x]) total++;
+
   const msg = $('reviewMsg');
   if (total < 40) {
-    drawPreview(null, 300, 200);
+    drawPreview(null, cw, ch);
     msg.className = 'msg warn';
-    msg.textContent = "We couldn't find a drawing. Try more light, a thicker dark marker, or move the Line pickup slider.";
+    msg.textContent = "We couldn't find a drawing inside the shape. Try more light, a thicker dark marker, or move the Line pickup slider.";
     $('btnSend').disabled = true;
     result = null;
     return;
   }
-  const edge = (arr) => {
-    const cut = total * 0.005;
-    let lo = 0, hi = arr.length - 1;
-    for (let acc = 0; lo < arr.length; lo++) { acc += arr[lo]; if (acc > cut) break; }
-    for (let acc = 0; hi > 0; hi--) { acc += arr[hi]; if (acc > cut) break; }
-    return [lo, hi];
-  };
-  const [x0, x1] = edge(cols), [y0, y1] = edge(rows);
-  const pad = Math.round(Math.max(x1 - x0, y1 - y0) * PAD);
-  const cx = Math.max(0, x0 - pad), cy = Math.max(0, y0 - pad);
-  const cw = Math.min(rw, x1 + pad + 1) - cx, ch = Math.min(rh, y1 + pad + 1) - cy;
 
   // Transparent image with just the ink, in its own colours
   const out = document.createElement('canvas');
@@ -143,10 +138,10 @@ function processPhoto() {
 
   if (!found) {
     msg.className = 'msg warn';
-    msg.textContent = "We couldn't find the edges of the paper, so we used the whole photo. If extra things got picked up, retake it on a darker surface.";
+    msg.textContent = "We couldn't find the edges of the paper, so it may not line up. Retake it with the whole sheet on a darker surface.";
   } else {
     msg.className = 'msg';
-    msg.textContent = "This is what will be projected. Use Rotate if it's sideways or upside down.";
+    msg.textContent = "This is what will be projected. Anything outside the shape gets cut off. Use Rotate if it's sideways or upside down.";
   }
   $('btnSend').disabled = false;
 

@@ -26,18 +26,18 @@ Pick one under **Source → Input**:
 
 ## Photo submissions (phones)
 
-Set **Input** to **Photo submissions (phones)**. Visitors draw on paper and send a photo from their phone.
+Set **Input** to **Photo submissions (phones)**. Visitors draw on a paper template and send a photo.
 
-1. **Open a section:** click a shape on the doorway (a door panel, the arch, a step…). It glows on the
-   output, and a QR code appears in the corner.
-2. **Print its template:** **Print template for this section** prints just that shape in light blue,
-   with a small map of the doorway showing where it goes. Light blue is too faint to count as ink.
-3. **Visitors:** draw inside the shape with a dark marker, scan the QR code, and photograph the sheet.
-   Their phone (`submit.html`) finds the sheet, straightens it, keeps only the ink inside the shape and
-   shows a preview before sending. Only that small image is uploaded.
-4. **Approve:** drawings wait in the **Photo submissions** panel. **Approve** fits the drawing into the
-   shape it was drawn for, cut to its outline, and it turns into particles. **Reject** deletes it.
-5. **Clear** wipes the projection and the saved approved drawings. Approved drawings survive reloading
+1. **Print the templates:** **Print templates (one page per part)** prints six pages: Left door, Right door,
+   Arch, Left column, Right column and Steps. Each shows its part's shape in light blue, which is too faint
+   to count as ink. Set **Paper size** to the paper you print on, and print at actual size.
+2. **Visitors** draw inside the shape with a dark marker, scan the QR code on the projection, choose the
+   same part on their phone and photograph the sheet. The phone (`submit.html`) finds the sheet,
+   straightens it and keeps only the ink inside the template's shape area. Only that small image is uploaded.
+3. **Approve:** drawings wait in the **Photo submissions** panel. **Approve** puts the drawing on its part
+   exactly where it was drawn; anything past the part's border is cut off, like the colouring-book mode on
+   the drawing pad. A new drawing for a part fades out that part's previous one. **Reject** deletes it.
+4. **Clear** wipes the projection and the saved approved drawings. Approved drawings survive reloading
    the operator page.
 
 The server part is `api/ink.js` (Vercel + the project's Upstash Redis), with its logic in

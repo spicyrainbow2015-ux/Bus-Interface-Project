@@ -87,7 +87,7 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     if (key === 'guideOpacity') updatePadGuide();
     if (key === 'outlineOut') sendOutline();
     if (key === 'showQr') sendQr();
-    if (key === 'paper') resetBuffers();
+    if (key === 'paper') { resetBuffers(); if (S.source === 'photos') sendPaperSize(); }
   });
 });
 refreshOutputs();
@@ -1141,6 +1141,10 @@ async function api(op, body) {
 }
 
 const submitUrl = () => new URL('submit.html', location.href).href;
+// Phones need the template paper's proportions to find the shape on the sheet
+function sendPaperSize() {
+  api('setState', { section: null, paperRatio: PAPER_RATIO[S.paper] || 1.2941 }).catch(() => {});
+}
 function setSubsStatus(t) { $('subsStatus').textContent = t; }
 
 function photosModeChanged() {
@@ -1157,6 +1161,7 @@ function photosModeChanged() {
   placed.clear();
   pendingReplay = true;
   queueIds = null;
+  sendPaperSize();
   api('state')
     .then((st) => {
       const L = st && st.section;
@@ -1233,6 +1238,7 @@ function pickSection(p) {
 }
 
 $('btnCloseSection').addEventListener('click', () => setActive(0));
+$('btnPartTemplates').addEventListener('click', printPartTemplates);
 $('btnTemplateSection').addEventListener('click', () => { if (activeSection) printSectionTemplate(activeSection); });
 
 function sendHighlight(to) {
@@ -1334,10 +1340,12 @@ function placeSubmission(it) {
 }
 
 // ---------- Phone drawings into doorway parts ----------
-// Visitors choose a part on their phone. Each part is a real shape on the traced doorway,
-// in the photo's pixel coordinates (see makeDoorway). An approved drawing is fitted inside its
-// shape without stretching and trimmed at the shape's edge; on the arch it's bent along the curve.
+// Visitors choose a part on their phone and draw on that part's printed template. Each part is a
+// real shape on the traced doorway, in the photo's pixel coordinates (see makeDoorway). The phone
+// sends exactly the template's shape area, so the drawing maps one-to-one onto the part's box and
+// anything past the part's outline is cut off, like the colouring-book mode on the drawing pad.
 // A new drawing for a part replaces (fades out) that part's previous drawing.
+// Boxes must match DEFAULT_FRAMES in lib/ink-api.js.
 function doorHalf(x0, x1, cx, cy, r, left) {
   const p = new Path2D();
   p.moveTo(x0, 600);
@@ -1354,13 +1362,21 @@ function polyPath(pts) {
   p.closePath();
   return p;
 }
+function archBand(cx, cy, r0, r1) {
+  const p = new Path2D();
+  p.arc(cx, cy, r0, Math.PI, Math.PI * 2);
+  p.arc(cx, cy, r1, Math.PI * 2, Math.PI, true);
+  p.closePath();
+  return p;
+}
 const DOOR_PARTS = {
-  'left-door': { path: doorHalf(370, 461, 461, 270, 91, true), box: [370, 179, 460, 598] },
-  'right-door': { path: doorHalf(552, 461, 461, 270, 91, false), box: [462, 179, 552, 598] },
-  'arch': { polar: { cx: 461, cy: 267, r0: 121, r1: 96 } },
-  'left-column': { path: polyPath([[281, 153], [332, 153], [332, 522], [281, 522]]), box: [281, 153, 332, 522] },
-  'right-column': { path: polyPath([[591, 153], [647, 153], [647, 517], [591, 517]]), box: [591, 153, 647, 517] },
+  'left-door': { name: 'Left door', path: doorHalf(370, 461, 461, 270, 91, true), box: [370, 179, 460, 598] },
+  'right-door': { name: 'Right door', path: doorHalf(552, 461, 461, 270, 91, false), box: [462, 179, 552, 598] },
+  'arch': { name: 'Arch', path: archBand(461, 267, 121, 96), box: [340, 146, 582, 267] },
+  'left-column': { name: 'Left column', path: polyPath([[281, 153], [332, 153], [332, 522], [281, 522]]), box: [281, 153, 332, 522] },
+  'right-column': { name: 'Right column', path: polyPath([[591, 153], [647, 153], [647, 517], [591, 517]]), box: [591, 153, 647, 517] },
   'steps': {
+    name: 'Steps',
     path: polyPath([[317, 642], [603, 642], [603, 675], [645, 675], [645, 708], [688, 708], [688, 743],
       [232, 743], [232, 708], [277, 708], [277, 675], [317, 675]]),
     box: [232, 642, 688, 743],
@@ -1368,35 +1384,6 @@ const DOOR_PARTS = {
 };
 const partChunks = new Map(); // part id -> Float32Array of its current drawing's particles
 const pathCtx = document.createElement('canvas').getContext('2d');
-
-// The rectangle inside a shape that lets a drawing of this aspect be largest.
-// Scans the shape on a 1px grid and checks every maximal rectangle (histogram method).
-function bestRectIn(part, drawAspect) {
-  const [l, t, r, b] = part.box;
-  const w = r - l + 1, h = b - t + 1;
-  const heights = new Int32Array(w);
-  let best = { x: l, y: t, w: 1, h: 1, scale: 0 };
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) heights[x] = pathCtx.isPointInPath(part.path, l + x + 0.5, t + y + 0.5) ? heights[x] + 1 : 0;
-    const stack = [];
-    for (let x = 0; x <= w; x++) {
-      const hx = x < w ? heights[x] : 0;
-      let start = x;
-      while (stack.length && stack[stack.length - 1][1] >= hx) {
-        const [sx, sh] = stack.pop();
-        const rw_ = x - sx, rh_ = sh;
-        const scale = Math.min(rw_ / drawAspect, rh_);
-        // Biggest drawing wins; on a tie, the bigger rectangle, so the drawing sits centred in the shape
-        if (scale > best.scale * 1.04 || (scale > best.scale * 0.96 && rw_ * rh_ > best.w * best.h)) {
-          best = { x: l + sx, y: t + y - sh + 1, w: rw_, h: rh_, scale: Math.max(scale, best.scale) };
-        }
-        start = sx;
-      }
-      stack.push([start, hx]);
-    }
-  }
-  return best;
-}
 
 function placePart(it) {
   const part = DOOR_PARTS[it.frame];
@@ -1407,55 +1394,22 @@ function placePart(it) {
     // Photo pixel (doorway trace) -> drawing-area pixel
     const op = placeIn(areaAspect(), outlineMargin());
     const kx = (op.w * rw) / 485, ky = (op.h * rh) / 752;
-    const ax = (px) => op.x * rw + (px - 220) * kx, ay = (py) => op.y * rh + py * ky;
-    const k = (kx + ky) / 2;
-
-    // Lay the drawing out in its target space and read its ink pixels
-    const sample = (dw, dh) => {
-      const c = document.createElement('canvas');
-      c.width = dw; c.height = dh;
-      const x = c.getContext('2d', { willReadFrequently: true });
-      x.imageSmoothingEnabled = true;
-      x.drawImage(img, 0, 0, dw, dh);
-      return x.getImageData(0, 0, dw, dh).data;
-    };
+    const [l, t, r, b] = part.box;
+    const bx = op.x * rw + (l - 220) * kx, by = op.y * rh + t * ky;
+    const dw = Math.max(1, Math.round((r - l + 1) * kx)), dh = Math.max(1, Math.round((b - t + 1) * ky));
+    const c = document.createElement('canvas');
+    c.width = dw; c.height = dh;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingEnabled = true;
+    x.drawImage(img, 0, 0, dw, dh); // the template area and the part's box have the same shape
+    const d = x.getImageData(0, 0, dw, dh).data;
     const pts = [];
-    const aspect = img.width / img.height;
-
-    if (part.polar) {
-      // Unroll the arch into a strip (length x thickness), fit the drawing in it, bend it back
-      const { cx, cy, r0, r1 } = part.polar;
-      const L = Math.PI * ((r0 + r1) / 2) * k, T = (r0 - r1) * k;
-      const s = Math.min((L * 0.94) / img.width, (T * 0.88) / img.height);
-      const dw = Math.max(1, Math.round(img.width * s)), dh = Math.max(1, Math.round(img.height * s));
-      // Sample along the outer edge's length so the curve has no gaps
-      const over = r0 / ((r0 + r1) / 2);
-      const sw = Math.round(dw * over);
-      const d = sample(sw, dh);
-      const u0 = (L - dw) / 2 / L, v0 = (T - dh) / 2 / T;
-      for (let i = 0, j = 0; i < sw * dh; i++, j += 4) {
-        if (d[j + 3] < 60) continue;
-        const u = u0 + (((i % sw) + 0.5) / sw) * (dw / L), v = v0 + ((((i / sw) | 0) + 0.5) / dh) * (dh / T);
-        const a = Math.PI + u * Math.PI, rr = r0 - v * (r0 - r1);
-        pts.push(ax(cx + Math.cos(a) * rr) / rw, ay(cy + Math.sin(a) * rr) / rh, d[j], d[j + 1], d[j + 2]);
-      }
-    } else {
-      // Biggest rectangle inside the shape for this drawing, then trim anything outside the shape
-      const R = bestRectIn(part, aspect);
-      const rx = ax(R.x), ry = ay(R.y), rwp = R.w * kx, rhp = R.h * ky;
-      const s = Math.min((rwp * 0.92) / img.width, (rhp * 0.92) / img.height);
-      const dw = Math.max(1, Math.round(img.width * s)), dh = Math.max(1, Math.round(img.height * s));
-      const ox = rx + (rwp - dw) / 2, oy = ry + (rhp - dh) / 2;
-      const d = sample(dw, dh);
-      for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
-        if (d[j + 3] < 60) continue;
-        const X = ox + (i % dw) + 0.5, Y = oy + ((i / dw) | 0) + 0.5;
-        const pxp = 220 + (X - op.x * rw) / kx, pyp = (Y - op.y * rh) / ky;
-        if (!pathCtx.isPointInPath(part.path, pxp, pyp)) continue;
-        pts.push(X / rw, Y / rh, d[j], d[j + 1], d[j + 2]);
-      }
+    for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
+      if (d[j + 3] < 60) continue;
+      const u = (i % dw) + 0.5, v = ((i / dw) | 0) + 0.5;
+      if (!pathCtx.isPointInPath(part.path, l + u / kx, t + v / ky)) continue; // cut at the border
+      pts.push((bx + u) / rw, (by + v) / rh, d[j], d[j + 1], d[j + 2]);
     }
-
     const old = partChunks.get(it.frame);
     if (old) {
       CH.postMessage({ type: 'release', group: it.frame });
@@ -1468,6 +1422,72 @@ function placePart(it) {
     redrawPartsOnPad();
   };
   img.src = it.png;
+}
+
+// One printable page per part: the part's shape in light blue (too faint to count as ink),
+// placed where the phone expects it, with its name and a small map of the doorway.
+function printPartTemplates() {
+  if (!building) return;
+  const ratio = PAPER_RATIO[S.paper] || 1.2941;
+  const paper = S.paper === 'a4' ? ['210mm', '297mm'] : ['8.5in', '11in'];
+  const pages = [];
+  for (const [id, part] of Object.entries(DOOR_PARTS)) {
+    const [l, t, r, b] = part.box;
+    const aspect = (r - l + 1) / (b - t + 1);
+    const landscape = aspect >= 1;
+    const W = landscape ? 2400 : Math.round(2400 / ratio), H = landscape ? Math.round(2400 / ratio) : 2400;
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff';
+    x.fillRect(0, 0, W, H);
+    const p = placeIn(W / H, 0.08, aspect);
+    const sx = (p.w * W) / (r - l + 1), sy = (p.h * H) / (b - t + 1);
+    x.save();
+    x.translate(p.x * W - l * sx, p.y * H - t * sy);
+    x.scale(sx, sy);
+    x.fillStyle = '#f1f7fe';
+    x.fill(part.path);
+    x.lineWidth = Math.max(5, W / 420) / sx;
+    x.strokeStyle = '#a9cdf9';
+    x.lineJoin = 'round';
+    x.stroke(part.path);
+    x.restore();
+    // Name and doorway map in the margins (outside the area the phone reads)
+    const m = Math.round(Math.min(W, H) * 0.08);
+    x.fillStyle = '#a9cdf9';
+    x.textBaseline = 'middle';
+    x.font = `600 ${Math.round(m * 0.42)}px -apple-system, Helvetica, sans-serif`;
+    x.fillText(part.name.toUpperCase(), Math.round(W * 0.04), Math.round(m * 0.5));
+    const lh = Math.round(m * 0.8), lw = Math.round(lh * building.aspect);
+    const lx = Math.round(W * 0.03), ly = H - lh - Math.round(m * 0.1);
+    const loc = document.createElement('canvas');
+    loc.width = building.w; loc.height = building.h;
+    const lc = loc.getContext('2d');
+    lc.save();
+    lc.scale(building.w / 485, building.h / 752);
+    lc.translate(-220, 0);
+    lc.fillStyle = '#d3e5fd';
+    lc.fill(part.path);
+    lc.restore();
+    lc.drawImage(tintCanvas(outlineCv, '#a9cdf9'), 0, 0);
+    x.drawImage(loc, lx, ly, lw, lh);
+    x.font = `${Math.round(lh * 0.3)}px -apple-system, Helvetica, sans-serif`;
+    x.fillText('Draw inside the shape with a dark marker. Then scan the QR code by the doorway and choose "' + part.name + '".', lx + lw + 24, ly + lh / 2);
+    pages.push({ url: c.toDataURL('image/png'), landscape });
+  }
+  const win = window.open('', '_blank');
+  if (!win) return;
+  const [pw, ph] = paper;
+  win.document.write(`<!doctype html><title>Doorway templates</title><style>
+    @page port { size: ${pw} ${ph}; margin: 0 } @page land { size: ${ph} ${pw}; margin: 0 }
+    html, body { margin: 0 }
+    .pg { break-after: page; } .pg img { display: block; }
+    .port { page: port; } .port img { width: ${pw}; height: ${ph}; }
+    .land { page: land; } .land img { width: ${ph}; height: ${pw}; }
+    </style>${pages.map((p) => `<div class="pg ${p.landscape ? 'land' : 'port'}"><img src="${p.url}"></div>`).join('')}
+    <script>Promise.all([...document.images].map(i => i.decode())).then(() => setTimeout(() => print(), 300));<\/script>`);
+  win.document.close();
 }
 
 // Operator's view: paint every part's current drawing from its particles
