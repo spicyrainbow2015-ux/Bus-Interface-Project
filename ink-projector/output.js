@@ -25,9 +25,10 @@ const vx = new Float32Array(CAP), vy = new Float32Array(CAP);
 const nx = new Float32Array(CAP), ny = new Float32Array(CAP); // home position, 0..1 on the paper
 const cr = new Float32Array(CAP), cg = new Float32Array(CAP), cb = new Float32Array(CAP);
 const al = new Float32Array(CAP), seed = new Float32Array(CAP);
-const st = new Uint8Array(CAP); // 1 = on the drawing, 2 = released by Clear, 3 = wisp
+const st = new Uint8Array(CAP); // 1 = on the drawing, 2 = released by Clear, 3 = wisp, 4 = waiting to be drawn in
+const born = new Float32Array(CAP); // when a waiting particle appears (seconds)
 const grp = new Uint8Array(CAP); // which phone drawing group (doorway part) a particle belongs to; 0 = none
-const ALL = [px, py, vx, vy, nx, ny, cr, cg, cb, al, seed, st, grp];
+const ALL = [px, py, vx, vy, nx, ny, cr, cg, cb, al, seed, st, grp, born];
 const groupIds = new Map();
 const groupId = (name) => { if (!name) return 0; if (!groupIds.has(name)) groupIds.set(name, Math.min(255, groupIds.size + 1)); return groupIds.get(name); };
 let count = 0;
@@ -98,8 +99,9 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------- Adding and releasing ----------
-function addPoints(arr, animate, group) {
+function addPoints(arr, animate, group, delays) {
   const gid = groupId(group);
+  const now = performance.now() / 1000;
   const { ox, oy, w, h } = layout;
   const unit = W / 1000;
   for (let k = 0; k + 4 < arr.length && count < CAP; k += 5) {
@@ -120,6 +122,12 @@ function addPoints(arr, animate, group) {
     seed[i] = Math.random();
     st[i] = 1;
     grp[i] = gid;
+    if (delays) {
+      // Drawn in: wait at its spot, then appear (see step())
+      px[i] = hx; py[i] = hy; al[i] = 0;
+      st[i] = 4;
+      born[i] = now + delays[k / 5];
+    }
   }
 }
 
@@ -127,7 +135,9 @@ function releaseAll(group) {
   const unit = W / 1000;
   const gid = group ? groupId(group) : 0;
   for (let i = 0; i < count; i++) {
-    if (st[i] !== 1 || (gid && grp[i] !== gid)) continue;
+    if (gid && grp[i] !== gid) continue;
+    if (st[i] === 4) { st[i] = 2; al[i] = 0; continue; } // never drawn in: just remove
+    if (st[i] !== 1) continue;
     st[i] = 2;
     vx[i] += (Math.random() - 0.5) * 50 * unit;
     vy[i] += (Math.random() - 0.7) * 40 * unit;
@@ -165,8 +175,15 @@ function step(dt, t) {
   } else emitAcc = 0;
 
   alive = 0;
+  const nowS = performance.now() / 1000;
   for (let i = 0; i < count; i++) {
-    const s = st[i];
+    let s = st[i];
+    if (s === 4) {
+      if (nowS < born[i]) continue;
+      // Its turn: appear with a bright "pen tip" flash that settles over a moment
+      st[i] = s = 1;
+      al[i] = 1.8;
+    }
     if (s === 1) {
       alive++;
       const hx = ox + nx[i] * lw, hy = oy + ny[i] * lh;
@@ -177,6 +194,7 @@ function step(dt, t) {
       vy[i] = (vy[i] + (ty - py[i]) * K * dt) * damp;
       px[i] += vx[i] * dt; py[i] += vy[i] * dt;
       if (al[i] < 1) al[i] = Math.min(1, al[i] + dt * (1.5 + seed[i] * 1.5));
+      else if (al[i] > 1) al[i] = Math.max(1, al[i] - dt * 2.2);
     } else {
       const speed = (s === 3 ? 34 : 26) * unit * (0.5 + mot);
       const ax = flowX(px[i], py[i], t, inv) * speed * 3;
@@ -360,7 +378,7 @@ CH.onmessage = ({ data: m }) => {
   if (m.res) res = m.res;
   if (m.type === 'add') {
     if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
-    addPoints(m.pts, true, m.group);
+    addPoints(m.pts, true, m.group, m.delays);
   } else if (m.type === 'release') {
     releaseAll(m.group);
   } else if (m.type === 'sync' && m.to === ID) {

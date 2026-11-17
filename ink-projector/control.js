@@ -13,7 +13,7 @@ const DEFAULTS = {
   padColor: '#17171d', padSize: 6, padBrush: 'pen', padMix: 0.35,
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
-  fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true,
+  fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4,
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
@@ -552,6 +552,7 @@ function padTick() {
     pad.width = w * PAD_SCALE; pad.height = h * PAD_SCALE;
   }
   if (pendingReplay) replayApproved();
+  if (deferredParts.length && building) deferredParts.splice(0).forEach(placePart);
   if (!padDirty) return;
   padDirty = false;
   const d = padRctx.getImageData(0, 0, w, h).data;
@@ -1424,9 +1425,11 @@ function bestRectIn(part, drawAspect) {
 }
 
 
+const deferredParts = []; // drawings that arrived before the drawing area was set up
 function placePart(it) {
   const part = DOOR_PARTS[it.frame];
-  if (!part || placed.has(it.id) || !building || !rw) return;
+  if (!part || placed.has(it.id)) return;
+  if (!building || !rw) { if (!deferredParts.some((d) => d.id === it.id)) deferredParts.push(it); return; }
   placed.add(it.id);
   const img = new Image();
   img.onload = () => {
@@ -1465,7 +1468,8 @@ function placePart(it) {
       }
       return d;
     };
-    const pts = [];
+    const pts = [], cells = [];
+    let gw = 1, gh = 1;
 
     if (!template && part.polar) {
       // A plain-paper drawing on the arch: unroll the band into a strip, fit the drawing, bend it back
@@ -1475,6 +1479,7 @@ function placePart(it) {
       const dw = Math.max(1, Math.round(img.width * s2)), dh = Math.max(1, Math.round(img.height * s2));
       const sw = Math.round(dw * (r0 / ((r0 + r1) / 2))); // sample along the outer edge so the curve has no gaps
       const d = sample(sw, dh);
+      gw = sw; gh = dh;
       const u0 = (L - dw) / 2 / L, v0 = (T - dh) / 2 / T;
       for (let i = 0, j = 0; i < sw * dh; i++, j += 4) {
         if (d[j + 3] < 60) continue;
@@ -1482,6 +1487,7 @@ function placePart(it) {
         const ang = Math.PI + u * Math.PI, rr = r0 - v * (r0 - r1);
         const [X, Y] = toArea(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr);
         pts.push(X / rw, Y / rh, d[j], d[j + 1], d[j + 2]);
+        cells.push(i);
       }
     } else {
       // A template photo maps one-to-one onto the part's box; anything else is fitted inside the
@@ -1498,11 +1504,13 @@ function placePart(it) {
       const [bx, by] = toArea(fx, fy);
       const dw = Math.max(1, Math.round(fw * kx)), dh = Math.max(1, Math.round(fh * ky));
       const d = sample(dw, dh);
+      gw = dw; gh = dh;
       for (let i = 0, j = 0; i < dw * dh; i++, j += 4) {
         if (d[j + 3] < 60) continue;
         const u = (i % dw) + 0.5, v = ((i / dw) | 0) + 0.5;
         if (!pathCtx.isPointInPath(part.path, fx + u / kx, fy + v / ky)) continue; // cut at the border
         pts.push((bx + u) / rw, (by + v) / rh, d[j], d[j + 1], d[j + 2]);
+        cells.push(i);
       }
     }
     const old = partChunks.get(it.frame);
@@ -1513,10 +1521,59 @@ function placePart(it) {
     const arr = new Float32Array(pts);
     partChunks.set(it.frame, arr);
     pointCount += arr.length / 5;
-    CH.postMessage({ type: 'add', aspect: rw / rh, res: Math.max(rw, rh), pts: arr, group: it.frame });
+    // Reveal it as if it were being drawn, over S.drawTime seconds
+    let delays = null;
+    if (S.drawTime > 0 && cells.length) {
+      delays = drawOrder(cells, gw, gh);
+      for (let k = 0; k < delays.length; k++) delays[k] *= S.drawTime;
+    }
+    CH.postMessage({ type: 'add', aspect: rw / rh, res: Math.max(rw, rh), pts: arr, group: it.frame, delays });
     redrawPartsOnPad();
   };
   img.src = it.png;
+}
+
+// A photo doesn't record stroke order, so guess one that looks hand-drawn: separate marks one
+// after another from left to right, and within a mark, grow outward from its leftmost point
+// along the stroke (breadth-first through touching pixels), like ink following a pen.
+// cells are pixel indices in a gw x gh grid; returns each one's reveal time from 0 to 1.
+function drawOrder(cells, gw, gh) {
+  const n = cells.length;
+  const idx = new Int32Array(gw * gh).fill(-1);
+  for (let k = 0; k < n; k++) idx[cells[k]] = k;
+  const dist = new Int32Array(n).fill(-1);
+  const comp = new Int32Array(n);
+  const lens = [];
+  const seeds = Array.from({ length: n }, (_, k) => k).sort((a, b) => (cells[a] % gw) - (cells[b] % gw) || cells[a] - cells[b]);
+  const queue = new Int32Array(n);
+  for (const s0 of seeds) {
+    if (dist[s0] >= 0) continue;
+    const id = lens.length;
+    let qh = 0, qt = 0, maxD = 0;
+    queue[qt++] = s0; dist[s0] = 0; comp[s0] = id;
+    while (qh < qt) {
+      const k = queue[qh++];
+      const c = cells[k], x = c % gw, y = (c / gw) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue;
+          const q = idx[yy * gw + xx];
+          if (q < 0 || dist[q] >= 0) continue;
+          dist[q] = dist[k] + 1; comp[q] = id; queue[qt++] = q;
+          if (dist[q] > maxD) maxD = dist[q];
+        }
+      }
+    }
+    lens.push(maxD + 1);
+  }
+  // Each mark takes time in proportion to its length, with a short pause between marks
+  const GAP = 4;
+  let total = 0;
+  const start = lens.map((len) => { const s1 = total; total += len + GAP; return s1; });
+  const out = new Float32Array(n);
+  for (let k = 0; k < n; k++) out[k] = (start[comp[k]] + dist[k]) / total;
+  return out;
 }
 
 // One printable page per part: the part's shape in light blue (too faint to count as ink),
