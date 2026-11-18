@@ -5,7 +5,7 @@ import { solveHomography } from './vision.js';
 import { createBrushSound } from './brushsound.js';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
-const BUILD = 27; // must match control.js; a newer operator makes this window reload (see 'settings')
+const BUILD = 28; // must match control.js; a newer operator makes this window reload (see 'settings')
 if (PREVIEW) document.body.classList.add('preview');
 const CH = new BroadcastChannel('ink-projector-v1');
 const ID = Math.random().toString(36).slice(2);
@@ -42,7 +42,8 @@ let alive = 0;
 // A sheet's drawing in one box is one group. In each box the groups take turns: the one whose turn it
 // is lights up in a wave spreading from the middle of the box (with a bright crest), holds, then
 // darkens the same way while the next one starts. With one drawing in a box it simply pulses.
-const DIM = 0.1;          // a drawing waiting for its turn stays faintly visible
+const DIM = 0.22;         // a drawing waiting for its turn stays visible, but quiet
+const GLOW = 1.6, CREST = 2.8; // its steady glow, and the bright wave as it lights up
 const showOn = new Uint8Array(65536), showActive = new Uint8Array(65536);
 const showT0 = new Float32Array(65536), showCx = new Float32Array(65536), showCy = new Float32Array(65536);
 const showRx = new Float32Array(65536), showRy = new Float32Array(65536);
@@ -85,10 +86,10 @@ function showGain(i, t) {
   // Darkens late in the turn, so the next drawing's ripple starts as this one fades (no empty gap)
   const darkStart = Math.max(1.2, T - 2.3), darkLen = Math.min(1.0, Math.max(0.4, T - darkStart - 1.3));
   if (tau < 0) return DIM;
-  if (tau < 0.3) return DIM + (1.9 - DIM) * (tau / 0.3);                 // the bright crest arrives
-  if (tau < 1.1) return 1.9 - 0.9 * ((tau - 0.3) / 0.8);                 // settles to a steady glow
-  if (tau < darkStart) return 1;
-  if (tau < darkStart + darkLen) return 1 + (DIM - 1) * ((tau - darkStart) / darkLen); // darkens
+  if (tau < 0.3) return DIM + (CREST - DIM) * (tau / 0.3);               // the bright crest arrives
+  if (tau < 1.1) return CREST - (CREST - GLOW) * ((tau - 0.3) / 0.8);    // settles to a steady glow
+  if (tau < darkStart) return GLOW * (1 + 0.12 * Math.sin((t - showT0[g]) * 5 - d * 3)); // with a gentle shimmer
+  if (tau < darkStart + darkLen) return GLOW + (DIM - GLOW) * ((tau - darkStart) / darkLen); // darkens
   return DIM;
 }
 function clearSheetShows(t) {

@@ -802,7 +802,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 27;
+const BUILD = 28;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -2570,6 +2570,7 @@ updateWallView();
 // clears itself (Each drawing's glow, and drawings taking turns, happen in the output window).
 const SHEET_COLORS = ['#ff4d6d', '#ff8a3d', '#ffd23f', '#4dff88', '#3dd6ff', '#5b7cff', '#b45bff', '#ff5bd1', '#7affe4', '#c6ff3d'];
 const SHEETS_PER_ROUND = 5;
+const SHEET_SPREAD = [[0, 0], [0.6, 0.2], [-0.2, 0.6]]; // particles per ink pixel, offsets in sheet pixels
 const sheet = { state: 'empty', since: 0, count: 0, n: 0, clearTimer: 0, goneSince: 0, baseline: 0, lastColor: -1 };
 const sheetChunks = new Map(); // group -> { pts, box, rect } (for output windows opened later)
 
@@ -2666,15 +2667,20 @@ function captureSheet(inkCount) {
     for (let y = 0; y < rh; y++) {
       for (let x = 0; x < rw; x++) {
         const i = y * rw + x;
-        if (!mask[i] || !keep(i) || drawn.depth[i] <= drawn.edge) continue;
+        if (!mask[i] || drawn.depth[i] <= drawn.edge) continue;
         const b = drawn.byLabel.get(drawn.label[i]);
         if (!b) continue;
         const p = parts.get(b.id);
         if (!p) continue;
-        const h = b.h, dd = h[6] * x + h[7] * y + 1;
-        const tu = Math.min(1, Math.max(0, (h[0] * x + h[1] * y + h[2]) / dd)), tv = Math.min(1, Math.max(0, (h[3] * x + h[4] * y + h[5]) / dd));
+        const h = b.h;
         if (!per.has(b.id)) per.set(b.id, []);
-        per.get(b.id).push(p.x + tu * p.w, p.y + tv * p.h, R, G, B);
+        const out = per.get(b.id);
+        // Three particles per ink pixel, a little apart: fuller, brighter lines (pencil is thin)
+        for (const [ox, oy] of SHEET_SPREAD) {
+          const X = x + 0.5 + ox, Y = y + 0.5 + oy, dd = h[6] * X + h[7] * Y + 1;
+          const tu = Math.min(1, Math.max(0, (h[0] * X + h[1] * Y + h[2]) / dd)), tv = Math.min(1, Math.max(0, (h[3] * X + h[4] * Y + h[5]) / dd));
+          out.push(p.x + tu * p.w, p.y + tv * p.h, R, G, B);
+        }
         total++;
       }
     }
@@ -2683,7 +2689,7 @@ function captureSheet(inkCount) {
     const v = (y + 0.5) / rh;
     for (let x = 0; x < rw; x++) {
       const i = y * rw + x;
-      if (!mask[i] || !keep(i)) continue;
+      if (!mask[i]) continue;
       const u = (x + 0.5) / rw;
       for (const b of boxes) {
         const tu = (u - b.x) / b.w, tv = (v - b.y) / b.h;
@@ -2691,7 +2697,11 @@ function captureSheet(inkCount) {
         const p = parts.get(b.id);
         if (!p) break;
         if (!per.has(b.id)) per.set(b.id, []);
-        per.get(b.id).push(p.x + tu * p.w, p.y + tv * p.h, R, G, B);
+        const out = per.get(b.id);
+        for (const [ox, oy] of SHEET_SPREAD) {
+          const su = (u + ox / rw - b.x) / b.w, sv = (v + oy / rh - b.y) / b.h;
+          out.push(p.x + Math.min(1, Math.max(0, su)) * p.w, p.y + Math.min(1, Math.max(0, sv)) * p.h, R, G, B);
+        }
         total++;
         break;
       }
