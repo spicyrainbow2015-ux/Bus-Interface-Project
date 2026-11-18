@@ -66,9 +66,10 @@ export function createBrushSound() {
       master.connect(comp).connect(ctx.destination);
       bufs = makeBuffers(ctx);
     }
-    if (ctx.state === 'suspended') ctx.resume();
+    if (ctx.state !== 'running') ctx.resume().catch(() => {}); // 'suspended', or 'interrupted' on iPhones
     return true;
   }
+  let unlocked = false;
 
   const hold = (param, t) => (param.cancelAndHoldAtTime ? param.cancelAndHoldAtTime(t) : param.cancelScheduledValues(t));
 
@@ -98,6 +99,20 @@ export function createBrushSound() {
   }
 
   return {
+    // Phones only allow sound to start during a tap (when the finger lifts), so call this from
+    // touchend / click. It also asks iPhones to play even when the ringer switch is on silent.
+    unlock() {
+      try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {}
+      if (!ensure()) return;
+      if (!unlocked) {
+        const src = ctx.createBufferSource();
+        src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+        src.connect(ctx.destination);
+        src.start(0);
+        unlocked = true;
+      }
+    },
+
     volume(v) {
       vol = Math.max(0, Math.min(1, v));
       if (master) master.gain.setTargetAtTime(vol * LOUDNESS, ctx.currentTime, 0.05);

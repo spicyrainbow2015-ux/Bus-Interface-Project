@@ -41,6 +41,10 @@ Set **Input** to **Phones draw live (your mapped shapes)**. The outline switches
    proportions or adding or removing a shape clears the drawing.
 2. **Visitors** scan the QR code (or open `draw.html`), see a map of the shapes, tap one and draw with
    Pen, Spray, Hatch, Ripple, Polka or Triangles in any colour, with the drawing sound on their phone.
+   To switch boxes they swipe left or right (one finger anywhere off the drawing, or two fingers on it),
+   use the ‹ › arrows or the dots, or tap a box on the small map of the wall at the top, where the box
+   they're on is lit up. The label shows its name and "2 of 4". Each box keeps what they drew on it.
+   The sound starts after the first tap (phones don't allow it sooner) and plays on iPhones even on silent.
    Each stroke is sent in small pieces while it's drawn. The operator page replays it on the wall at the
    speed it was drawn, about a second behind, and keeps it inside its shape.
 3. The operator can draw on the pad, or straight on the output window, at the same time.

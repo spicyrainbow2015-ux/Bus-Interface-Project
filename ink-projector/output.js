@@ -551,8 +551,8 @@ function presentMapped() {
       pieces.set(p.id, pc);
     }
     const r = flatRect(p);
-    // A margin around the part keeps its glow; the margin is warped along with it
-    const pad = Math.min(28, 0.2 * Math.min(r.w, r.h));
+    // Each part ends exactly at its corners, so parts mapped side by side don't spill onto each other
+    const pad = 0;
     const ew = r.w + 2 * pad, eh = r.h + 2 * pad;
     const iw = Math.max(1, Math.round(ew * k)), ih = Math.max(1, Math.round(eh * k));
     const size = `${iw}x${ih}`;
@@ -579,8 +579,9 @@ function presentMapped() {
         c.beginPath(); c.moveTo(x0, y0 + (hh * i) / 4); c.lineTo(x0 + w, y0 + (hh * i) / 4); c.stroke();
       }
       c.strokeStyle = '#ffd27a';
-      c.lineWidth = Math.max(2, 3 * k);
-      c.strokeRect(x0, y0, w, hh);
+      const lw = Math.max(2, 3 * k);
+      c.lineWidth = lw;
+      c.strokeRect(x0 + lw / 2, y0 + lw / 2, w - lw, hh - lw); // just inside the edge
     }
   }
   if (showGuides()) drawHandles();

@@ -1,8 +1,10 @@
 // Phone page for live drawing: shows the shapes the operator mapped onto the wall, the visitor taps
 // one and draws in it with the same brushes as the operator's pad. Each stroke is sent in small
 // pieces while it's being drawn, and the operator replays it on the wall about a second later.
+// Visitors switch boxes by swiping (one finger off the drawing, or two fingers on it), with the
+// arrows, the dots, or by tapping a box on the mini map of the wall.
 import { BRUSHES, createStroke } from './brushes.js';
-import { createBrushSound } from './brushsound.js';
+import { createBrushSound } from './brushsound.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 const API = '/api/ink';
@@ -10,8 +12,10 @@ const COLORS = ['#17171d', '#e03131', '#e8590c', '#f2c200', '#2b8a3e', '#15aabf'
 const SHAPE_COLORS = ['#ffd27a', '#7ad7ff', '#ff9ec7', '#9effa8', '#c9a7ff', '#ffb27a', '#7affe4', '#ff7a7a'];
 const SCALE = 2;      // phone canvas pixels per drawing-pad pixel
 const SEND_MS = 120;  // how often stroke pieces are sent
+const GRACE = 150;    // ms before a stroke is sent, so a second finger can still turn it into a swipe
 
 let shapes = [], screen = 16 / 9, shape = null;
+let order = [];       // shapes from left to right on the wall: the swipe order
 let brush = 'pen', color = COLORS[6], mix = 0.35;
 let soundOn = true;
 const sound = createBrushSound();
@@ -23,15 +27,73 @@ function show(step) {
   window.scrollTo(0, 0);
 }
 
+const colorOf = (sh) => SHAPE_COLORS[Math.max(0, shapes.indexOf(sh)) % SHAPE_COLORS.length];
+const nameOf = (sh) => sh.name || `Shape ${shapes.indexOf(sh) + 1}`;
+const centre = (q) => [q.reduce((a, p) => a + p[0], 0) / 4, q.reduce((a, p) => a + p[1], 0) / 4];
+function inQuad(q, u, v) {
+  let inside = false;
+  for (let a = 0, b = 3; a < 4; b = a++) {
+    const [xa, ya] = q[a], [xb, yb] = q[b];
+    if ((ya > v) !== (yb > v) && u < ((xb - xa) * (v - ya)) / (yb - ya) + xa) inside = !inside;
+  }
+  return inside;
+}
+function shapeAt(u, v) {
+  for (let i = shapes.length - 1; i >= 0; i--) if (shapes[i].quad && inQuad(shapes[i].quad, u, v)) return shapes[i];
+  return null;
+}
+
+// ---------- Sound on phones ----------
+// Phones only let a page start sound when a finger lifts (not when it touches down), so unlock it on
+// every tap until it's running. Older iPhones also mute web sound on silent unless a media element
+// is playing, so a silent loop keeps it audible there.
+let keepAlive = null;
+function silentWavUrl() {
+  const n = 4000, b = new ArrayBuffer(44 + n), v = new DataView(b);
+  const w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
+function unlockAudio() {
+  if (!soundOn) return;
+  sound.unlock();
+  const iPhone = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (iPhone && !navigator.audioSession && !keepAlive) {
+    keepAlive = new Audio(silentWavUrl());
+    keepAlive.loop = true;
+    keepAlive.setAttribute('playsinline', '');
+    keepAlive.play().catch(() => { keepAlive = null; });
+  }
+}
+for (const t of ['touchend', 'pointerup', 'click', 'keydown']) window.addEventListener(t, unlockAudio, { capture: true, passive: true });
+
 // ---------- 1. The map ----------
 async function loadShapes() {
+  let st;
   try {
     const r = await fetch(`${API}?op=state`, { cache: 'no-store' });
-    const st = await r.json();
-    shapes = st.shapes || [];
-    screen = st.screen || 16 / 9;
-  } catch { shapes = null; }
-  renderMap();
+    st = await r.json();
+  } catch {
+    if (!shape) { shapes = null; renderMap(); }
+    return;
+  }
+  shapes = st.shapes || [];
+  screen = st.screen || 16 / 9;
+  order = shapes.filter((s) => s.quad).sort((a, b) => {
+    const ca = centre(a.quad), cb = centre(b.quad);
+    return ca[0] - cb[0] || ca[1] - cb[1];
+  });
+  if (!shape) { renderMap(); return; }
+  // While drawing: follow the operator's changes
+  const same = shapes.find((s) => s.id === shape.id);
+  if (!same) { leaveDrawing('That shape was removed. Pick another one.'); return; }
+  if (same.tw !== shape.tw || same.th !== shape.th) { store.delete(same.id); shape = null; openShape(same); return; }
+  shape = same;
+  updateLabel();
 }
 
 function renderMap() {
@@ -40,13 +102,13 @@ function renderMap() {
   if (shapes === null) { msg.className = 'msg err'; msg.textContent = "Couldn't reach the wall. Check your connection and reload."; drawMap(); return; }
   if (!shapes.length) { msg.className = 'msg'; msg.textContent = 'Nothing to draw on yet. Check back in a moment.'; drawMap(); return; }
   msg.textContent = '';
-  shapes.forEach((sh, i) => {
+  for (const sh of order) {
     const b = document.createElement('button');
-    b.innerHTML = `<i style="background:${SHAPE_COLORS[i % SHAPE_COLORS.length]}"></i>`;
-    b.append(sh.name || `Shape ${i + 1}`);
-    b.addEventListener('click', () => pickShape(i));
+    b.innerHTML = `<i style="background:${colorOf(sh)}"></i>`;
+    b.append(nameOf(sh));
+    b.addEventListener('click', () => openShape(sh));
     btns.append(b);
-  });
+  }
   drawMap();
 }
 
@@ -62,66 +124,173 @@ function drawMap() {
   c.fillRect(0, 0, w, h);
   c.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
   c.textAlign = 'center';
-  (shapes || []).forEach((sh, i) => {
-    if (!sh.quad) return;
-    const col = SHAPE_COLORS[i % SHAPE_COLORS.length];
+  for (const sh of shapes || []) {
+    if (!sh.quad) continue;
+    const col = colorOf(sh);
     const q = sh.quad.map(([x, y]) => [x * w, y * h]);
     c.beginPath();
     q.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y)));
     c.closePath();
     c.globalAlpha = 0.22; c.fillStyle = col; c.fill();
     c.globalAlpha = 1; c.strokeStyle = col; c.lineWidth = 2; c.stroke();
-    const cx = q.reduce((a, p) => a + p[0], 0) / 4, cy = q.reduce((a, p) => a + p[1], 0) / 4;
+    const [cx, cy] = centre(q);
     c.fillStyle = '#fff';
     c.fillText(sh.name || '', cx, cy + 4);
-  });
+  }
 }
 
 $('mapCv').addEventListener('click', (e) => {
   if (!shapes || !shapes.length) return;
   const r = e.currentTarget.getBoundingClientRect();
-  const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
-  for (let i = shapes.length - 1; i >= 0; i--) {
-    const q = shapes[i].quad;
-    if (!q) continue;
-    let inside = false;
-    for (let a = 0, b = 3; a < 4; b = a++) {
-      const [xa, ya] = q[a], [xb, yb] = q[b];
-      if ((ya > v) !== (yb > v) && u < ((xb - xa) * (v - ya)) / (yb - ya) + xa) inside = !inside;
-    }
-    if (inside) { pickShape(i); return; }
-  }
+  const sh = shapeAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  if (sh) openShape(sh);
 });
 
-// Keep the map current while someone is looking at it (the operator may adjust it on site)
-setInterval(() => { if (!$('stepMap').hidden) loadShapes(); }, 5000);
-window.addEventListener('resize', () => { drawMap(); if (shape) sizeCanvas(); });
+// Keep the shapes current (the operator may adjust them on site): often on the map, now and then while drawing
+let tick = 0;
+setInterval(() => { if (!$('stepMap').hidden || ++tick % 3 === 0) loadShapes(); }, 5000);
+window.addEventListener('resize', () => { drawMap(); if (shape) { sizeCanvas(); drawMini(); } });
 
 // ---------- 2. Drawing ----------
 const cv = $('drawCv');
 const ctx = cv.getContext('2d');
+const store = new Map();                       // shape id -> what this phone drew there
+const backup = document.createElement('canvas'); // the drawing before the current stroke
+let firstOpen = true;
 
-function pickShape(i) {
-  shape = shapes[i];
-  $('shapeName').textContent = shape.name || `Shape ${i + 1}`;
-  $('shapeDot').style.background = SHAPE_COLORS[i % SHAPE_COLORS.length];
-  cv.width = Math.max(2, Math.round(shape.tw * SCALE));
-  cv.height = Math.max(2, Math.round(shape.th * SCALE));
+function openShape(sh, dir = 0) {
+  if (stroke) endStroke();
+  if (shape) saveCanvas();
+  shape = sh;
+  cv.width = Math.max(2, Math.round(sh.tw * SCALE));
+  cv.height = Math.max(2, Math.round(sh.th * SCALE));
   ctx.clearRect(0, 0, cv.width, cv.height);
-  show('draw');
+  const kept = store.get(sh.id);
+  if (kept && kept.width === cv.width && kept.height === cv.height) ctx.drawImage(kept, 0, 0);
+  if ($('stepDraw').hidden) show('draw');
   sizeCanvas();
-  setLive('Draw inside the box. It shows up on the wall in about a second.');
+  updateLabel();
+  if (dir && cv.animate) {
+    cv.animate([{ transform: `translateX(${dir * 48}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 220, easing: 'ease-out' });
+  }
+  if (firstOpen) {
+    setLive(order.length > 1
+      ? 'Draw inside the box. It shows up on the wall in about a second. Swipe left or right for the other boxes.'
+      : 'Draw inside the box. It shows up on the wall in about a second.');
+    firstOpen = false;
+  } else {
+    setLive(`Now drawing on ${nameOf(sh)}.`);
+  }
+}
+function saveCanvas() {
+  let c = store.get(shape.id);
+  if (!c || c.width !== cv.width || c.height !== cv.height) {
+    c = document.createElement('canvas');
+    c.width = cv.width; c.height = cv.height;
+    store.set(shape.id, c);
+  }
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, c.width, c.height);
+  x.drawImage(cv, 0, 0);
+}
+function leaveDrawing(text) {
+  if (stroke) endStroke();
+  shape = null;
+  show('map');
+  renderMap();
+  if (text) { $('mapMsg').className = 'msg'; $('mapMsg').textContent = text; }
 }
 function sizeCanvas() {
   const maxW = $('stagebox').clientWidth || window.innerWidth - 32;
-  const maxH = Math.max(200, window.innerHeight * 0.6);
+  const maxH = Math.max(200, window.innerHeight * 0.55);
   const a = shape.tw / shape.th;
   let w = maxW, h = w / a;
   if (h > maxH) { h = maxH; w = h * a; }
   cv.style.width = `${Math.floor(w)}px`;
   cv.style.height = `${Math.floor(h)}px`;
 }
-$('btnBack').addEventListener('click', () => { shape = null; show('map'); loadShapes(); });
+
+// Moving between boxes
+function step(delta) {
+  if (!shape || order.length < 2) return;
+  const i = Math.max(0, order.findIndex((s) => s.id === shape.id));
+  openShape(order[(i + delta + order.length) % order.length], delta);
+}
+function goTo(sh) {
+  if (!shape || sh.id === shape.id) return;
+  const from = order.findIndex((s) => s.id === shape.id), to = order.findIndex((s) => s.id === sh.id);
+  openShape(sh, to > from ? 1 : -1);
+}
+$('btnPrev').addEventListener('click', () => step(-1));
+$('btnNext').addEventListener('click', () => step(1));
+
+function updateLabel() {
+  const i = order.findIndex((s) => s.id === shape.id);
+  $('shapeName').textContent = nameOf(shape);
+  $('shapeDot').style.background = colorOf(shape);
+  $('shapePos').textContent = order.length > 1 ? `${i + 1} of ${order.length}` : '';
+  $('btnPrev').disabled = $('btnNext').disabled = order.length < 2;
+  const dots = $('dots');
+  dots.innerHTML = '';
+  if (order.length > 1) {
+    for (const sh of order) {
+      const b = document.createElement('button');
+      b.style.background = colorOf(sh);
+      b.className = sh.id === shape.id ? 'on' : '';
+      b.setAttribute('aria-label', `Draw on ${nameOf(sh)}`);
+      b.addEventListener('click', () => goTo(sh));
+      dots.append(b);
+    }
+  }
+  drawMini();
+}
+
+// The mini map of the wall, with the box being drawn on lit up
+let mini = { ox: 0, w: 1, h: 1 };
+function drawMini() {
+  const mc = $('miniCv');
+  const dpr = window.devicePixelRatio || 1;
+  const W = mc.clientWidth || 240, H = mc.clientHeight || 64;
+  mc.width = Math.round(W * dpr); mc.height = Math.round(H * dpr);
+  const c = mc.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, W, H);
+  const h = Math.min(H, W / screen), w = h * screen, ox = (W - w) / 2, oy = (H - h) / 2;
+  mini = { ox, oy, w, h };
+  c.fillStyle = '#07080a';
+  c.fillRect(ox, oy, w, h);
+  for (const sh of shapes || []) {
+    if (!sh.quad) continue;
+    const on = shape && sh.id === shape.id, col = colorOf(sh);
+    const q = sh.quad.map(([x, y]) => [ox + x * w, oy + y * h]);
+    c.beginPath();
+    q.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y)));
+    c.closePath();
+    c.globalAlpha = on ? 0.75 : 0.14; c.fillStyle = col; c.fill();
+    c.globalAlpha = on ? 1 : 0.5; c.strokeStyle = on ? '#fff' : col; c.lineWidth = on ? 2 : 1; c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+$('miniCv').addEventListener('click', (e) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  const sh = shapeAt((e.clientX - r.left - mini.ox) / mini.w, (e.clientY - r.top - mini.oy) / mini.h);
+  if (sh) goTo(sh);
+});
+
+// One-finger swipe anywhere except the drawing and the brush row (which scrolls sideways)
+let swipe = null;
+$('stepDraw').addEventListener('touchstart', (e) => {
+  swipe = null;
+  if (e.touches.length !== 1 || e.target.closest('#drawCv, .brushes, input')) return;
+  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+$('stepDraw').addEventListener('touchend', (e) => {
+  if (!swipe) return;
+  const t = e.changedTouches[0], dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+  swipe = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > 1.5 * Math.abs(dy)) step(dx < 0 ? 1 : -1);
+}, { passive: true });
+
 $('btnSound').addEventListener('click', () => {
   soundOn = !soundOn;
   sound.volume(soundOn ? 0.55 : 0);
@@ -155,10 +324,12 @@ function paintMarks(c, s, marks) {
   }
 }
 
-// One stroke at a time per finger; pieces go out in order, one request at a time
-let stroke = null;   // { sid, obj, t0, pending: [], ended }
+// One stroke at a time; pieces go out in order, one request at a time
+let stroke = null;   // { id, sid, obj, t0, pts, size, sent }
 const outbox = [];   // pieces waiting to be sent
 let sending = false;
+const fingers = new Map(); // pointers down on the drawing -> { x0, x }
+let twoFinger = null;      // { done } while two fingers swipe on the drawing
 
 function padPoint(e) {
   const r = cv.getBoundingClientRect();
@@ -167,11 +338,23 @@ function padPoint(e) {
 const pressureOf = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0);
 
 cv.addEventListener('pointerdown', (e) => {
-  if (!shape || stroke) return;
+  if (!shape) return;
   e.preventDefault();
-  cv.setPointerCapture(e.pointerId);
+  try { cv.setPointerCapture(e.pointerId); } catch {}
+  fingers.set(e.pointerId, { x0: e.clientX, x: e.clientX });
+  if (fingers.size >= 2) {
+    // A second finger: swipe to another box. A stroke that only just started is taken back.
+    if (stroke && !stroke.sent && performance.now() - stroke.t0 < GRACE) cancelStroke();
+    if (!stroke && !twoFinger) twoFinger = { done: false };
+    return;
+  }
+  if (stroke || twoFinger) return;
   const size = +$('size').value;
-  stroke = { id: e.pointerId, sid: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, obj: createStroke({ brush, size, color, mix }), t0: performance.now(), pts: [], size };
+  if (backup.width !== cv.width || backup.height !== cv.height) { backup.width = cv.width; backup.height = cv.height; }
+  const bx = backup.getContext('2d');
+  bx.clearRect(0, 0, backup.width, backup.height);
+  bx.drawImage(cv, 0, 0);
+  stroke = { id: e.pointerId, sid: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, obj: createStroke({ brush, size, color, mix }), t0: performance.now(), pts: [], size, sent: false };
   const p = padPoint(e);
   paintMarks(ctx, SCALE, stroke.obj.begin(p, pressureOf(e)));
   addPoint(p, e);
@@ -179,6 +362,8 @@ cv.addEventListener('pointerdown', (e) => {
   if (soundOn) sound.begin(e.clientX, e.clientY, { brush, size, area: { left: r.left, width: r.width }, time: e.timeStamp });
 });
 cv.addEventListener('pointermove', (e) => {
+  const f = fingers.get(e.pointerId);
+  if (f) f.x = e.clientX;
   if (!stroke || e.pointerId !== stroke.id) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
   for (const ev of evs.length ? evs : [e]) {
@@ -188,20 +373,41 @@ cv.addEventListener('pointermove', (e) => {
     if (soundOn) sound.move(ev.clientX, ev.clientY, pressureOf(ev), ev.timeStamp);
   }
 });
+function fingerUp(e) {
+  if (twoFinger && !twoFinger.done && fingers.size >= 2) {
+    // Decide the swipe when the first finger lifts: the average sideways travel of both fingers
+    const all = [...fingers.values()];
+    const dx = all.reduce((a, f) => a + (f.x - f.x0), 0) / all.length;
+    twoFinger.done = true;
+    if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1);
+  }
+  fingers.delete(e.pointerId);
+  if (!fingers.size) twoFinger = null;
+  endStroke(e);
+}
+cv.addEventListener('pointerup', fingerUp);
+cv.addEventListener('pointercancel', fingerUp);
+
+function cancelStroke() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(backup, 0, 0);
+  stroke = null;
+  sound.end();
+}
 function endStroke(e) {
   if (!stroke || (e && e.pointerId !== stroke.id)) return;
   queuePiece(true);
   stroke = null;
   sound.end();
 }
-cv.addEventListener('pointerup', endStroke);
-cv.addEventListener('pointercancel', endStroke);
 
 function addPoint([x, y], e) {
   stroke.pts.push([x / shape.tw, y / shape.th, pressureOf(e), Math.round(performance.now() - stroke.t0)]);
 }
 function queuePiece(end) {
   if (!stroke || (!stroke.pts.length && !end)) return;
+  if (!end && !stroke.sent && performance.now() - stroke.t0 < GRACE) return; // could still become a swipe
+  stroke.sent = true;
   outbox.push({ shape: shape.id, sid: stroke.sid, brush, size: stroke.size, color, mix, pts: stroke.pts.splice(0), end: !!end });
   flush();
 }
@@ -222,7 +428,7 @@ async function flush() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
       setLive(j.error || "Couldn't send that. Try again.", true);
-      if (r.status === 400 && /gone/.test(j.error || '')) { outbox.length = 0; setTimeout(() => { show('map'); loadShapes(); }, 1500); }
+      if (r.status === 400 && /gone/.test(j.error || '')) { outbox.length = 0; setTimeout(() => { store.delete(piece.shape); leaveDrawing('That shape was removed. Pick another one.'); loadShapes(); }, 1500); }
     } else if (piece.end) {
       setLive('On the wall ✓ Keep drawing.');
     }
