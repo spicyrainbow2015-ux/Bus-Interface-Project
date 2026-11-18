@@ -156,6 +156,17 @@
               </select>
             </label>
             <button id="btnSubmitSheet" class="primary">Submit sheet <kbd>Enter</kbd></button>
+            <label class="field">
+              <span>Boxes on the sheet</span>
+              <select data-key="sheetBoxMode">
+                <option value="auto">Find them (printed or drawn)</option>
+                <option value="mark">I'll mark them (drag their corners)</option>
+              </select>
+            </label>
+            <div class="fields-sub" id="markFields">
+              <p class="note">In <b>Paper, flattened</b>, drag each box's corner dots onto the corners of its box on your sheet (or drag inside a box to move it). The dashed line inside is what's read, so the drawn box line is left out. Keep your frame on the paper locked so the boxes stay lined up.</p>
+              <button id="btnResetMarks">Place them for me</button>
+            </div>
             <button id="btnSheetTemplate">Print sheet template</button>
             <label class="field range">
               <span>Pick up faint lines (pencil, fine pen) <output data-for="faintLines" data-pct></output></span>
@@ -337,6 +348,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js?v=35"></script>
+  <script type="module" src="control.js?v=39"></script>
 </body>
 </html>

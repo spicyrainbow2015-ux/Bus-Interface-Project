@@ -15,7 +15,7 @@ const DEFAULTS = {
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
   fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4, partFit: 'fill',
-  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30, faintLines: 0.6, sheetTrigger: 'button',
+  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30, faintLines: 0.6, sheetTrigger: 'button', sheetBoxMode: 'auto', sheetBoxes: null,
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow', 'padBrush', 'padSize', 'drawSound', 'sheetTurn'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
@@ -91,7 +91,7 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     if (key === 'drawSound') brushSound.volume(S.drawSound);
     if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); phonesModeChanged(); sheetModeChanged(); }
     if (key === 'camCapture') { if (pointCount) doClear(true); resetBuffers(); sheetModeChanged(); }
-    if (key === 'sheetTrigger') sheetModeChanged();
+    if (key === 'sheetTrigger' || key === 'sheetBoxMode') { sheetModeChanged(); if (rw) drawPaperAndInk(); }
     if (key === 'mapGuides') sendParts();
     if (OUTLINE_KEYS.includes(key)) { buildOutline(); updateSourceFields(); }
     if (key === 'guideOpacity') updatePadGuide();
@@ -111,6 +111,7 @@ function updateSourceFields() {
   $('fieldCapture').hidden = draw;
   $('sheetFields').hidden = !sheetMode();
   $('btnSubmitSheet').hidden = !sheetMode() || S.sheetTrigger === 'auto';
+  $('markFields').hidden = !sheetMode() || S.sheetBoxMode !== 'mark';
   $('camStage').hidden = draw;
   $('paperRow').hidden = draw;
   $('padStage').hidden = !draw;
@@ -465,7 +466,8 @@ function drawPaperAndInk() {
     v[j + 3] = 255;
   }
   inkCtx.putImageData(inkView, 0, 0);
-  if (sheetMode() && lastDrawnBoxes) {
+  if (sheetMode() && S.sheetBoxMode === 'mark') drawMarkedBoxes();
+  else if (sheetMode() && lastDrawnBoxes) {
     // The boxes found on the sheet, named after the wall box each one goes to
     for (const c of [paperCtx, inkCtx]) {
       c.lineWidth = 3;
@@ -824,7 +826,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 31;
+const BUILD = 32;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -2691,7 +2693,7 @@ function captureSheet(inkCount) {
   const mask = inkBuf.mask;
   const per = new Map();
   // Boxes drawn by hand on the sheet? Then they're used instead of the printed template's positions.
-  const drawn = findDrawnBoxes(mask, rw, rh, boxes);
+  const drawn = S.sheetBoxMode === 'mark' ? markedBoxes(boxes) : findDrawnBoxes(mask, rw, rh, boxes);
   // One random colour for the whole sheet (never the same as the last one)
   let ci;
   do { ci = Math.floor(Math.random() * SHEET_COLORS.length); } while (ci === sheet.lastColor && SHEET_COLORS.length > 1);
@@ -2757,7 +2759,7 @@ function captureSheet(inkCount) {
     setSheetStatus(drawn ? `Found ${drawn.boxes.length} box${drawn.boxes.length === 1 ? '' : 'es'}, but nothing drawn inside them.${again}` : `Nothing drawn inside the boxes.${again}`);
     return;
   }
-  const found = drawn ? ` Found ${drawn.boxes.length} of ${boxes.length} drawn boxes.` : '';
+  const found = !drawn ? '' : S.sheetBoxMode === 'mark' ? ` Read through your ${drawn.boxes.length} marked box${drawn.boxes.length === 1 ? '' : 'es'}.` : ` Found ${drawn.boxes.length} of ${boxes.length} drawn boxes.`;
   const next = sheetByButton() ? 'Place the next sheet and press Submit.' : 'Take the sheet away for the next one.';
   // The 5th sheet already had its time: clear the wall before this one goes up
   if (sheet.clearTimer) doClear(true);
@@ -2927,6 +2929,154 @@ function submitSheet() {
   setTimeout(() => b.classList.remove('flash'), 180);
 }
 $('btnSubmitSheet').addEventListener('click', submitSheet);
+
+// ---------- Boxes you mark yourself ----------
+// Instead of finding drawn boxes, you drag each wall box's four corners onto its box on the sheet, in the
+// "Paper, flattened" view. They're saved (as fractions of the sheet) and every Submit reads through them.
+// A thin strip along the inside of each marked box is skipped, so the drawn box line isn't picked up.
+const MARK_INSET = 0.03;
+function markedQuads() {
+  const { boxes } = sheetLayout();
+  const saved = S.sheetBoxes || {};
+  return boxes.map((b) => ({
+    id: b.id, name: b.name,
+    quad: Array.isArray(saved[b.id]) && saved[b.id].length === 4 ? saved[b.id]
+      : [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]], // start from the template's place
+  }));
+}
+// Same shape as findDrawnBoxes' result, so captureSheet reads them the same way
+function markedBoxes() {
+  const n = rw * rh;
+  const label = new Int32Array(n), depth = new Float32Array(n);
+  const byLabel = new Map(), found = [];
+  markedQuads().forEach((m, k) => {
+    const q = m.quad.map(([x, y]) => [x * rw, y * rh]);
+    const h = solveHomography(q, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    if (!h) return;
+    const id = k + 1;
+    byLabel.set(id, { id: m.id, h });
+    found.push({ quad: q, name: m.name });
+    const x0 = Math.max(0, Math.floor(Math.min(...q.map((c) => c[0])))), x1 = Math.min(rw - 1, Math.ceil(Math.max(...q.map((c) => c[0]))));
+    const y0 = Math.max(0, Math.floor(Math.min(...q.map((c) => c[1])))), y1 = Math.min(rh - 1, Math.ceil(Math.max(...q.map((c) => c[1]))));
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const X = x + 0.5, Y = y + 0.5, d = h[6] * X + h[7] * Y + 1;
+        const u = (h[0] * X + h[1] * Y + h[2]) / d, v = (h[3] * X + h[4] * Y + h[5]) / d;
+        if (u < MARK_INSET || u > 1 - MARK_INSET || v < MARK_INSET || v > 1 - MARK_INSET) continue;
+        const i = y * rw + x;
+        label[i] = id; depth[i] = 1e6;
+      }
+    }
+  });
+  return found.length ? { label, depth, edge: 0, byLabel, boxes: found } : null;
+}
+
+let markDrag = null; // { id, corner (0-3, or -1 = whole box), last: [x, y] }
+function drawMarkedBoxes() {
+  for (const c of [paperCtx, inkCtx]) {
+    markedQuads().forEach((m, k) => {
+      const i = S.shapes.findIndex((sh) => sh.id === m.id);
+      const col = shapeColor(Math.max(0, i));
+      const q = m.quad.map(([x, y]) => [x * rw, y * rh]);
+      c.lineWidth = 2;
+      c.strokeStyle = col;
+      c.setLineDash([]);
+      c.beginPath();
+      q.forEach(([x, y], j) => (j ? c.lineTo(x, y) : c.moveTo(x, y)));
+      c.closePath();
+      c.stroke();
+      // the part that's actually read (inside the skipped edge strip)
+      const h = solveHomography([[0, 0], [1, 0], [1, 1], [0, 1]], q);
+      if (h) {
+        const at = (u, v) => { const d = h[6] * u + h[7] * v + 1; return [(h[0] * u + h[1] * v + h[2]) / d, (h[3] * u + h[4] * v + h[5]) / d]; };
+        const a = MARK_INSET, b = 1 - MARK_INSET;
+        c.setLineDash([4, 4]);
+        c.lineWidth = 1;
+        c.beginPath();
+        [at(a, a), at(b, a), at(b, b), at(a, b)].forEach(([x, y], j) => (j ? c.lineTo(x, y) : c.moveTo(x, y)));
+        c.closePath();
+        c.stroke();
+        c.setLineDash([]);
+      }
+      q.forEach(([x, y]) => {
+        c.beginPath(); c.arc(x, y, 6, 0, Math.PI * 2);
+        c.fillStyle = col; c.fill();
+        c.lineWidth = 1.5; c.strokeStyle = '#000'; c.stroke();
+      });
+      c.fillStyle = col;
+      c.font = '600 13px -apple-system, sans-serif';
+      c.fillText(m.name || `Box ${k + 1}`, q[0][0] + 8, q[0][1] + 18);
+    });
+  }
+}
+function paperPoint(e) {
+  const r = e.currentTarget.getBoundingClientRect();
+  return [((e.clientX - r.left) / r.width) * rw, ((e.clientY - r.top) / r.height) * rh, r.width / rw];
+}
+function inQuadPx(q, x, y) {
+  let inside = false;
+  for (let a = 0, b = 3; a < 4; b = a++) {
+    const [xa, ya] = q[a], [xb, yb] = q[b];
+    if ((ya > y) !== (yb > y) && x < ((xb - xa) * (y - ya)) / (yb - ya) + xa) inside = !inside;
+  }
+  return inside;
+}
+for (const cv of [paperCv, inkCv]) {
+  cv.addEventListener('pointerdown', (e) => {
+    if (!sheetMode() || S.sheetBoxMode !== 'mark' || !rw) return;
+    const [x, y, k] = paperPoint(e);
+    const marks = markedQuads();
+    let best = null, bd = 14 / k; // corner hit radius: 14 screen px
+    for (const m of marks) m.quad.forEach(([qx, qy], j) => {
+      const d = Math.hypot(qx * rw - x, qy * rh - y);
+      if (d < bd) { bd = d; best = { id: m.id, corner: j }; }
+    });
+    if (!best) {
+      for (let j = marks.length - 1; j >= 0; j--) {
+        if (inQuadPx(marks[j].quad.map(([qx, qy]) => [qx * rw, qy * rh]), x, y)) { best = { id: marks[j].id, corner: -1 }; break; }
+      }
+    }
+    if (!best) return;
+    if (!S.sheetBoxes) S.sheetBoxes = {};
+    S.sheetBoxes[best.id] = marks.find((m) => m.id === best.id).quad.map(([qx, qy]) => [qx, qy]);
+    markDrag = { ...best, last: [x / rw, y / rh] };
+    try { cv.setPointerCapture(e.pointerId); } catch {}
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!markDrag) return;
+    const [x, y] = paperPoint(e);
+    const u = Math.min(1, Math.max(0, x / rw)), v = Math.min(1, Math.max(0, y / rh));
+    const q = S.sheetBoxes[markDrag.id];
+    if (markDrag.corner >= 0) q[markDrag.corner] = [u, v];
+    else {
+      const du = u - markDrag.last[0], dv = v - markDrag.last[1];
+      for (const c of q) { c[0] += du; c[1] += dv; }
+    }
+    markDrag.last = [u, v];
+    drawPaperAndInk();
+  });
+  const up = () => { if (markDrag) { markDrag = null; save(); } };
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+}
+$('btnResetMarks').addEventListener('click', () => {
+  // Place the dots for you: on the boxes found on the sheet under the camera now, or else where the
+  // template puts them. Then drag them to fine-tune.
+  S.sheetBoxes = {};
+  let found = 0;
+  if (rw && inkBuf) {
+    const { boxes } = sheetLayout();
+    const d = findDrawnBoxes(inkBuf.mask, rw, rh, boxes);
+    if (d) for (const b of d.boxes) {
+      const L = boxes.find((x) => x.name === b.name);
+      if (L) { S.sheetBoxes[L.id] = b.quad.map(([x, y]) => [x / rw, y / rh]); found++; }
+    }
+  }
+  save();
+  setSheetStatus(found ? `Placed ${found} box${found === 1 ? '' : 'es'} on what was found. Drag the dots to fine-tune.` : "Couldn't find the boxes, so they start where the template puts them. Drag the dots onto your boxes.");
+  if (rw) drawPaperAndInk();
+});
 
 // Called from doClear: a fresh round
 function sheetCleared() {

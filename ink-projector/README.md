@@ -70,6 +70,12 @@ outline switches to **My shapes**.
    (or **Enter**, on the operator page or the output window, so a USB button sending Enter works too). The
    whole sheet is read at that moment. With **Read the sheet → Automatically**, it's read by itself instead,
    once it's still and no hand is over it, and must be taken away before the next.
+   **Mark the boxes yourself:** set **Boxes on the sheet** to **I'll mark them**, then in **Paper, flattened**
+   drag each wall box's corner dots onto its box on the sheet (or drag inside one to move it). Each set of
+   dots is named and coloured like its box in the map panel, and starts in the same arrangement as the wall.
+   **Place them for me** puts them on any boxes it can find, to fine-tune from there. The dashed line inside
+   each box is what's read, so the drawn box line itself is left out. They're saved, and every Submit reads
+   through them, so keep your paper frame locked so they stay lined up.
    **Your own frame:** drag the corner dots in the camera view (or press **Lock** or **Full frame**) and every
    sheet is read inside exactly that frame. It's saved, so it's still there after a reload. **Auto-detect**
    goes back to finding the paper by itself. Only ink inside a box counts, skipping a
