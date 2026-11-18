@@ -557,6 +557,7 @@ const padCtx = pad.getContext('2d');
 const padRaster = document.createElement('canvas');
 const padRctx = padRaster.getContext('2d', { willReadFrequently: true });
 let padDirty = false, padDrawing = false;
+let padVersion = 0; // goes up whenever the pad's picture changes (the wall view redraws only then)
 
 function padTick() {
   const a = areaAspect();
@@ -589,6 +590,7 @@ function padTick() {
 }
 
 function clearPad() {
+  padVersion++;
   padCtx.clearRect(0, 0, pad.width, pad.height);
   padRctx.clearRect(0, 0, padRaster.width, padRaster.height);
 }
@@ -646,6 +648,7 @@ let strokeClip = null;
 
 function drawMarks(marks) {
   if (!marks.length) return;
+  padVersion++;
   if (!strokeClip) {
     paintMarks(padRctx, 1, marks);
     paintMarks(padCtx, PAD_SCALE, marks);
@@ -766,7 +769,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 21;
+const BUILD = 22;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -2230,7 +2233,9 @@ function queuePiece(it) {
 }
 
 function drainPhones() {
-  if (!phoneStrokes.size || !padRaster.width || !building || !building.labels) return;
+  if (!phoneStrokes.size || !building || !building.labels) return;
+  padTick(); // makes sure the pad is set up at the right size before drawing (cheap when nothing's new)
+  if (!padRaster.width || !committed) return;
   const now = performance.now();
   let drew = false;
   for (const [sid, st] of phoneStrokes) {
@@ -2240,8 +2245,9 @@ function drainPhones() {
       let marks;
       const eraser = st.brush === 'eraser';
       if (!st.obj) {
-        // Always kept inside the shape it starts in
-        const L = labelAt(p);
+        // Always kept inside the shape it was drawn in. Found from the shape's centre: a stroke that
+        // starts right on the shape's border (easy on a small sideways phone) would otherwise be lost.
+        const L = labelAt([(st.part.x + st.part.w / 2) * padRaster.width, (st.part.y + st.part.h / 2) * padRaster.height]);
         st.clip = L && !building.outside[L] ? regionCanvas(L) : EMPTY_CLIP;
         st.obj = createStroke(eraser ? { brush: 'pen', size: st.size, color: '#ffffff', mix: 0 } : { brush: st.brush, size: st.size, color: st.color, mix: st.mix });
         marks = st.obj.begin(p, pr);
@@ -2250,16 +2256,17 @@ function drainPhones() {
       }
       if (!marks.length) continue;
       if (eraser) { eraseMarks(st, marks); continue; } // only ever removes this visitor's own lines
-      const keep = strokeClip;
+      const keep = strokeClip, wasDirty = padDirty;
       strokeClip = st.clip;
       drawMarks(marks);
       strokeClip = keep;
       commitRegion(marksBounds(marks), st.own, st.group); // on the wall right away, tagged as theirs
+      padDirty = wasDirty; // already sent, so the whole pad needn't be scanned again for it
       drew = true;
     }
     if (!st.queue.length && (st.ended || now - st.last > 8000)) phoneStrokes.delete(sid);
   }
-  if (drew) padTick();
+  if (drew) padVersion++;
 }
 
 // ---------- Visitors' own lines: Clear and the eraser on the phone ----------
@@ -2336,6 +2343,7 @@ function erasePixels(idx, group, tell) {
       if (nx >= x0 && nx <= x1 && ny >= y0 && ny <= y1 && !committed[ny * w + nx]) hit(nx, ny);
     }
   }
+  padVersion++;
   eraseMaskCv.width = bw; eraseMaskCv.height = bh;
   eraseMaskCv.getContext('2d').putImageData(mask, 0, 0);
   for (const [c, k] of [[padRctx, 1], [padCtx, PAD_SCALE]]) {
@@ -2380,7 +2388,7 @@ function eraseMarks(st, marks) {
       if (d[j] > 20 && owner[i] === st.own) idx.push(i);
     }
   }
-  if (idx.length) { erasePixels(Int32Array.from(idx), st.group, true); padTick(); }
+  if (idx.length) erasePixels(Int32Array.from(idx), st.group, true);
 }
 
 // The visitor's Clear: all their lines in that shape drift away
@@ -2394,7 +2402,6 @@ function clearVisitor(vid, shape) {
   }
   visitorChunks.delete(group);
   CH.postMessage({ type: 'release', group });
-  padTick();
 }
 
 // ---------- The drawing pad as the wall (with mapped shapes) ----------
@@ -2448,24 +2455,30 @@ function wallFrame() {
       t = { cv, cx: cv.getContext('2d'), label, tf: '' };
       wallTiles.set(p.id, t);
     }
-    // The shape's piece of the pad, at the pad's full detail
+    // The shape's piece of the pad, at about the size it's shown (sharp, but no bigger than needed)
+    const q = p.quad.map(([a, b]) => [a * W, b * H]);
     const sx = p.x * pad.width, sy = p.y * pad.height, sw = Math.max(1, p.w * pad.width), sh = Math.max(1, p.h * pad.height);
-    const cw = Math.round(sw), ch = Math.round(sh);
+    const shown = Math.max(Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]), Math.hypot(q[2][0] - q[3][0], q[2][1] - q[3][1]));
+    const k = Math.min(1, (shown * (window.devicePixelRatio || 1) * 1.2) / sw);
+    const cw = Math.max(1, Math.round(sw * k)), ch = Math.max(1, Math.round(sh * k));
+    const col = shapeColor(Math.max(0, i));
+    const key = `${padVersion}|${cw}x${ch}|${col}`;
     if (t.cv.width !== cw || t.cv.height !== ch) {
       t.cv.width = cw; t.cv.height = ch;
       t.cv.style.width = `${cw}px`; t.cv.style.height = `${ch}px`;
       t.tf = '';
     }
-    const col = shapeColor(Math.max(0, i));
-    const c = t.cx;
-    c.fillStyle = '#f3f0e8';
-    c.fillRect(0, 0, cw, ch);
-    c.drawImage(pad, sx, sy, sw, sh, 0, 0, cw, ch);
-    c.strokeStyle = col;
-    c.lineWidth = Math.max(4, cw / 120);
-    c.strokeRect(c.lineWidth / 2, c.lineWidth / 2, cw - c.lineWidth, ch - c.lineWidth);
+    if (t.key !== key) {
+      t.key = key;
+      const c = t.cx;
+      c.fillStyle = '#f3f0e8';
+      c.fillRect(0, 0, cw, ch);
+      c.drawImage(pad, sx, sy, sw, sh, 0, 0, cw, ch);
+      c.strokeStyle = col;
+      c.lineWidth = Math.max(2, cw / 120);
+      c.strokeRect(c.lineWidth / 2, c.lineWidth / 2, cw - c.lineWidth, ch - c.lineWidth);
+    }
     // Warp it onto the shape's corners
-    const q = p.quad.map(([a, b]) => [a * W, b * H]);
     const h = solveHomography([[0, 0], [cw, 0], [cw, ch], [0, ch]], q);
     if (h) {
       const tf = `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,1)`;

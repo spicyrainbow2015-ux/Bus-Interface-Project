@@ -531,7 +531,6 @@ function layoutWall() {
     // An outline in the box's colour (thicker on the one being drawn on), the same width on screen whatever the size
     const k = Math.max(0.01, Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) / el.width);
     el.style.boxShadow = `0 0 0 ${(on ? 3 : 1.5) / k}px ${on ? '#fff' : colorOf(sh)}`;
-    el.style.opacity = on ? '1' : '0.85';
     const cx = q.reduce((a, v) => a + v[0], 0) / 4, top = Math.min(...q.map((v) => v[1]));
     it.label.textContent = nameOf(sh);
     it.label.className = `wall-label${on ? ' on' : ''}`;
