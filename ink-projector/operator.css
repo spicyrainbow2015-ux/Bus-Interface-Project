@@ -246,3 +246,13 @@ button.reject { background: #4a1d20; border-color: #7a2c31; }
 .shape-aspect input { width: 70px; }
 .shape-del { padding: 4px 9px; }
 .map-note { padding: 0 14px 12px; margin: 0; }
+
+/* The drawing pad shown as the wall: shapes where they're mapped, skewed the same way */
+.wall-view { position: relative; overflow: hidden; background: #050607; border-radius: 6px; cursor: crosshair; touch-action: none;
+  background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 10% 10%; }
+.wall-view[hidden] { display: none; }
+.pad-stage .wall-view canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none;
+  max-width: none; max-height: none; border-radius: 0; background: none; cursor: inherit; }
+.wall-view .wall-label { position: absolute; transform: translate(-50%, -130%); font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif;
+  white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #000; }

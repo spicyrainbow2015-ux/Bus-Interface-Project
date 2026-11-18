@@ -5,6 +5,7 @@
 // arrows, the dots, or by tapping a box on the mini map of the wall.
 import { BRUSHES, createStroke } from './brushes.js';
 import { createBrushSound } from './brushsound.js?v=3';
+import { solveHomography } from './vision.js';
 
 const $ = (id) => document.getElementById(id);
 const API = '/api/ink';
@@ -95,13 +96,14 @@ async function loadShapes() {
     const ca = centre(a.quad), cb = centre(b.quad);
     return ca[0] - cb[0] || ca[1] - cb[1];
   });
-  if (!shape) { renderMap(); return; }
+  if (!shape) { renderMap(); setMode(); return; }
   // While drawing: follow the operator's changes
   const same = shapes.find((s) => s.id === shape.id);
   if (!same) { leaveDrawing('That shape was removed. Pick another one.'); return; }
   if (same.tw !== shape.tw || same.th !== shape.th) { store.delete(same.id); shape = null; openShape(same); return; }
   shape = same;
   updateLabel();
+  setMode();
 }
 
 function renderMap() {
@@ -157,7 +159,7 @@ $('mapCv').addEventListener('click', (e) => {
 // Keep the shapes current (the operator may adjust them on site): often on the map, now and then while drawing
 let tick = 0;
 setInterval(() => { if (!$('stepMap').hidden || ++tick % 3 === 0) loadShapes(); }, 5000);
-window.addEventListener('resize', () => { drawMap(); if (shape) { sizeCanvas(); drawMini(); } });
+window.addEventListener('resize', () => { drawMap(); setMode(); if (shape && !wallMode) { sizeCanvas(); drawMini(); } });
 
 // ---------- 2. Drawing ----------
 const cv = $('drawCv');
@@ -178,12 +180,13 @@ function openShape(sh, dir = 0) {
   if ($('stepDraw').hidden) show('draw');
   sizeCanvas();
   updateLabel();
+  if (wallMode) { layoutWall(); dir = 0; }
   if (dir && cv.animate) {
     cv.animate([{ transform: `translateX(${dir * 48}px)`, opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 220, easing: 'ease-out' });
   }
   if (firstOpen) {
     setLive(order.length > 1
-      ? 'Draw inside the box. It shows up on the wall in about a second. Swipe left or right for the other boxes.'
+      ? (wallMode ? 'Draw on any box. It shows up on the wall in about a second.' : 'Draw inside the box. It shows up on the wall in about a second. Swipe left or right for the other boxes.')
       : 'Draw inside the box. It shows up on the wall in about a second.');
     firstOpen = false;
   } else {
@@ -237,6 +240,8 @@ function updateLabel() {
   $('shapeName').textContent = nameOf(shape);
   $('shapeDot').style.background = colorOf(shape);
   $('shapePos').textContent = order.length > 1 ? `${i + 1} of ${order.length}` : '';
+  $('toolsHead').querySelector('span').textContent = nameOf(shape);
+  $('toolsHead').querySelector('i').style.background = colorOf(shape);
   $('btnPrev').disabled = $('btnNext').disabled = order.length < 2;
   const dots = $('dots');
   dots.innerHTML = '';
@@ -289,7 +294,7 @@ $('miniCv').addEventListener('click', (e) => {
 let swipe = null;
 $('stepDraw').addEventListener('touchstart', (e) => {
   swipe = null;
-  if (e.touches.length !== 1 || e.target.closest('#drawCv, .brushes, input')) return;
+  if (wallMode || e.touches.length !== 1 || e.target.closest('#drawCv, .brushes, input')) return;
   swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY };
 }, { passive: true });
 $('stepDraw').addEventListener('touchend', (e) => {
@@ -370,16 +375,32 @@ const fingers = new Map(); // pointers down on the drawing -> { x0, x }
 let twoFinger = null;      // { done } while two fingers swipe on the drawing
 
 function padPoint(e) {
+  if (wallMode && penH) {
+    const r = wallIn.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, h = penH;
+    const d = h[6] * x + h[7] * y + 1;
+    return [(h[0] * x + h[1] * y + h[2]) / d, (h[3] * x + h[4] * y + h[5]) / d];
+  }
   const r = cv.getBoundingClientRect();
   return [((e.clientX - r.left) / r.width) * shape.tw, ((e.clientY - r.top) / r.height) * shape.th];
 }
 const pressureOf = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0);
 
-cv.addEventListener('pointerdown', (e) => {
-  if (!shape) return;
+function penDown(e) {
+  if (!shape || (wallMode !== (e.currentTarget === wallIn))) return; // in wall mode the wall handles it
   e.preventDefault();
-  try { cv.setPointerCapture(e.pointerId); } catch {}
+  if (wallMode) {
+    // One finger at a time; the stroke goes into the box it starts in, through that box's corners
+    if (stroke || fingers.size) return;
+    const r = wallIn.getBoundingClientRect();
+    const sh = shapeAt((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    if (!sh) return;
+    if (sh.id !== shape.id) openShape(sh);
+    penH = solveHomography(sh.quad.map(([a, b]) => [a * r.width, b * r.height]), [[0, 0], [sh.tw, 0], [sh.tw, sh.th], [0, sh.th]]);
+    if (!penH) return;
+  }
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   fingers.set(e.pointerId, { x0: e.clientX, x: e.clientX });
+  if (wallMode && fingers.size >= 2) return;
   if (fingers.size >= 2) {
     // A second finger: swipe to another box. A stroke that only just started is taken back.
     if (stroke && !stroke.sent && performance.now() - stroke.t0 < GRACE) cancelStroke();
@@ -398,10 +419,11 @@ cv.addEventListener('pointerdown', (e) => {
   const p = padPoint(e);
   paintMarks(ctx, SCALE, stroke.obj.begin(p, pressureOf(e)), erase);
   addPoint(p, e);
-  const r = cv.getBoundingClientRect();
+  const r = (wallMode ? wallIn : cv).getBoundingClientRect();
   if (soundOn) sound.begin(e.clientX, e.clientY, { brush, size, area: { left: r.left, width: r.width }, time: e.timeStamp });
-});
-cv.addEventListener('pointermove', (e) => {
+}
+function penMove(e) {
+  if (wallMode !== (e.currentTarget === wallIn)) return;
   const f = fingers.get(e.pointerId);
   if (f) f.x = e.clientX;
   if (!stroke || e.pointerId !== stroke.id) return;
@@ -412,8 +434,9 @@ cv.addEventListener('pointermove', (e) => {
     addPoint(p, ev);
     if (soundOn) sound.move(ev.clientX, ev.clientY, pressureOf(ev), ev.timeStamp);
   }
-});
+}
 function fingerUp(e) {
+  if (wallMode !== (e.currentTarget === wallIn) || !fingers.has(e.pointerId)) return;
   if (twoFinger && !twoFinger.done && fingers.size >= 2) {
     // Decide the swipe when the first finger lifts: the average sideways travel of both fingers
     const all = [...fingers.values()];
@@ -425,8 +448,99 @@ function fingerUp(e) {
   if (!fingers.size) twoFinger = null;
   endStroke(e);
 }
-cv.addEventListener('pointerup', fingerUp);
-cv.addEventListener('pointercancel', fingerUp);
+const wallIn = $('wallIn');
+for (const el of [cv, wallIn]) {
+  el.addEventListener('pointerdown', penDown);
+  el.addEventListener('pointermove', penMove);
+  el.addEventListener('pointerup', fingerUp);
+  el.addEventListener('pointercancel', fingerUp);
+}
+let penH = null; // wall mode: from the wall view onto the box being drawn in
+
+// ---------- Phone held sideways: the whole wall ----------
+// Every box is shown where it's mapped and skewed the same way, and you draw straight on any of them.
+// The box being drawn on uses the drawing canvas itself; the others show what was drawn there.
+const landscape = window.matchMedia('(orientation: landscape) and (max-height: 600px)');
+let wallMode = false;
+const wallItems = new Map(); // shape id -> { el, label }
+
+function setMode() {
+  const want = landscape.matches && Array.isArray(shapes) && order.length > 0;
+  if (want === wallMode) { if (wallMode) layoutWall(); return; }
+  if (stroke) endStroke();
+  wallMode = want;
+  document.body.classList.toggle('wallmode', wallMode);
+  if (wallMode) {
+    $('toolsHead').append($('btnSound'));
+    if (!shape) openShape(order[0]); else layoutWall();
+  } else {
+    $('bar').append($('btnSound'));
+    for (const [, it] of wallItems) { if (it.el !== cv) it.el.remove(); it.label.remove(); }
+    wallItems.clear();
+    cv.classList.remove('in-wall');
+    cv.style.transform = ''; cv.style.boxShadow = '';
+    $('stagebox').append(cv);
+    if (shape) { sizeCanvas(); updateLabel(); }
+  }
+}
+if (landscape.addEventListener) landscape.addEventListener('change', setMode); else landscape.addListener(setMode);
+
+function canvasFor(sh) {
+  const w = Math.max(2, Math.round(sh.tw * SCALE)), h = Math.max(2, Math.round(sh.th * SCALE));
+  let c = store.get(sh.id);
+  if (!c || c.width !== w || c.height !== h) {
+    c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    store.set(sh.id, c);
+  }
+  return c;
+}
+
+function layoutWall() {
+  if (!wallMode || !shape) return;
+  const maxW = $('wallBox').clientWidth || window.innerWidth - 260, maxH = window.innerHeight - 20;
+  let W = maxW, H = W / screen;
+  if (H > maxH) { H = maxH; W = H * screen; }
+  wallIn.style.width = `${Math.floor(W)}px`;
+  wallIn.style.height = `${Math.floor(H)}px`;
+  const live = new Set();
+  for (const sh of shapes) {
+    if (!sh.quad) continue;
+    live.add(sh.id);
+    let it = wallItems.get(sh.id);
+    if (!it) {
+      const label = document.createElement('span');
+      label.className = 'wall-label';
+      wallIn.append(label);
+      it = { el: null, label };
+      wallItems.set(sh.id, it);
+    }
+    const on = sh.id === shape.id;
+    const el = on ? cv : canvasFor(sh);
+    if (it.el !== el) {
+      if (it.el && it.el !== cv) it.el.remove();
+      it.el = el;
+    }
+    el.classList.add('in-wall');
+    wallIn.insertBefore(el, it.label);
+    el.style.width = `${el.width}px`;
+    el.style.height = `${el.height}px`;
+    const q = sh.quad.map(([a, b]) => [a * W, b * H]);
+    const h = solveHomography([[0, 0], [el.width, 0], [el.width, el.height], [0, el.height]], q);
+    if (h) el.style.transform = `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,1)`;
+    // An outline in the box's colour (thicker on the one being drawn on), the same width on screen whatever the size
+    const k = Math.max(0.01, Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]) / el.width);
+    el.style.boxShadow = `0 0 0 ${(on ? 3 : 1.5) / k}px ${on ? '#fff' : colorOf(sh)}`;
+    el.style.opacity = on ? '1' : '0.85';
+    const cx = q.reduce((a, v) => a + v[0], 0) / 4, top = Math.min(...q.map((v) => v[1]));
+    it.label.textContent = nameOf(sh);
+    it.label.className = `wall-label${on ? ' on' : ''}`;
+    it.label.style.color = on ? '#fff' : colorOf(sh);
+    it.label.style.left = `${cx}px`;
+    it.label.style.top = `${Math.max(14, top)}px`;
+  }
+  for (const [id, it] of wallItems) if (!live.has(id)) { if (it.el !== cv) it.el.remove(); it.label.remove(); wallItems.delete(id); }
+}
 
 function cancelStroke() {
   ctx.clearRect(0, 0, cv.width, cv.height);

@@ -5,6 +5,7 @@ import { solveHomography } from './vision.js';
 import { createBrushSound } from './brushsound.js';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
+const BUILD = 21; // must match control.js; a newer operator makes this window reload (see 'settings')
 if (PREVIEW) document.body.classList.add('preview');
 const CH = new BroadcastChannel('ink-projector-v1');
 const ID = Math.random().toString(36).slice(2);
@@ -450,6 +451,16 @@ CH.onmessage = ({ data: m }) => {
   } else if (m.type === 'clear') {
     releaseAll();
   } else if (m.type === 'settings') {
+    if (m.build > BUILD) {
+      // The operator page was updated after this window opened: reload to get the new code (once per version)
+      let tried = '';
+      try { tried = sessionStorage.getItem('inkProjector.reloadedFor') || ''; } catch {}
+      if (tried !== String(m.build)) {
+        try { sessionStorage.setItem('inkProjector.reloadedFor', String(m.build)); } catch {}
+        location.reload();
+        return;
+      }
+    }
     Object.assign(S, m.settings);
     try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
   } else if (m.type === 'control-hello') {

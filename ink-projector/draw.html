@@ -64,6 +64,32 @@
     .live { font-size: 13px; color: var(--muted); text-align: center; margin: 8px 0 0; }
     .live.err { color: var(--danger); }
     [hidden] { display: none !important; }
+
+    /* Phone held sideways: the whole wall, every box where it's mapped, drawn on directly */
+    .wallbox, .tools-head { display: none; }
+    .wall-in { position: relative; margin: 0 auto; background: #07080a; border-radius: 8px; overflow: hidden; touch-action: none; }
+    .wall-in canvas.in-wall { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #f6f3ec; border-radius: 0; touch-action: none; }
+    .wall-label { position: absolute; transform: translate(-50%, -125%); font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif;
+      white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #000; }
+    .wall-label.on::before { content: "✎ "; }
+    body.wallmode { max-width: none; padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
+    body.wallmode #stepDraw:not([hidden]) { display: flex; gap: 12px; align-items: flex-start; }
+    body.wallmode .draw-main { flex: 1; min-width: 0; }
+    body.wallmode .bar, body.wallmode .pager, body.wallmode .stagebox, body.wallmode .dots { display: none; }
+    body.wallmode .wallbox { display: block; }
+    body.wallmode .tools { width: 220px; flex: none; max-height: calc(100vh - 16px); overflow-y: auto; }
+    body.wallmode .tools-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 600; font-size: 15px; }
+    body.wallmode .tools-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    body.wallmode .tools-head i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    body.wallmode .tools-head #btnSound { width: 40px; min-height: 36px; padding: 0; flex: none; }
+    body.wallmode .brushes { flex-wrap: wrap; overflow: visible; }
+    body.wallmode .brushes button { min-height: 32px; padding: 4px 9px; font-size: 13px; }
+    body.wallmode .swatches { gap: 6px; margin: 8px 0; }
+    body.wallmode .swatch { width: 28px; height: 28px; }
+    body.wallmode .row { flex-wrap: wrap; gap: 8px; }
+    body.wallmode label.size { flex-basis: 100%; }
+    body.wallmode #btnEraser, body.wallmode #btnClear { flex: 1; min-height: 36px; padding: 6px 8px; }
+    body.wallmode .live { text-align: left; }
   </style>
 </head>
 <body>
@@ -80,7 +106,8 @@
 
   <!-- 2. Draw -->
   <div id="stepDraw" hidden>
-    <div class="bar">
+   <div class="draw-main">
+    <div class="bar" id="bar">
       <canvas id="miniCv" aria-label="The wall. Tap a box to draw in it."></canvas>
       <button id="btnSound" aria-label="Sound">🔊</button>
     </div>
@@ -90,7 +117,11 @@
       <button id="btnNext" aria-label="Next box">›</button>
     </div>
     <div class="stagebox" id="stagebox"><canvas id="drawCv"></canvas></div>
+    <div class="wallbox" id="wallBox"><div class="wall-in" id="wallIn"></div></div>
     <div class="dots" id="dots"></div>
+   </div>
+   <div class="tools" id="tools">
+    <div class="tools-head" id="toolsHead"><i></i><span></span></div>
     <div class="brushes" id="brushes"></div>
     <div class="swatches" id="swatches"></div>
     <div class="row">
@@ -99,6 +130,7 @@
       <button id="btnClear">Clear</button>
     </div>
     <p class="live" id="live">Draw inside the box. It shows up on the wall in about a second.</p>
+   </div>
   </div>
 
   <script>
@@ -106,6 +138,6 @@
     document.addEventListener('gesturestart', (e) => e.preventDefault());
     document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 && !e.target.closest('#drawCv')) e.preventDefault(); }, { passive: false });
   </script>
-  <script type="module" src="draw.js?v=8"></script>
+  <script type="module" src="draw.js?v=9"></script>
 </body>
 </html>

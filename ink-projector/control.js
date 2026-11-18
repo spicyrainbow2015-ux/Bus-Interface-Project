@@ -1,4 +1,4 @@
-import { detectPaper, warpQuad, extractInk, makeInkBuffers, outlineFromImage } from './vision.js';
+import { detectPaper, warpQuad, extractInk, makeInkBuffers, outlineFromImage, solveHomography } from './vision.js';
 import { createSim } from './sim.js';
 import { BRUSHES, createStroke } from './brushes.js';
 import { createBrushSound } from './brushsound.js';
@@ -110,6 +110,7 @@ function updateSourceFields() {
   $('subsPanel').hidden = !photos;
   $('phonesPanel').hidden = S.source !== 'phones';
   $('mapPanel').hidden = !(S.outlineOn && S.outlineSrc === 'shapes');
+  if (wallViewReady) updateWallView();
   if (!$('mapPanel').hidden) requestAnimationFrame(() => drawMap());
   $('camTitle').textContent = photos ? 'Doorway' : draw ? 'Drawing pad' : 'Camera';
   $('camHint').textContent = photos
@@ -593,6 +594,7 @@ function clearPad() {
 }
 
 function padPos(e) {
+  if (wallPen) return wallPos(e); // drawing on the wall view: through the corners of the shape it started in
   const r = pad.getBoundingClientRect();
   return [((e.clientX - r.left) / r.width) * padRaster.width, ((e.clientY - r.top) / r.height) * padRaster.height];
 }
@@ -682,26 +684,33 @@ let padStrokeObj = null;
 // drawing straight on the projection).
 const brushSound = createBrushSound();
 brushSound.volume(S.drawSound);
-const padArea = () => { const r = pad.getBoundingClientRect(); return { left: r.left, width: r.width }; };
+const padArea = () => { const r = (wallOn() ? wallView : pad).getBoundingClientRect(); return { left: r.left, width: r.width }; };
 
-pad.addEventListener('pointerdown', (e) => {
+function padDown(e) {
   if (S.source === 'photos') return; // visitors choose the part on their phone
+  if (wallOn()) {
+    wallPen = wallPartAt(e);
+    if (!wallPen) return; // started outside every shape: draws nothing
+  }
   brushSound.begin(e.clientX, e.clientY, { brush: S.padBrush, size: S.padSize, area: padArea(), time: e.timeStamp });
   padDrawing = true;
-  pad.setPointerCapture(e.pointerId);
+  e.currentTarget.setPointerCapture(e.pointerId);
   strokeClip = clipForStroke(padPos(e));
   padStrokeObj = createStroke({ brush: S.padBrush, size: S.padSize, color: S.padColor, mix: S.padMix });
   drawMarks(padStrokeObj.begin(padPos(e), pressureOf(e)));
-});
-pad.addEventListener('pointermove', (e) => {
+}
+function padMove(e) {
   if (!padDrawing) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
   for (const ev of evs.length ? evs : [e]) {
     drawMarks(padStrokeObj.move(padPos(ev), pressureOf(ev)));
     brushSound.move(ev.clientX, ev.clientY, pressureOf(ev), ev.timeStamp);
   }
-});
-['pointerup', 'pointercancel'].forEach((t) => pad.addEventListener(t, () => { padDrawing = false; brushSound.end(); }));
+}
+const padUp = () => { padDrawing = false; wallPen = null; brushSound.end(); };
+pad.addEventListener('pointerdown', padDown);
+pad.addEventListener('pointermove', padMove);
+['pointerup', 'pointercancel'].forEach((t) => pad.addEventListener(t, padUp));
 
 // Strokes drawn straight onto the projection (output window), in drawing-area fractions.
 // They go through the same brushes and shape limits as the pad. The output window is usually the
@@ -755,10 +764,13 @@ $('swatches').addEventListener('click', (e) => {
 renderSwatches();
 
 // ---------- Talking to output windows ----------
+// Bump with every change to the operator or output code: an output window still running older code
+// (opened before an update) reloads itself when it hears a newer number.
+const BUILD = 21;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
-  return { type: 'settings', settings: s };
+  return { type: 'settings', settings: s, build: BUILD };
 }
 function sendSettings() { CH.postMessage(settingsMsg()); }
 
@@ -1048,6 +1060,7 @@ const outlineMargin = () => (isPad() ? 0 : 0.08);
 
 function afterOutlineChange() {
   updatePadGuide();
+  if (wallViewReady) updateWallView();
   sendOutline();
   sendHighlight();
 }
@@ -2383,6 +2396,123 @@ function clearVisitor(vid, shape) {
   CH.postMessage({ type: 'release', group });
   padTick();
 }
+
+// ---------- The drawing pad as the wall (with mapped shapes) ----------
+// With "My shapes", the pad is shown as a mirror of the projector screen: each shape sits where it's
+// mapped, skewed the same way, so it's clear which box is which. You draw straight on the skewed
+// shapes; a stroke goes through the corners of the shape it starts in, like drawing on the projection.
+var wallViewReady = false;
+var wallPen = null;   // { h, part } while drawing on the wall view
+const wallView = document.createElement('div');
+wallView.className = 'wall-view';
+wallView.hidden = true;
+$('padStage').append(wallView);
+const wallTiles = new Map(); // shape id -> { cv, cx, label }
+let wallRaf = 0;
+
+const wallOn = () => isPad() && S.source !== 'photos' && !!building && S.outlineOn && S.outlineSrc === 'shapes';
+
+function updateWallView() {
+  const on = wallOn();
+  wallView.hidden = !on;
+  pad.style.display = on ? 'none' : '';
+  if (on && !wallRaf) wallRaf = setInterval(wallFrame, 33); // a timer, so it keeps up even when this window isn't in front
+  if (!on && wallRaf) { clearInterval(wallRaf); wallRaf = 0; }
+  if (on) wallFrame();
+}
+
+function wallSize() {
+  const stage = $('padStage');
+  const maxW = Math.max(200, stage.clientWidth - 28), maxH = Math.max(200, window.innerHeight * 0.7);
+  let w = maxW, h = w / screenAspect();
+  if (h > maxH) { h = maxH; w = h * screenAspect(); }
+  return { w: Math.round(w), h: Math.round(h) };
+}
+
+function wallFrame() {
+  if (!wallOn()) { updateWallView(); return; }
+  const { w: W, h: H } = wallSize();
+  if (wallView.style.width !== `${W}px` || wallView.style.height !== `${H}px`) {
+    wallView.style.width = `${W}px`; wallView.style.height = `${H}px`;
+  }
+  const parts = mapParts().parts.filter((p) => p.quad);
+  for (const [id, t] of wallTiles) if (!parts.some((p) => p.id === id)) { t.cv.remove(); t.label.remove(); wallTiles.delete(id); }
+  parts.forEach((p) => {
+    const i = S.shapes.findIndex((x) => x.id === p.id);
+    let t = wallTiles.get(p.id);
+    if (!t) {
+      const cv = document.createElement('canvas');
+      const label = document.createElement('span');
+      label.className = 'wall-label';
+      wallView.append(cv, label);
+      t = { cv, cx: cv.getContext('2d'), label, tf: '' };
+      wallTiles.set(p.id, t);
+    }
+    // The shape's piece of the pad, at the pad's full detail
+    const sx = p.x * pad.width, sy = p.y * pad.height, sw = Math.max(1, p.w * pad.width), sh = Math.max(1, p.h * pad.height);
+    const cw = Math.round(sw), ch = Math.round(sh);
+    if (t.cv.width !== cw || t.cv.height !== ch) {
+      t.cv.width = cw; t.cv.height = ch;
+      t.cv.style.width = `${cw}px`; t.cv.style.height = `${ch}px`;
+      t.tf = '';
+    }
+    const col = shapeColor(Math.max(0, i));
+    const c = t.cx;
+    c.fillStyle = '#f3f0e8';
+    c.fillRect(0, 0, cw, ch);
+    c.drawImage(pad, sx, sy, sw, sh, 0, 0, cw, ch);
+    c.strokeStyle = col;
+    c.lineWidth = Math.max(4, cw / 120);
+    c.strokeRect(c.lineWidth / 2, c.lineWidth / 2, cw - c.lineWidth, ch - c.lineWidth);
+    // Warp it onto the shape's corners
+    const q = p.quad.map(([a, b]) => [a * W, b * H]);
+    const h = solveHomography([[0, 0], [cw, 0], [cw, ch], [0, ch]], q);
+    if (h) {
+      const tf = `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,1)`;
+      if (tf !== t.tf) { t.cv.style.transform = tf; t.tf = tf; }
+    }
+    const cx = q.reduce((a, v) => a + v[0], 0) / 4, cy = Math.min(...q.map((v) => v[1]));
+    t.label.textContent = p.name || `Shape ${i + 1}`;
+    t.label.style.color = col;
+    t.label.style.left = `${cx}px`;
+    t.label.style.top = `${cy}px`;
+  });
+}
+
+function wallInQuad(q, u, v) {
+  let inside = false;
+  for (let a = 0, b = 3; a < 4; b = a++) {
+    const [xa, ya] = q[a], [xb, yb] = q[b];
+    if ((ya > v) !== (yb > v) && u < ((xb - xa) * (v - ya)) / (yb - ya) + xa) inside = !inside;
+  }
+  return inside;
+}
+// The shape under the pointer, with the mapping from the wall view onto its piece of the pad
+function wallPartAt(e) {
+  const r = wallView.getBoundingClientRect();
+  const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+  const parts = mapParts().parts.filter((p) => p.quad);
+  for (let k = parts.length - 1; k >= 0; k--) {
+    const p = parts[k];
+    if (!wallInQuad(p.quad, u, v)) continue;
+    const X = padRaster.width, Y = padRaster.height;
+    const h = solveHomography(p.quad.map(([a, b]) => [a * r.width, b * r.height]),
+      [[p.x * X, p.y * Y], [(p.x + p.w) * X, p.y * Y], [(p.x + p.w) * X, (p.y + p.h) * Y], [p.x * X, (p.y + p.h) * Y]]);
+    if (h) return { h, part: p };
+  }
+  return null;
+}
+function wallPos(e) {
+  const r = wallView.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top, h = wallPen.h;
+  const d = h[6] * x + h[7] * y + 1;
+  return [(h[0] * x + h[1] * y + h[2]) / d, (h[3] * x + h[4] * y + h[5]) / d];
+}
+wallView.addEventListener('pointerdown', padDown);
+wallView.addEventListener('pointermove', padMove);
+['pointerup', 'pointercancel'].forEach((t) => wallView.addEventListener(t, padUp));
+wallViewReady = true;
+updateWallView();
 
 initShapes();
 phonesModeChanged();
