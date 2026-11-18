@@ -67,6 +67,24 @@ line drawing of the facade.
   a live preview of the output, and all controls.
 - **Output** (`output.html`): press **Open output window**, drag that window onto the projector, press **F**.
 
+## Lining it up with the wall (mapping)
+
+On the output window press **M**. Yellow corners A–D appear around each part: around each box with the
+**Two boxes** outline, otherwise around the whole picture. Drag each corner onto the matching corner of
+the real surface. Drag inside a part to move all of it, click a corner and use the arrow keys to nudge it
+(Shift for bigger steps), and press **R** to reset. Press **M** again when you're done. The picture is warped in
+perspective to fit, so it lines up even with the projector at an angle. The corners are saved in that
+browser, separately for each outline. Re-drag them whenever the projector moves. The operator's preview
+always stays flat.
+
+**Drawing straight on the projection:** with **Input → Draw on screen**, you can draw with the mouse
+(or a pen tablet) right on the output window, inside the mapped corners. The stroke uses the brush, colour
+and size chosen on the operator page and stays inside the part it starts in. A stroke started outside every
+part draws nothing.
+
+**Two boxes** (Building outline → Building) gives two plain boxes. With *Stay inside each shape*, a stroke
+started in a box can't leave it.
+
 ## How capture works
 
 1. **Paper:** finds the largest bright shape (white paper on a darker surface works best). Once the

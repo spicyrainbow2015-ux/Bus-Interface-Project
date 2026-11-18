@@ -571,7 +571,7 @@ function padTick() {
     const arr = new Float32Array(pts);
     chunks.push(arr);
     pointCount += arr.length / 5;
-    CH.postMessage({ type: 'add', aspect: w / h, res: Math.max(w, h), pts: arr });
+    CH.postMessage({ type: 'add', aspect: w / h, res: Math.max(w, h), pts: arr, live: S.source === 'draw' });
   }
 }
 
@@ -681,6 +681,30 @@ pad.addEventListener('pointermove', (e) => {
 });
 ['pointerup', 'pointercancel'].forEach((t) => pad.addEventListener(t, () => { padDrawing = false; }));
 
+// Strokes drawn straight onto the projection (output window), in drawing-area fractions.
+// They go through the same brushes and shape limits as the pad. The output window is usually the
+// focused one then, and this page may be throttled, so the pad is flushed right away.
+let remoteStroke = null, flushTimer = 0;
+function drawRemote(m) {
+  if (S.source !== 'draw' || !padRaster.width) return;
+  const p = [m.u * padRaster.width, m.v * padRaster.height];
+  if (m.phase === 'down') {
+    strokeClip = clipForStroke(p);
+    remoteStroke = createStroke({ brush: S.padBrush, size: S.padSize, color: S.padColor, mix: S.padMix });
+    drawMarks(remoteStroke.begin(p, m.pressure || 0));
+  } else if (m.phase === 'move' && remoteStroke) {
+    drawMarks(remoteStroke.move(p, m.pressure || 0));
+  } else if (m.phase === 'up') {
+    remoteStroke = null;
+  }
+  // Flush now rather than on a timer: when this page isn't the focused window, Chrome slows its
+  // timers and animation frames down to about once a second, which made drawing lag badly.
+  const now = performance.now();
+  if (m.phase === 'up' || now - lastFlush > 25) { lastFlush = now; padTick(); }
+  else if (!flushTimer) flushTimer = setTimeout(() => { flushTimer = 0; lastFlush = performance.now(); padTick(); }, 30);
+}
+let lastFlush = 0;
+
 function renderBrushes() {
   $('brushes').innerHTML = BRUSHES.map((b) =>
     `<button class="brush${b.id === S.padBrush ? ' on' : ''}" data-brush="${b.id}">${b.label}</button>`).join('');
@@ -733,6 +757,7 @@ CH.onmessage = ({ data: m }) => {
   }
   else if (m.type === 'bye') outputs.delete(m.id);
   else if (m.type === 'request-clear') doClear();
+  else if (m.type === 'draw') drawRemote(m);
 };
 CH.postMessage({ type: 'control-hello' });
 
@@ -874,11 +899,50 @@ function makeDoorway() {
   return c;
 }
 
+// Two plain boxes, e.g. two surfaces on a wall. Each one can be mapped separately on the
+// output window (press M there). Box positions are in this canvas's pixels.
+const BOXES_W = 1200, BOXES_H = 780;
+const BOXES = [
+  { id: 'box-1', name: 'Box 1', r: [80, 90, 560, 690] },
+  { id: 'box-2', name: 'Box 2', r: [640, 90, 1120, 690] },
+];
+function makeTwoBoxes() {
+  const c = document.createElement('canvas');
+  c.width = BOXES_W; c.height = BOXES_H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, c.width, c.height);
+  x.strokeStyle = '#000';
+  x.lineWidth = 5;
+  for (const { r: [l, t, rr, b] } of BOXES) x.strokeRect(l, t, rr - l, b - t);
+  return c;
+}
+
+// The pieces the output window can corner-pin onto the real surface: each box for the
+// Two boxes outline, otherwise the whole picture. Fractions of the drawing area.
+function mapParts() {
+  if (building && S.outlineSrc === 'boxes') {
+    const pl = placeIn(areaAspect(), outlineMargin());
+    return {
+      sig: 'boxes',
+      parts: BOXES.map(({ id, name, r: [l, t, rr, b] }) => ({
+        id, name,
+        x: pl.x + (l / BOXES_W) * pl.w, y: pl.y + (t / BOXES_H) * pl.h,
+        w: ((rr - l) / BOXES_W) * pl.w, h: ((b - t) / BOXES_H) * pl.h,
+      })),
+    };
+  }
+  return { sig: 'whole', parts: [{ id: 'whole', name: 'Picture', x: 0, y: 0, w: 1, h: 1 }] };
+}
+
 function buildOutline() {
   updateOutlineFields();
   if (!S.outlineOn) { building = null; afterOutlineChange(); return; }
   const useUpload = S.outlineSrc === 'upload' && buildingImg;
-  const src = useUpload ? buildingImg : S.outlineSrc === 'door' ? makeDoorway() : makeSampleBuilding();
+  const src = useUpload ? buildingImg
+    : S.outlineSrc === 'door' ? makeDoorway()
+    : S.outlineSrc === 'boxes' ? makeTwoBoxes()
+    : makeSampleBuilding();
   const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
   const k = OUTLINE_LONG / Math.max(sw, sh);
   const w = Math.round(sw * k), h = Math.round(sh * k);
@@ -946,6 +1010,7 @@ function updatePadGuide() {
 }
 
 function sendOutline(to) {
+  CH.postMessage({ type: 'parts', to, aspect: areaAspect(), ...mapParts() });
   if (!building || !S.outlineOut) { CH.postMessage({ type: 'outline', to, on: false }); return; }
   const aspect = areaAspect();
   CH.postMessage({

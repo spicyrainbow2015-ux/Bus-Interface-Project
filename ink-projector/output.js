@@ -1,6 +1,8 @@
 // The projector window: turns captured ink into glowing, moving particles.
 // It receives points from the operator window over a BroadcastChannel.
 
+import { solveHomography } from './vision.js';
+
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 if (PREVIEW) document.body.classList.add('preview');
 const CH = new BroadcastChannel('ink-projector-v1');
@@ -110,7 +112,10 @@ function addPoints(arr, animate, group, delays) {
     const [r, g, b] = inkColor(arr[k + 2], arr[k + 3], arr[k + 4]);
     cr[i] = r; cg[i] = g; cb[i] = b;
     const hx = ox + nx[i] * w, hy = oy + ny[i] * h;
-    if (animate) {
+    if (animate === 'live') {
+      // Drawn live: appear right under the pen and brighten quickly, so drawing doesn't feel late
+      px[i] = hx; py[i] = hy; al[i] = 0.6;
+    } else if (animate) {
       // Start scattered nearby, then gather into the stroke
       const a = Math.random() * Math.PI * 2, d = (12 + Math.random() * 40) * unit;
       px[i] = hx + Math.cos(a) * d; py[i] = hy + Math.sin(a) * d;
@@ -359,6 +364,7 @@ function render(t) {
     ctx.strokeRect(layout.ox * sx, layout.oy * sy, layout.w * sx, layout.h * sy);
     ctx.setLineDash([]);
   }
+  presentMapped();
 }
 
 let last = performance.now();
@@ -378,7 +384,7 @@ CH.onmessage = ({ data: m }) => {
   if (m.res) res = m.res;
   if (m.type === 'add') {
     if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
-    addPoints(m.pts, true, m.group, m.delays);
+    addPoints(m.pts, m.live ? 'live' : true, m.group, m.delays);
   } else if (m.type === 'release') {
     releaseAll(m.group);
   } else if (m.type === 'sync' && m.to === ID) {
@@ -415,6 +421,10 @@ CH.onmessage = ({ data: m }) => {
     }
     c.putImageData(id, 0, 0);
     outline = { cv, place: m.place };
+  } else if (m.type === 'parts') {
+    if (m.to && m.to !== ID) return;
+    if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
+    setParts(m.sig, m.parts);
   } else if (m.type === 'clear') {
     releaseAll();
   } else if (m.type === 'settings') {
@@ -435,12 +445,13 @@ function toggleFullscreen() {
 }
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') toggleFullscreen();
+  if (mapKey(e)) return;
   if ((e.code === 'Space' || e.code === 'KeyC') && !e.repeat) {
     e.preventDefault();
     CH.postMessage({ type: 'request-clear' });
   }
 });
-window.addEventListener('dblclick', toggleFullscreen);
+
 
 const hint = document.getElementById('hint');
 setTimeout(() => hint.classList.add('gone'), 6000);
@@ -471,3 +482,259 @@ function showQr(url) {
   for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) x.fillRect((k + q) * px, (r + q) * px, px, px);
   qrBox.hidden = false;
 }
+
+// ---------- Mapping onto the real surface (press M) ----------
+// Each part (the whole picture, or each box of the Two boxes outline) gets four corners you drag
+// onto the real wall. The flat picture is cut into parts and each part is warped onto its corners
+// with a perspective (homography) transform, so it lines up even when the projector is at an angle.
+// Corners are saved per outline in this browser, as fractions of the window.
+const MAP_KEY = 'inkProjector.map';
+let mapParts = { sig: 'whole', parts: [{ id: 'whole', name: 'Picture', x: 0, y: 0, w: 1, h: 1 }] };
+let mapping = {};
+try { mapping = JSON.parse(localStorage.getItem(MAP_KEY) || '{}') || {}; } catch {}
+let mapMode = false;
+let drag = null;      // { id, corner (0..3) or -1 for the whole part, start, orig }
+let selected = null;  // { id, corner } nudged by the arrow keys
+const layer = document.createElement('div');
+layer.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden';
+document.body.insertBefore(layer, canvas.nextSibling);
+const ui = document.createElement('canvas');
+ui.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;display:none;cursor:default';
+document.body.append(ui);
+const uictx = ui.getContext('2d');
+const pieces = new Map(); // part id -> { cv, cx, tf }
+
+function saveMapping() { try { localStorage.setItem(MAP_KEY, JSON.stringify(mapping)); } catch {} }
+const vw = () => window.innerWidth || 640, vh = () => window.innerHeight || 360;
+
+// A part's flat rectangle on screen (CSS pixels)
+function flatRect(p) {
+  const k = vw() / W;
+  return { x: (layout.ox + p.x * layout.w) * k, y: (layout.oy + p.y * layout.h) * k, w: p.w * layout.w * k, h: p.h * layout.h * k };
+}
+function defaultQuad(p) {
+  const r = flatRect(p), X = vw(), Y = vh();
+  return [[r.x / X, r.y / Y], [(r.x + r.w) / X, r.y / Y], [(r.x + r.w) / X, (r.y + r.h) / Y], [r.x / X, (r.y + r.h) / Y]];
+}
+const saved = () => mapping[mapParts.sig] || null;
+const quadOf = (p) => (saved() && saved()[p.id]) || defaultQuad(p);
+const isMapped = () => !PREVIEW && (mapMode || (saved() && Object.keys(saved()).length > 0));
+
+function setParts(sig, parts) {
+  if (!parts || !parts.length) return;
+  mapParts = { sig, parts };
+  for (const [id, pc] of pieces) if (!parts.some((p) => p.id === id)) { pc.cv.remove(); pieces.delete(id); }
+}
+
+function presentMapped() {
+  const on = isMapped();
+  canvas.style.visibility = on ? 'hidden' : 'visible';
+  layer.style.display = on ? 'block' : 'none';
+  if (!on) return;
+  const k = canvas.width / vw(), X = vw(), Y = vh();
+  for (const p of mapParts.parts) {
+    let pc = pieces.get(p.id);
+    if (!pc) {
+      const cv = document.createElement('canvas');
+      cv.style.cssText = 'position:absolute;left:0;top:0;transform-origin:0 0';
+      layer.append(cv);
+      pc = { cv, cx: cv.getContext('2d'), tf: '', size: '' };
+      pieces.set(p.id, pc);
+    }
+    const r = flatRect(p);
+    // A margin around the part keeps its glow; the margin is warped along with it
+    const pad = Math.min(28, 0.2 * Math.min(r.w, r.h));
+    const ew = r.w + 2 * pad, eh = r.h + 2 * pad;
+    const iw = Math.max(1, Math.round(ew * k)), ih = Math.max(1, Math.round(eh * k));
+    const size = `${iw}x${ih}`;
+    if (pc.size !== size) {
+      pc.cv.width = iw; pc.cv.height = ih;
+      pc.cv.style.width = `${ew}px`; pc.cv.style.height = `${eh}px`;
+      pc.size = size;
+    }
+    const q = quadOf(p).map(([a, b]) => [a * X, b * Y]);
+    const h = solveHomography([[pad, pad], [pad + r.w, pad], [pad + r.w, pad + r.h], [pad, pad + r.h]], q);
+    if (h) {
+      const tf = `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,1)`;
+      if (tf !== pc.tf) { pc.cv.style.transform = tf; pc.tf = tf; }
+    }
+    pc.cx.clearRect(0, 0, iw, ih);
+    pc.cx.drawImage(canvas, (r.x - pad) * k, (r.y - pad) * k, iw, ih, 0, 0, iw, ih);
+    if (mapMode) {
+      // The part's border and a grid, warped with it, so you can line it up with the wall
+      const c = pc.cx, x0 = pad * k, y0 = pad * k, w = r.w * k, hh = r.h * k;
+      c.strokeStyle = 'rgba(255, 210, 122, 0.35)';
+      c.lineWidth = Math.max(1, k);
+      for (let i = 1; i < 4; i++) {
+        c.beginPath(); c.moveTo(x0 + (w * i) / 4, y0); c.lineTo(x0 + (w * i) / 4, y0 + hh); c.stroke();
+        c.beginPath(); c.moveTo(x0, y0 + (hh * i) / 4); c.lineTo(x0 + w, y0 + (hh * i) / 4); c.stroke();
+      }
+      c.strokeStyle = '#ffd27a';
+      c.lineWidth = Math.max(2, 3 * k);
+      c.strokeRect(x0, y0, w, hh);
+    }
+  }
+  if (mapMode) drawHandles();
+}
+
+const LETTERS = ['A', 'B', 'C', 'D'];
+function drawHandles() {
+  const dpr = canvas.width / vw(), X = vw(), Y = vh();
+  if (ui.width !== canvas.width || ui.height !== canvas.height) { ui.width = canvas.width; ui.height = canvas.height; }
+  const c = uictx;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, X, Y);
+  c.font = '600 14px -apple-system, BlinkMacSystemFont, sans-serif';
+  for (const p of mapParts.parts) {
+    const q = quadOf(p).map(([a, b]) => [a * X, b * Y]);
+    q.forEach(([x, y], i) => {
+      const sel = selected && selected.id === p.id && selected.corner === i;
+      c.beginPath(); c.arc(x, y, 14, 0, Math.PI * 2);
+      c.lineWidth = 2; c.strokeStyle = sel ? '#fff' : '#ffd27a'; c.stroke();
+      c.beginPath(); c.arc(x, y, 2.5, 0, Math.PI * 2); c.fillStyle = sel ? '#fff' : '#ffd27a'; c.fill();
+      c.fillText(i === 0 && mapParts.parts.length > 1 ? `A · ${p.name}` : LETTERS[i], x + 16, y - 14);
+    });
+  }
+}
+
+function hitTest(mx, my) {
+  const X = vw(), Y = vh();
+  let best = null, bd = 30;
+  for (const p of mapParts.parts) {
+    quadOf(p).forEach(([a, b], i) => {
+      const d = Math.hypot(a * X - mx, b * Y - my);
+      if (d < bd) { bd = d; best = { id: p.id, corner: i }; }
+    });
+  }
+  if (best) return best;
+  // Inside a part: drag the whole part
+  for (const p of mapParts.parts) {
+    const q = quadOf(p).map(([a, b]) => [a * X, b * Y]);
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const [xi, yi] = q[i], [xj, yj] = q[j];
+      if ((yi > my) !== (yj > my) && mx < ((xj - xi) * (my - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    if (inside) return { id: p.id, corner: -1 };
+  }
+  return null;
+}
+
+function editableQuads() {
+  // Start from the current corners of every part, so moving one doesn't reset the others
+  const m = {};
+  for (const p of mapParts.parts) m[p.id] = quadOf(p).map((c) => c.slice());
+  mapping[mapParts.sig] = m;
+  return m;
+}
+
+ui.addEventListener('pointerdown', (e) => {
+  const hit = hitTest(e.clientX, e.clientY);
+  selected = hit && hit.corner >= 0 ? hit : selected;
+  if (!hit) return;
+  ui.setPointerCapture(e.pointerId);
+  const m = editableQuads();
+  drag = { ...hit, sx: e.clientX, sy: e.clientY, orig: m[hit.id].map((c) => c.slice()) };
+});
+ui.addEventListener('pointermove', (e) => {
+  if (!drag) {
+    const hit = hitTest(e.clientX, e.clientY);
+    ui.style.cursor = hit ? (hit.corner >= 0 ? 'grab' : 'move') : 'default';
+    return;
+  }
+  const dx = (e.clientX - drag.sx) / vw(), dy = (e.clientY - drag.sy) / vh();
+  const q = mapping[mapParts.sig][drag.id];
+  drag.orig.forEach(([a, b], i) => {
+    if (drag.corner === -1 || drag.corner === i) q[i] = [a + dx, b + dy];
+  });
+});
+ui.addEventListener('pointerup', () => { if (drag) { drag = null; saveMapping(); } });
+
+function setMapMode(on) {
+  mapMode = on;
+  ui.style.display = on ? 'block' : 'none';
+  if (!on) { selected = null; drag = null; }
+  hint.textContent = on
+    ? 'Mapping: drag the yellow corners onto the real surface (drag inside to move it). Arrow keys nudge the picked corner. R resets. M when done.'
+    : 'Drag this window to the projector, then press F for full screen. M lines it up with the wall.';
+  hint.classList.toggle('gone', !on);
+}
+
+function mapKey(e) {
+  if (PREVIEW) return false;
+  if (e.code === 'KeyM') { setMapMode(!mapMode); return true; }
+  if (!mapMode) return false;
+  if (e.code === 'KeyR') {
+    delete mapping[mapParts.sig];
+    saveMapping();
+    selected = null;
+    return true;
+  }
+  const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (arrows[e.code] && selected) {
+    e.preventDefault();
+    const step = e.shiftKey ? 10 : 1;
+    const m = editableQuads();
+    const q = m[selected.id];
+    if (q) {
+      q[selected.corner] = [q[selected.corner][0] + (arrows[e.code][0] * step) / vw(), q[selected.corner][1] + (arrows[e.code][1] * step) / vh()];
+      saveMapping();
+    }
+    return true;
+  }
+  return false;
+}
+
+// ---------- Drawing straight onto the projected boxes ----------
+// With the mouse (or a pen tablet) on this window, a stroke that starts inside one of the mapped
+// parts is turned back into flat drawing-pad coordinates through that part's corners and sent to
+// the operator, which paints it with the chosen brush and keeps it inside the part, like the pad.
+// A stroke started outside every part draws nothing.
+function applyH(h, x, y) {
+  const d = h[6] * x + h[7] * y + 1;
+  return [(h[0] * x + h[1] * y + h[2]) / d, (h[3] * x + h[4] * y + h[5]) / d];
+}
+let pen = null; // { h } inverse homography of the part the stroke started in
+
+function partUnder(mx, my) {
+  const X = vw(), Y = vh();
+  for (const p of mapParts.parts) {
+    const q = quadOf(p).map(([a, b]) => [a * X, b * Y]);
+    let inside = false;
+    for (let i = 0, j = 3; i < 4; j = i++) {
+      const [xi, yi] = q[i], [xj, yj] = q[j];
+      if ((yi > my) !== (yj > my) && mx < ((xj - xi) * (my - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    if (!inside) continue;
+    const r = flatRect(p);
+    const h = solveHomography(q, [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]);
+    if (h) return h;
+  }
+  return null;
+}
+function penMsg(phase, e) {
+  const [fx, fy] = applyH(pen.h, e.clientX, e.clientY);
+  const k = W / vw();
+  CH.postMessage({
+    type: 'draw', phase,
+    u: (fx * k - layout.ox) / layout.w, v: (fy * k - layout.oy) / layout.h,
+    pressure: e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0,
+  });
+}
+window.addEventListener('pointerdown', (e) => {
+  if (PREVIEW || mapMode || e.button !== 0 || e.target.closest('.qr')) return;
+  const h = partUnder(e.clientX, e.clientY);
+  if (!h) return;
+  pen = { h };
+  try { document.body.setPointerCapture(e.pointerId); } catch {}
+  penMsg('down', e);
+});
+window.addEventListener('pointermove', (e) => {
+  if (!pen) return;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  for (const ev of evs.length ? evs : [e]) penMsg('move', ev);
+});
+for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () => {
+  if (pen) CH.postMessage({ type: 'draw', phase: 'up' });
+  pen = null;
+});

@@ -7,6 +7,7 @@
   <style>
     html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
     canvas { display: block; width: 100vw; height: 100vh; }
+    body { cursor: crosshair; }
     body.idle { cursor: none; }
     .hint {
       position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
@@ -29,12 +30,12 @@
 </head>
 <body>
   <canvas id="out"></canvas>
-  <div class="hint" id="hint">Drag this window to the projector, then press F (or double-click) for full screen</div>
+  <div class="hint" id="hint">Drag this window to the projector, then press F for full screen. M lines it up with the wall. Draw right on it with the mouse.</div>
   <div class="qr" id="qr" hidden>
     <canvas></canvas>
     <p>Scan to draw<br>on the doorway</p>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
-  <script type="module" src="output.js?v=5"></script>
+  <script type="module" src="output.js?v=8"></script>
 </body>
 </html>
