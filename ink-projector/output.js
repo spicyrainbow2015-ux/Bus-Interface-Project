@@ -30,10 +30,10 @@ const cr = new Float32Array(CAP), cg = new Float32Array(CAP), cb = new Float32Ar
 const al = new Float32Array(CAP), seed = new Float32Array(CAP);
 const st = new Uint8Array(CAP); // 1 = on the drawing, 2 = released by Clear, 3 = wisp, 4 = waiting to be drawn in
 const born = new Float32Array(CAP); // when a waiting particle appears (seconds)
-const grp = new Uint8Array(CAP); // which phone drawing group (doorway part) a particle belongs to; 0 = none
+const grp = new Uint16Array(CAP); // which phone drawing group (a doorway part, or one visitor's lines in a shape); 0 = none
 const ALL = [px, py, vx, vy, nx, ny, cr, cg, cb, al, seed, st, grp, born];
 const groupIds = new Map();
-const groupId = (name) => { if (!name) return 0; if (!groupIds.has(name)) groupIds.set(name, Math.min(255, groupIds.size + 1)); return groupIds.get(name); };
+const groupId = (name) => { if (!name) return 0; if (!groupIds.has(name)) groupIds.set(name, Math.min(65535, groupIds.size + 1)); return groupIds.get(name); };
 let count = 0;
 let alive = 0;
 let aspect = 1.4142;
@@ -148,6 +148,25 @@ function releaseAll(group) {
     vx[i] += (Math.random() - 0.5) * 50 * unit;
     vy[i] += (Math.random() - 0.7) * 40 * unit;
   }
+}
+
+// A visitor's eraser: their particles on the erased pixels drift off and fade
+let eraseLookup = null;
+function eraseAt({ group, w, h, idx }) {
+  const gid = groupIds.get(group);
+  if (!gid || !idx || !w || !h) return;
+  if (!eraseLookup || eraseLookup.length !== w * h) eraseLookup = new Uint8Array(w * h);
+  for (const i of idx) eraseLookup[i] = 1;
+  const unit = W / 1000;
+  for (let i = 0; i < count; i++) {
+    if (grp[i] !== gid || (st[i] !== 1 && st[i] !== 4)) continue;
+    if (!eraseLookup[Math.floor(ny[i] * h) * w + Math.floor(nx[i] * w)]) continue;
+    if (st[i] === 4) { st[i] = 2; al[i] = 0; continue; }
+    st[i] = 2;
+    vx[i] += (Math.random() - 0.5) * 14 * unit;
+    vy[i] += (Math.random() - 0.6) * 10 * unit;
+  }
+  for (const i of idx) eraseLookup[i] = 0;
 }
 
 // ---------- Simulation ----------
@@ -388,6 +407,8 @@ CH.onmessage = ({ data: m }) => {
     addPoints(m.pts, m.live ? 'live' : true, m.group, m.delays);
   } else if (m.type === 'release') {
     releaseAll(m.group);
+  } else if (m.type === 'erase') {
+    eraseAt(m);
   } else if (m.type === 'sync' && m.to === ID) {
     if (m.aspect) { aspect = m.aspect; relayout(); }
     count = 0;

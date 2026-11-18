@@ -45,9 +45,12 @@ Set **Input** to **Phones draw live (your mapped shapes)**. The outline switches
    use the ‹ › arrows or the dots, or tap a box on the small map of the wall at the top, where the box
    they're on is lit up. The label shows its name and "2 of 4". Each box keeps what they drew on it.
    The sound starts after the first tap (phones don't allow it sooner) and plays on iPhones even on silent.
+   **Eraser** and **Clear** (tap twice) only ever remove that visitor's own lines in that box, on their phone
+   and on the wall; anyone else's lines stay. Each phone keeps a random id (in the browser) to tell whose is whose.
    Each stroke is sent in small pieces while it's drawn. The operator page replays it on the wall at the
    speed it was drawn, about a second behind, and keeps it inside its shape.
 3. The operator can draw on the pad, or straight on the output window, at the same time.
+4. The operator's **Clear** wipes only the wall. Phones keep what they drew; visitors use their own Eraser and Clear.
 
 The shapes are stored on the server (`op=setShapes`), and so are the stroke pieces (`op=stroke`, read with
 `op=strokes`). Keep the operator page open: it's what draws the phone strokes. Phones can't reach `localhost`,

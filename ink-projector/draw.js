@@ -4,7 +4,7 @@
 // Visitors switch boxes by swiping (one finger off the drawing, or two fingers on it), with the
 // arrows, the dots, or by tapping a box on the mini map of the wall.
 import { BRUSHES, createStroke } from './brushes.js';
-import { createBrushSound } from './brushsound.js?v=2';
+import { createBrushSound } from './brushsound.js?v=3';
 
 const $ = (id) => document.getElementById(id);
 const API = '/api/ink';
@@ -18,8 +18,16 @@ let shapes = [], screen = 16 / 9, shape = null;
 let order = [];       // shapes from left to right on the wall: the swipe order
 let brush = 'pen', color = COLORS[6], mix = 0.35;
 let soundOn = true;
+// This phone's id, so its Clear and eraser only touch its own lines on the wall
+let vid = '';
+try { vid = localStorage.getItem('inkDraw.vid') || ''; } catch {}
+if (!vid) {
+  vid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  try { localStorage.setItem('inkDraw.vid', vid); } catch {}
+}
+const ERASER_SCALE = 2.5; // the eraser is wider than the brush at the same size
 const sound = createBrushSound();
-sound.volume(0.55);
+sound.volume(0.35);
 
 function show(step) {
   $('stepMap').hidden = step !== 'map';
@@ -293,20 +301,49 @@ $('stepDraw').addEventListener('touchend', (e) => {
 
 $('btnSound').addEventListener('click', () => {
   soundOn = !soundOn;
-  sound.volume(soundOn ? 0.55 : 0);
+  sound.volume(soundOn ? 0.35 : 0);
   $('btnSound').textContent = soundOn ? '🔊' : '🔇';
 });
 
 // Tools
 function renderTools() {
   $('brushes').innerHTML = BRUSHES.map((b) => `<button data-brush="${b.id}" class="${b.id === brush ? 'on' : ''}">${b.label}</button>`).join('');
+  $('btnEraser').classList.toggle('on', brush === 'eraser');
   $('swatches').innerHTML = COLORS.map((c) => `<button class="swatch${c === color ? ' on' : ''}" data-color="${c}" style="background:${c}" aria-label="Colour ${c}"></button>`).join('');
 }
-$('brushes').addEventListener('click', (e) => { const id = e.target.dataset.brush; if (id) { brush = id; renderTools(); } });
-$('swatches').addEventListener('click', (e) => { const c = e.target.dataset.color; if (c) { color = c; renderTools(); } });
+$('btnEraser').addEventListener('click', () => { brush = brush === 'eraser' ? lastBrush : 'eraser'; renderTools(); });
+let lastBrush = 'pen';
+$('brushes').addEventListener('click', (e) => { const id = e.target.dataset.brush; if (id) { brush = lastBrush = id; renderTools(); } });
+$('swatches').addEventListener('click', (e) => { const c = e.target.dataset.color; if (c) { color = c; if (brush === 'eraser') brush = lastBrush; renderTools(); } });
+
+// Clear: tap twice (so it isn't hit by accident). Wipes this box here and this phone's lines in it on the wall.
+let clearArmed = 0;
+$('btnClear').addEventListener('click', () => {
+  if (!shape) return;
+  if (!clearArmed) {
+    $('btnClear').classList.add('armed');
+    $('btnClear').textContent = 'Tap again to clear';
+    clearArmed = setTimeout(disarmClear, 3000);
+    return;
+  }
+  disarmClear();
+  if (stroke) cancelStroke();
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  store.delete(shape.id);
+  outbox.push({ shape: shape.id, vid, sid: `c-${Date.now().toString(36)}`, clear: true });
+  flush();
+  setLive('Cleared. Your lines in this box are fading off the wall.');
+});
+function disarmClear() {
+  clearTimeout(clearArmed);
+  clearArmed = 0;
+  $('btnClear').classList.remove('armed');
+  $('btnClear').textContent = 'Clear';
+}
 renderTools();
 
-function paintMarks(c, s, marks) {
+function paintMarks(c, s, marks, erase = false) {
+  c.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
   c.lineCap = 'round';
   for (const m of marks) {
     if (m.t === 'd') {
@@ -322,6 +359,7 @@ function paintMarks(c, s, marks) {
       c.beginPath(); c.moveTo(m.x1 * s, m.y1 * s); c.lineTo(m.x2 * s, m.y2 * s); c.stroke();
     }
   }
+  c.globalCompositeOperation = 'source-over';
 }
 
 // One stroke at a time; pieces go out in order, one request at a time
@@ -349,14 +387,16 @@ cv.addEventListener('pointerdown', (e) => {
     return;
   }
   if (stroke || twoFinger) return;
-  const size = +$('size').value;
+  const erase = brush === 'eraser';
+  const size = erase ? Math.min(60, Math.round(+$('size').value * ERASER_SCALE)) : +$('size').value;
   if (backup.width !== cv.width || backup.height !== cv.height) { backup.width = cv.width; backup.height = cv.height; }
   const bx = backup.getContext('2d');
   bx.clearRect(0, 0, backup.width, backup.height);
   bx.drawImage(cv, 0, 0);
-  stroke = { id: e.pointerId, sid: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, obj: createStroke({ brush, size, color, mix }), t0: performance.now(), pts: [], size, sent: false };
+  stroke = { id: e.pointerId, sid: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, brush,
+    obj: createStroke(erase ? { brush: 'pen', size, color: '#000000', mix: 0 } : { brush, size, color, mix }), t0: performance.now(), pts: [], size, sent: false };
   const p = padPoint(e);
-  paintMarks(ctx, SCALE, stroke.obj.begin(p, pressureOf(e)));
+  paintMarks(ctx, SCALE, stroke.obj.begin(p, pressureOf(e)), erase);
   addPoint(p, e);
   const r = cv.getBoundingClientRect();
   if (soundOn) sound.begin(e.clientX, e.clientY, { brush, size, area: { left: r.left, width: r.width }, time: e.timeStamp });
@@ -368,7 +408,7 @@ cv.addEventListener('pointermove', (e) => {
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
   for (const ev of evs.length ? evs : [e]) {
     const p = padPoint(ev);
-    paintMarks(ctx, SCALE, stroke.obj.move(p, pressureOf(ev)));
+    paintMarks(ctx, SCALE, stroke.obj.move(p, pressureOf(ev)), stroke.brush === 'eraser');
     addPoint(p, ev);
     if (soundOn) sound.move(ev.clientX, ev.clientY, pressureOf(ev), ev.timeStamp);
   }
@@ -408,7 +448,7 @@ function queuePiece(end) {
   if (!stroke || (!stroke.pts.length && !end)) return;
   if (!end && !stroke.sent && performance.now() - stroke.t0 < GRACE) return; // could still become a swipe
   stroke.sent = true;
-  outbox.push({ shape: shape.id, sid: stroke.sid, brush, size: stroke.size, color, mix, pts: stroke.pts.splice(0), end: !!end });
+  outbox.push({ shape: shape.id, vid, sid: stroke.sid, brush: stroke.brush, size: stroke.size, color, mix, pts: stroke.pts.splice(0), end: !!end });
   flush();
 }
 setInterval(() => queuePiece(false), SEND_MS);
@@ -429,7 +469,7 @@ async function flush() {
     if (!r.ok) {
       setLive(j.error || "Couldn't send that. Try again.", true);
       if (r.status === 400 && /gone/.test(j.error || '')) { outbox.length = 0; setTimeout(() => { store.delete(piece.shape); leaveDrawing('That shape was removed. Pick another one.'); loadShapes(); }, 1500); }
-    } else if (piece.end) {
+    } else if (piece.end && piece.brush !== 'eraser') {
       setLive('On the wall ✓ Keep drawing.');
     }
   } catch {

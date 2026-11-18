@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Draw on the Wall</title>
   <style>
     :root {
@@ -10,7 +10,8 @@
       --accent: #ffd27a; --btn: #f3efe6; --btn-text: #15161a; --danger: #ff7a7a;
       color-scheme: dark;
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; } /* no double-tap zoom */
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
     html, body { margin: 0; background: var(--bg); color: var(--text); overscroll-behavior: none; }
     body {
       font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -53,7 +54,12 @@
     .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
     .swatch { width: 34px; height: 34px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; }
     .swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--bg) inset; }
-    label.size { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+    .row { display: flex; align-items: center; gap: 12px; }
+    label.size { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+    #btnClear { flex: none; min-height: 40px; padding: 8px 14px; font-size: 14px; }
+    #btnClear.armed { background: #3a1f22; border-color: var(--danger); color: var(--danger); }
+    #btnEraser { flex: none; min-height: 40px; padding: 8px 14px; font-size: 14px; }
+    #btnEraser.on { background: #3a3220; border-color: var(--accent); color: var(--accent); }
     label.size input { flex: 1; accent-color: var(--accent); }
     .live { font-size: 13px; color: var(--muted); text-align: center; margin: 8px 0 0; }
     .live.err { color: var(--danger); }
@@ -87,10 +93,19 @@
     <div class="dots" id="dots"></div>
     <div class="brushes" id="brushes"></div>
     <div class="swatches" id="swatches"></div>
-    <label class="size">Size <input type="range" id="size" min="2" max="36" step="1" value="8"></label>
+    <div class="row">
+      <label class="size">Size <input type="range" id="size" min="2" max="36" step="1" value="8"></label>
+      <button id="btnEraser" aria-label="Eraser">Eraser</button>
+      <button id="btnClear">Clear</button>
+    </div>
     <p class="live" id="live">Draw inside the box. It shows up on the wall in about a second.</p>
   </div>
 
-  <script type="module" src="draw.js?v=3"></script>
+  <script>
+    // iPhones ignore "no zoom" in the viewport tag, so stop pinch zoom here (touch-action stops double-tap zoom)
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('touchmove', (e) => { if (e.touches.length > 1 && !e.target.closest('#drawCv')) e.preventDefault(); }, { passive: false });
+  </script>
+  <script type="module" src="draw.js?v=8"></script>
 </body>
 </html>

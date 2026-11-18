@@ -18,6 +18,7 @@ const BRUSH_SOUND = {
   ripple: { f: 2100, q: 1.0, body: 0.45, crackle: 0.25, gain: 0.5,  idle: 0.02, dab: 0 },
   polka:  { f: 1300, q: 0.8, body: 0.6,  crackle: 0.05, gain: 0.16, idle: 0.0,  dab: 0.05 },
   tri:    { f: 1700, q: 0.9, body: 0.4,  crackle: 0.15, gain: 0.16, idle: 0.0,  dab: 0.04 },
+  eraser: { f: 900,  q: 0.7, body: 0.75, crackle: 0.06, gain: 0.45, idle: 0.02, dab: 0 },  // soft rubbing
 };
 
 const LOUDNESS = 2.5; // overall level at Sound = 100% (the compressor keeps peaks in check)

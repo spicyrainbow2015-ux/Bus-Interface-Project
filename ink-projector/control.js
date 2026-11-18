@@ -373,6 +373,7 @@ function doClear(local) {
   const now = performance.now();
   if (now - lastClear < 400) return;
   if (S.source === 'photos' && local !== true) api('clear', {}).catch(() => {}); // forget approved drawings too
+  try { phoneStrokes.clear(); visitorChunks.clear(); if (owner) owner.fill(0); } catch {} // phone strokes waiting to be replayed, and who drew what (not set up yet at start)
   lastClear = now;
   if (committed) committed.fill(0);
   if (hold) hold.fill(0);
@@ -762,10 +763,16 @@ function settingsMsg() {
 function sendSettings() { CH.postMessage(settingsMsg()); }
 
 function sendSync(to) {
-  const all = new Float32Array(pointCount * 5);
+  const all = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
   let o = 0;
   for (const c of chunks) { all.set(c, o); o += c.length; }
   const groups = [...partChunks].map(([group, pts]) => ({ group, pts }));
+  for (const [group, list] of visitorChunks) {
+    const pts = new Float32Array(list.reduce((n, c) => n + c.length, 0));
+    let q = 0;
+    for (const c of list) { pts.set(c, q); q += c.length; }
+    if (pts.length) groups.push({ group, pts });
+  }
   CH.postMessage({ type: 'sync', to, aspect: rw && rh ? rw / rh : PAPER_RATIO[S.paper], res: Math.max(rw, rh) || LONG_SIDE, pts: all, groups });
   CH.postMessage(settingsMsg());
 }
@@ -2189,11 +2196,15 @@ async function pollPhones() {
 
 function queuePiece(it) {
   const part = mapParts().parts.find((p) => p.id === it.shape);
-  if (!part || !Array.isArray(it.pts)) return;
+  if (!part) return;
+  const vid = it.vid || 'anon';
+  if (it.clear) { clearVisitor(vid, it.shape); return; }
+  if (!Array.isArray(it.pts)) return;
   const now = performance.now();
   let st = phoneStrokes.get(it.sid);
   if (!st) {
-    st = { part, brush: it.brush, size: it.size, color: it.color, mix: it.mix, queue: [], offset: null, obj: null, clip: null, ended: false, last: now };
+    st = { part, brush: it.brush, size: it.size, color: it.color, mix: it.mix, queue: [], offset: null, obj: null, clip: null, ended: false, last: now,
+      own: ownerNum(vid, it.shape), group: visitorGroup(vid, it.shape) };
     phoneStrokes.set(it.sid, st);
     phoneStrokeCount++;
   }
@@ -2214,24 +2225,163 @@ function drainPhones() {
       const { u, v, pr } = st.queue.shift();
       const p = [(st.part.x + u * st.part.w) * padRaster.width, (st.part.y + v * st.part.h) * padRaster.height];
       let marks;
+      const eraser = st.brush === 'eraser';
       if (!st.obj) {
         // Always kept inside the shape it starts in
         const L = labelAt(p);
         st.clip = L && !building.outside[L] ? regionCanvas(L) : EMPTY_CLIP;
-        st.obj = createStroke({ brush: st.brush, size: st.size, color: st.color, mix: st.mix });
+        st.obj = createStroke(eraser ? { brush: 'pen', size: st.size, color: '#ffffff', mix: 0 } : { brush: st.brush, size: st.size, color: st.color, mix: st.mix });
         marks = st.obj.begin(p, pr);
       } else {
         marks = st.obj.move(p, pr);
       }
+      if (!marks.length) continue;
+      if (eraser) { eraseMarks(st, marks); continue; } // only ever removes this visitor's own lines
       const keep = strokeClip;
       strokeClip = st.clip;
       drawMarks(marks);
       strokeClip = keep;
+      commitRegion(marksBounds(marks), st.own, st.group); // on the wall right away, tagged as theirs
       drew = true;
     }
     if (!st.queue.length && (st.ended || now - st.last > 8000)) phoneStrokes.delete(sid);
   }
   if (drew) padTick();
+}
+
+// ---------- Visitors' own lines: Clear and the eraser on the phone ----------
+// Every pad pixel a phone stroke adds is tagged with whose it is (one tag per phone per shape), and its
+// particles join that tag's group on the output. A visitor's Clear or eraser then removes only their
+// own lines, on the pad and on the wall, and never anyone else's.
+let owner = null;                 // per pad pixel: whose it is (0 = the operator / nobody)
+const ownerIds = new Map();       // 'vid|shape' -> tag number
+const visitorChunks = new Map();  // group -> [Float32Array of particles], for output windows opened later
+const ownerNum = (vid, shape) => {
+  const k = `${vid}|${shape}`;
+  if (!ownerIds.has(k)) ownerIds.set(k, ownerIds.size + 1);
+  return ownerIds.get(k);
+};
+const visitorGroup = (vid, shape) => `v:${vid}:${shape}`;
+function ensureOwner() {
+  const n = padRaster.width * padRaster.height;
+  if (!owner || owner.length !== n) owner = new Int32Array(n);
+}
+function boxOf(b) {
+  const w = padRaster.width, h = padRaster.height;
+  const x0 = Math.max(0, Math.floor(b.x0)), y0 = Math.max(0, Math.floor(b.y0));
+  const x1 = Math.min(w, Math.ceil(b.x1)), y1 = Math.min(h, Math.ceil(b.y1));
+  return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1, bw: x1 - x0, bh: y1 - y0 } : null;
+}
+
+// Sends the new ink in one area to the wall, tagged with whose it is (like padTick, for one area)
+function commitRegion(bounds, own, group) {
+  const b = boxOf(bounds);
+  if (!b || !committed) return;
+  ensureOwner();
+  const w = padRaster.width, h = padRaster.height;
+  const d = padRctx.getImageData(b.x0, b.y0, b.bw, b.bh).data;
+  const pts = [];
+  for (let y = b.y0; y < b.y1; y++) {
+    for (let x = b.x0, j = (y - b.y0) * b.bw * 4; x < b.x1; x++, j += 4) {
+      const i = y * w + x;
+      if (committed[i] || d[j + 3] < 60) continue;
+      committed[i] = 1;
+      owner[i] = own;
+      if (pointCount + pts.length / 5 < MAX_POINTS) pts.push((x + 0.5) / w, (y + 0.5) / h, d[j], d[j + 1], d[j + 2]);
+    }
+  }
+  if (!pts.length) return;
+  const arr = new Float32Array(pts);
+  pointCount += arr.length / 5;
+  if (!visitorChunks.has(group)) visitorChunks.set(group, []);
+  visitorChunks.get(group).push(arr);
+  CH.postMessage({ type: 'add', aspect: w / h, res: Math.max(w, h), pts: arr, live: true, group });
+}
+
+// Removes pixels from the pad and from what later output windows get. tell = also fade them on the wall.
+const eraseMaskCv = document.createElement('canvas');
+let erasedMark = null;
+function erasePixels(idx, group, tell) {
+  if (!idx.length) return;
+  const w = padRaster.width, h = padRaster.height;
+  let x0 = w, y0 = h, x1 = 0, y1 = 0;
+  for (const i of idx) {
+    const x = i % w, y = (i / w) | 0;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  x0 = Math.max(0, x0 - 1); y0 = Math.max(0, y0 - 1); x1 = Math.min(w - 1, x1 + 1); y1 = Math.min(h - 1, y1 + 1);
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  const mask = new ImageData(bw, bh);
+  const hit = (x, y) => { mask.data[((y - y0) * bw + (x - x0)) * 4 + 3] = 255; };
+  for (const i of idx) {
+    const x = i % w, y = (i / w) | 0;
+    committed[i] = 0; owner[i] = 0;
+    hit(x, y);
+    // also the faint, never-captured edge pixels around the line
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= x0 && nx <= x1 && ny >= y0 && ny <= y1 && !committed[ny * w + nx]) hit(nx, ny);
+    }
+  }
+  eraseMaskCv.width = bw; eraseMaskCv.height = bh;
+  eraseMaskCv.getContext('2d').putImageData(mask, 0, 0);
+  for (const [c, k] of [[padRctx, 1], [padCtx, PAD_SCALE]]) {
+    c.save();
+    c.globalCompositeOperation = 'destination-out';
+    c.imageSmoothingEnabled = false;
+    c.drawImage(eraseMaskCv, x0 * k, y0 * k, bw * k, bh * k);
+    c.restore();
+  }
+  // Drop them from the particles kept for output windows opened later
+  if (!erasedMark || erasedMark.length !== w * h) erasedMark = new Uint8Array(w * h);
+  for (const i of idx) erasedMark[i] = 1;
+  const list = visitorChunks.get(group) || [];
+  for (let n = 0; n < list.length; n++) {
+    const a = list[n], keep = [];
+    for (let k = 0; k + 4 < a.length; k += 5) {
+      const i = Math.floor(a[k + 1] * h) * w + Math.floor(a[k] * w);
+      if (erasedMark[i]) pointCount--; else keep.push(a[k], a[k + 1], a[k + 2], a[k + 3], a[k + 4]);
+    }
+    if (keep.length !== a.length) list[n] = new Float32Array(keep);
+  }
+  for (const i of idx) erasedMark[i] = 0;
+  if (tell) CH.postMessage({ type: 'erase', group, w, h, idx });
+}
+
+// The visitor's eraser: removes only their own lines under it
+const eraserCv = document.createElement('canvas');
+function eraseMarks(st, marks) {
+  const b = boxOf(marksBounds(marks));
+  if (!b || !committed) return;
+  ensureOwner();
+  const w = padRaster.width, h = padRaster.height;
+  if (eraserCv.width !== w || eraserCv.height !== h) { eraserCv.width = w; eraserCv.height = h; }
+  const g = eraserCv.getContext('2d', { willReadFrequently: true });
+  g.clearRect(b.x0, b.y0, b.bw, b.bh);
+  paintMarks(g, 1, marks);
+  const d = g.getImageData(b.x0, b.y0, b.bw, b.bh).data;
+  const idx = [];
+  for (let y = b.y0; y < b.y1; y++) {
+    for (let x = b.x0, j = (y - b.y0) * b.bw * 4 + 3; x < b.x1; x++, j += 4) {
+      const i = y * w + x;
+      if (d[j] > 20 && owner[i] === st.own) idx.push(i);
+    }
+  }
+  if (idx.length) { erasePixels(Int32Array.from(idx), st.group, true); padTick(); }
+}
+
+// The visitor's Clear: all their lines in that shape drift away
+function clearVisitor(vid, shape) {
+  const own = ownerIds.get(`${vid}|${shape}`), group = visitorGroup(vid, shape);
+  for (const [sid, st] of phoneStrokes) if (st.own === own) phoneStrokes.delete(sid);
+  if (own && owner) {
+    const idx = [];
+    for (let i = 0; i < owner.length; i++) if (owner[i] === own) idx.push(i);
+    erasePixels(Int32Array.from(idx), group, false);
+  }
+  visitorChunks.delete(group);
+  CH.postMessage({ type: 'release', group });
+  padTick();
 }
 
 initShapes();
