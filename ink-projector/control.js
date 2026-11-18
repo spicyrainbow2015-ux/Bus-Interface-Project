@@ -55,6 +55,7 @@ let frameData = null;
 
 let corners = null;            // normalized TL, TR, BR, BL in camera space
 let paperMode = 'auto';        // 'auto' | 'locked'
+if (Array.isArray(S.paperFrame) && S.paperFrame.length === 4) { corners = S.paperFrame.map(([x, y]) => [x, y]); paperMode = 'locked'; } // the frame you set
 let paperSeen = false;
 let candidate = null;
 let stableSince = 0;
@@ -182,7 +183,12 @@ $('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
   const img = new Image();
-  img.onload = () => { photo = img; corners = null; paperMode = 'auto'; start(); };
+  img.onload = () => {
+    photo = img;
+    if (S.paperFrame) { corners = S.paperFrame.map(([x, y]) => [x, y]); paperMode = 'locked'; autoLocked = false; }
+    else { corners = null; paperMode = 'auto'; }
+    start();
+  };
   img.src = URL.createObjectURL(file);
 });
 $('btnStart').addEventListener('click', start);
@@ -397,7 +403,9 @@ function doClear(local) {
   clearedAt = now;
   partChunks.clear();
   try { sheetCleared(); } catch {} // (not set up yet at start)
-  if (autoLocked) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
+  let keepPaper = false;
+  try { keepPaper = sheetMode() && sheetByButton(); } catch {} // whole sheets read with Submit keep the paper outline
+  if (autoLocked && !keepPaper) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   // The old drawing is probably still under the camera. Don't capture it again
   // until it disappears (sheet removed or swapped).
   if (!sim && !isPad() && !sheetMode() && lastInkCount > 80) {
@@ -481,7 +489,7 @@ function updateStatus() {
   else if (S.source === 'draw') { pp.textContent = 'Drawing on screen'; pp.className = 'pill ok'; }
   else if (S.source === 'phones') { pp.textContent = 'Phones drawing live'; pp.className = 'pill ok'; }
   else if (!corners) { pp.textContent = 'Paper: searching…'; pp.className = 'pill warn'; }
-  else if (paperMode === 'locked') { pp.textContent = autoLocked ? 'Paper: found & locked' : 'Paper: locked (manual)'; pp.className = 'pill ok'; }
+  else if (paperMode === 'locked') { pp.textContent = autoLocked ? 'Paper: found & locked' : 'Paper: your frame (locked)'; pp.className = 'pill ok'; }
   else { pp.textContent = paperSeen ? 'Paper: found (auto)' : 'Paper: not visible'; pp.className = paperSeen ? 'pill ok' : 'pill warn'; }
 
   const now = performance.now();
@@ -539,12 +547,24 @@ function tick(now) {
 requestAnimationFrame(tick);
 
 // ---------- Paper buttons and corner dragging ----------
-$('btnAuto').addEventListener('click', () => { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; updateStatus(); });
-$('btnLock').addEventListener('click', () => { if (corners) { paperMode = 'locked'; autoLocked = false; } updateStatus(); });
+// A frame you set yourself (dragged corners, Lock, Full frame) is kept, and saved so it's still there
+// after a reload: every sheet is read inside it. Auto-detect forgets it.
+function keepFrame() {
+  if (!corners) return;
+  S.paperFrame = corners.map(([x, y]) => [x, y]);
+  save();
+}
+$('btnAuto').addEventListener('click', () => {
+  paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null;
+  delete S.paperFrame; save();
+  updateStatus();
+});
+$('btnLock').addEventListener('click', () => { if (corners) { paperMode = 'locked'; autoLocked = false; keepFrame(); } updateStatus(); });
 $('btnFull').addEventListener('click', () => {
   corners = [[0.02, 0.02], [0.98, 0.02], [0.98, 0.98], [0.02, 0.98]];
   paperMode = 'locked';
   autoLocked = false;
+  keepFrame();
   updateStatus();
 });
 $('btnRotate').addEventListener('click', () => {
@@ -579,7 +599,7 @@ cam.addEventListener('pointermove', (e) => {
   const [x, y] = camPoint(e);
   corners[dragging] = [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
 });
-cam.addEventListener('pointerup', () => { dragging = -1; updateStatus(); });
+cam.addEventListener('pointerup', () => { if (dragging >= 0) keepFrame(); dragging = -1; updateStatus(); });
 
 // ---------- Drawing on screen ----------
 // Strokes are drawn twice: on the visible pad (2x, crisp) and on a hidden canvas at the
@@ -804,7 +824,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 29;
+const BUILD = 31;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -2636,7 +2656,8 @@ function sheetTick(now, inkCount) {
     if (now - (sheet.hintAt || 0) > 400) {
       sheet.hintAt = now;
       if (sheet.justSent && now - sheet.justSent < 4000) return; // keep "Sheet n is up" showing for a moment
-      setSheetStatus(!corners || !paperSeen ? 'Place a sheet under the camera.' : inkCount > 30 ? 'Sheet ready. Press Submit (or Enter).' : "Sheet found, but there's no drawing on it yet.");
+      const framed = corners && (paperSeen || paperMode === 'locked'); // your own frame counts as "the sheet is here"
+      setSheetStatus(!framed ? 'Place a sheet under the camera.' : inkCount > 30 ? 'Sheet ready. Press Submit (or Enter).' : "There's no drawing in the frame yet.");
     }
     return;
   }
@@ -2726,7 +2747,9 @@ function captureSheet(inkCount) {
   }
   sheet.state = sheetByButton() ? 'empty' : 'taken'; sheet.goneSince = 0; sheet.baseline = inkCount;
   sheet.justSent = performance.now();
-  if (autoLocked || paperMode === 'locked') { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
+  // Reading automatically: let go of this sheet's outline so the next sheet is found fresh. With Submit,
+  // keep it: the camera and paper usually stay put between submissions.
+  if (!sheetByButton() && autoLocked) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   lastDrawnBoxes = drawn ? drawn.boxes : null;
   if (total < 20) {
     sheet.justSent = performance.now();
@@ -2896,7 +2919,7 @@ function findDrawnBoxes(mask, w, h, layout) {
 // Submit: read the sheet under the camera now
 function submitSheet() {
   if (!sheetMode()) return;
-  if (!corners || !paperSeen || !inkBuf || !rw) { setSheetStatus('No sheet found. Place it under the camera so its outline shows, then press Submit.'); return; }
+  if (!corners || !(paperSeen || paperMode === 'locked') || !inkBuf || !rw) { setSheetStatus('No sheet found. Place it under the camera so its outline shows (or drag the corner dots onto it), then press Submit.'); return; }
   if (lastInkCount <= 30) { setSheetStatus("There's no drawing on the sheet yet."); return; }
   captureSheet(lastInkCount);
   const b = $('btnSubmitSheet');

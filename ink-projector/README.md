@@ -69,7 +69,10 @@ outline switches to **My shapes**.
 2. Visitors draw inside the boxes, then place the finished sheet under the camera and press **Submit sheet**
    (or **Enter**, on the operator page or the output window, so a USB button sending Enter works too). The
    whole sheet is read at that moment. With **Read the sheet → Automatically**, it's read by itself instead,
-   once it's still and no hand is over it, and must be taken away before the next. Only ink inside a box counts, skipping a
+   once it's still and no hand is over it, and must be taken away before the next.
+   **Your own frame:** drag the corner dots in the camera view (or press **Lock** or **Full frame**) and every
+   sheet is read inside exactly that frame. It's saved, so it's still there after a reload. **Auto-detect**
+   goes back to finding the paper by itself. Only ink inside a box counts, skipping a
    thin strip along its printed edge; anything outside the boxes is ignored. Each box's ink goes to the same
    box on the wall, all in one random colour for the sheet.
    **No printer?** Draw the boxes yourself with the marker on a blank sheet, roughly where they sit on the wall
