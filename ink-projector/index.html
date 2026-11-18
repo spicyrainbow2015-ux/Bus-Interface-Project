@@ -139,6 +139,26 @@
             <span>Photo</span>
             <input type="file" id="fileInput" accept="image/*">
           </label>
+          <label class="field" id="fieldCapture">
+            <span>Capture</span>
+            <select data-key="camCapture">
+              <option value="live">Live, as it's drawn</option>
+              <option value="sheet">Whole sheet when placed (template boxes)</option>
+            </select>
+          </label>
+          <div class="fields-sub" id="sheetFields">
+            <p class="note">Print the sheet template, have visitors draw inside the boxes, then place the finished sheet under the camera. Each box's drawing goes to the same box on the wall, in one random colour per sheet. Uses your mapped shapes.</p>
+            <button id="btnSheetTemplate">Print sheet template</button>
+            <label class="field range">
+              <span>Each drawing's turn to glow <output data-for="sheetTurn" data-unit="s"></output></span>
+              <input type="range" data-key="sheetTurn" min="3" max="15" step="0.5">
+            </label>
+            <label class="field range">
+              <span>Clear the wall after the 5th sheet <output data-for="sheetClearAfter" data-unit="s"></output></span>
+              <input type="range" data-key="sheetClearAfter" min="5" max="120" step="5">
+            </label>
+            <p class="note" id="sheetStatus">Waiting for a sheet.</p>
+          </div>
           <label class="check"><input type="checkbox" data-key="mirror"> Mirror image</label>
           <button id="btnStart" class="primary">Start</button>
         </div>
@@ -305,6 +325,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js?v=23"></script>
+  <script type="module" src="control.js?v=26"></script>
 </body>
 </html>

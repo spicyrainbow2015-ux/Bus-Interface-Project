@@ -59,6 +59,31 @@ The shapes are stored on the server (`op=setShapes`), and so are the stroke piec
 `op=strokes`). Keep the operator page open: it's what draws the phone strokes. Phones can't reach `localhost`,
 so test with real phones on the deployed site.
 
+## Paper sheets with template boxes (camera)
+
+Set **Input** to **Paper + camera** and **Capture** to **Whole sheet when placed (template boxes)**. The
+outline switches to **My shapes**.
+
+1. **Print sheet template:** every mapped box in light blue (too faint to count as ink), named and laid out as
+   on the wall, straightened.
+2. Visitors draw inside the boxes, then place the finished sheet under the camera. Once it's still and no
+   hand is over it, the whole sheet is read at once (no approval). Only ink inside a box counts, skipping a
+   thin strip along its printed edge; anything outside the boxes is ignored. Each box's ink goes to the same
+   box on the wall, all in one random colour for the sheet.
+   **No printer?** Draw the boxes yourself with the marker on a blank sheet, roughly where they sit on the wall
+   (they needn't be straight). The camera finds the closed boxes, matches each to the wall box in the same
+   position on the sheet, leaves out the box lines themselves and maps the drawing through each box's four
+   corners. The boxes it found are outlined and named on the operator's paper view. Keep the box lines closed
+   and the boxes apart from each other; small doodles outside the boxes are ignored.
+3. On the wall each drawing gathers in, glows in a ripple from the middle of its box, then darkens. Drawings
+   in the same box take turns (**Each drawing's turn to glow**); the others stay faintly visible.
+4. The sheet has to be taken away before the next one is read. After the 5th sheet the wall clears itself
+   (**Clear the wall after the 5th sheet**); a 6th sheet arriving before then clears it right away and starts
+   the next round. **Clear** works at any time.
+
+To keep the load down, this mode checks the camera about 12 times a second, and while a read sheet is still
+lying there it mostly only checks whether the paper is still there.
+
 ## Photo submissions (phones)
 
 Set **Input** to **Photo submissions (phones)**. Visitors draw on a paper template and send a photo.

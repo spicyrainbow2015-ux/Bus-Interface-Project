@@ -15,14 +15,16 @@ const DEFAULTS = {
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
   fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4, partFit: 'fill',
+  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30,
 };
-const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow', 'padBrush', 'padSize', 'drawSound'];
+const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow', 'padBrush', 'padSize', 'drawSound', 'sheetTurn'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
 const PAPER_RATIO = { a4: 1.4142, letter: 1.2941, square: 1 };
 const LONG_SIDE = 480;
 const PHOTO_LONG_SIDE = 800; // photo submissions get more detail, since each fills only part of the doorway
 const isPad = () => S.source === 'draw' || S.source === 'photos' || S.source === 'phones';
 const drawsLive = () => S.source === 'draw' || S.source === 'phones'; // strokes are drawn as they happen
+const sheetMode = () => !isPad() && S.camCapture === 'sheet'; // paper: capture the whole sheet once it's placed
 const MAX_POINTS = 140000;
 
 let S = { ...DEFAULTS };
@@ -86,7 +88,8 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     refreshOutputs();
     if (OUTPUT_KEYS.includes(key)) sendSettings();
     if (key === 'drawSound') brushSound.volume(S.drawSound);
-    if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); phonesModeChanged(); }
+    if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); phonesModeChanged(); sheetModeChanged(); }
+    if (key === 'camCapture') { if (pointCount) doClear(true); resetBuffers(); sheetModeChanged(); }
     if (key === 'mapGuides') sendParts();
     if (OUTLINE_KEYS.includes(key)) { buildOutline(); updateSourceFields(); }
     if (key === 'guideOpacity') updatePadGuide();
@@ -103,6 +106,8 @@ function updateSourceFields() {
   const photos = S.source === 'photos';
   $('fieldDevice').hidden = S.source !== 'camera';
   $('fieldFile').hidden = S.source !== 'image';
+  $('fieldCapture').hidden = draw;
+  $('sheetFields').hidden = !sheetMode();
   $('camStage').hidden = draw;
   $('paperRow').hidden = draw;
   $('padStage').hidden = !draw;
@@ -127,6 +132,7 @@ updateSourceFields();
 async function start() {
   stopCamera();
   running = false;
+  try { sheet.state = 'empty'; } catch {} // a new photo or a restart counts as a fresh sheet
   sim = null;
   if (S.source === 'sim') {
     sim = createSim(1280, 720);
@@ -262,8 +268,9 @@ function rectSizeFor(q) {
   const across = (d(q[0], q[1]) + d(q[3], q[2])) / 2;
   const down = (d(q[0], q[3]) + d(q[1], q[2])) / 2;
   const ratio = PAPER_RATIO[S.paper] || 1.4142;
-  if (ratio === 1) return [400, 400];
-  return across >= down ? [LONG_SIDE, Math.round(LONG_SIDE / ratio)] : [Math.round(LONG_SIDE / ratio), LONG_SIDE];
+  const L = sheetMode() ? PHOTO_LONG_SIDE : LONG_SIDE; // a whole sheet of small boxes needs more detail
+  if (ratio === 1) return [Math.round(L * 0.83), Math.round(L * 0.83)];
+  return across >= down ? [L, Math.round(L / ratio)] : [Math.round(L / ratio), L];
 }
 
 function resetBuffers() { rw = rh = 0; }
@@ -387,10 +394,11 @@ function doClear(local) {
   seenApproved.clear();
   clearedAt = now;
   partChunks.clear();
+  try { sheetCleared(); } catch {} // (not set up yet at start)
   if (autoLocked) { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   // The old drawing is probably still under the camera. Don't capture it again
   // until it disappears (sheet removed or swapped).
-  if (!sim && !isPad() && lastInkCount > 80) {
+  if (!sim && !isPad() && !sheetMode() && lastInkCount > 80) {
     awaiting = { baseline: lastInkCount, lowSince: 0 };
     $('awaitBanner').hidden = false;
   }
@@ -447,6 +455,22 @@ function drawPaperAndInk() {
     v[j + 3] = 255;
   }
   inkCtx.putImageData(inkView, 0, 0);
+  if (sheetMode() && lastDrawnBoxes) {
+    // The boxes found on the sheet, named after the wall box each one goes to
+    for (const c of [paperCtx, inkCtx]) {
+      c.lineWidth = 3;
+      c.strokeStyle = '#5fd38d';
+      c.fillStyle = '#5fd38d';
+      c.font = '600 14px -apple-system, sans-serif';
+      for (const b of lastDrawnBoxes) {
+        c.beginPath();
+        b.quad.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y)));
+        c.closePath();
+        c.stroke();
+        c.fillText(b.name || '', b.quad[0][0] + 6, b.quad[0][1] + 18);
+      }
+    }
+  }
 }
 
 function updateStatus() {
@@ -475,7 +499,8 @@ function updateStatus() {
 // ---------- Main loop ----------
 function tick(now) {
   requestAnimationFrame(tick);
-  if (!running || now - lastProc < 1000 / 30 - 2) return;
+  // Whole-sheet capture doesn't need every frame: about 12 a second is plenty and much lighter
+  if (!running || now - lastProc < (sheetMode() && !isPad() ? 1000 / 12 : 1000 / 30) - 2) return;
   lastProc = now;
   if (isPad()) {
     padTick();
@@ -488,17 +513,22 @@ function tick(now) {
   fpsFrames++;
   if (now - fpsT > 1000) { fps = (fpsFrames * 1000) / (now - fpsT); fpsFrames = 0; fpsT = now; }
 
-  if (paperMode === 'auto' && frameNo % 3 === 0) runDetect(now);
+  const sheet = sheetMode();
+  if (paperMode === 'auto' && frameNo % (sheet ? 2 : 3) === 0) runDetect(now);
   drawCamera();
   if (corners) {
-    const q = quadPx();
-    const [w, h] = rectSizeFor(q);
-    ensureBuffers(w, h);
-    warpQuad(frameData, q, rect);
-    lastInkCount = extractInk(rect, S, inkBuf);
-    updateCommit(lastInkCount, now);
-    drawPaperAndInk();
-  }
+    // With a captured sheet still lying there, only check now and then whether it's been taken away
+    const idle = sheet && sheetWaitingForRemoval() && frameNo % 4 !== 0;
+    if (!idle) {
+      const q = quadPx();
+      const [w, h] = rectSizeFor(q);
+      ensureBuffers(w, h);
+      warpQuad(frameData, q, rect);
+      lastInkCount = extractInk(rect, S, inkBuf);
+      if (sheet) sheetTick(now, lastInkCount); else updateCommit(lastInkCount, now);
+      drawPaperAndInk();
+    }
+  } else if (sheet) sheetTick(now, 0);
   if (frameNo % 10 === 0) updateStatus();
 }
 requestAnimationFrame(tick);
@@ -769,7 +799,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 22;
+const BUILD = 24;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -782,6 +812,7 @@ function sendSync(to) {
   let o = 0;
   for (const c of chunks) { all.set(c, o); o += c.length; }
   const groups = [...partChunks].map(([group, pts]) => ({ group, pts }));
+  for (const [group, sc] of sheetChunks) groups.push({ group, pts: sc.pts });
   for (const [group, list] of visitorChunks) {
     const pts = new Float32Array(list.reduce((n, c) => n + c.length, 0));
     let q = 0;
@@ -789,6 +820,7 @@ function sendSync(to) {
     if (pts.length) groups.push({ group, pts });
   }
   CH.postMessage({ type: 'sync', to, aspect: rw && rh ? rw / rh : PAPER_RATIO[S.paper], res: Math.max(rw, rh) || LONG_SIDE, pts: all, groups });
+  for (const [group, sc] of sheetChunks) CH.postMessage({ type: 'sheet', to, group, box: sc.box, rect: sc.rect });
   CH.postMessage(settingsMsg());
 }
 
@@ -2526,6 +2558,341 @@ wallView.addEventListener('pointermove', padMove);
 ['pointerup', 'pointercancel'].forEach((t) => wallView.addEventListener(t, padUp));
 wallViewReady = true;
 updateWallView();
+
+// ---------- Paper sheets with template boxes (camera) ----------
+// Visitors draw on a printed sheet that shows every mapped box, laid out as on the wall. When a
+// finished sheet is placed under the camera and nothing has moved for a moment, the whole sheet is
+// read at once: the ink inside each box goes to the same box on the wall, all in one random colour.
+// The sheet must then be taken away before the next one is read. After the 5th sheet the wall
+// clears itself (Each drawing's glow, and drawings taking turns, happen in the output window).
+const SHEET_COLORS = ['#ff4d6d', '#ff8a3d', '#ffd23f', '#4dff88', '#3dd6ff', '#5b7cff', '#b45bff', '#ff5bd1', '#7affe4', '#c6ff3d'];
+const SHEETS_PER_ROUND = 5;
+const sheet = { state: 'empty', since: 0, count: 0, n: 0, clearTimer: 0, goneSince: 0, baseline: 0, lastColor: -1 };
+const sheetChunks = new Map(); // group -> { pts, box, rect } (for output windows opened later)
+
+function setSheetStatus(t) { const el = $('sheetStatus'); if (el && el.textContent !== t) el.textContent = t; }
+const sheetWaitingForRemoval = () => sheet.state === 'taken';
+
+function sheetModeChanged() {
+  updateSourceFields();
+  if (!sheetMode()) return;
+  if (!S.outlineOn || S.outlineSrc !== 'shapes') {
+    S.outlineOn = true;
+    S.outlineSrc = 'shapes';
+    save();
+    document.querySelector('[data-key="outlineOn"]').checked = true;
+    document.querySelector('[data-key="outlineSrc"]').value = 'shapes';
+    buildOutline();
+    updateSourceFields();
+  }
+  sheet.state = 'empty'; sheet.since = 0;
+  setSheetStatus(sheet.count ? `${sheet.count} of ${SHEETS_PER_ROUND} sheets on the wall. Place the next sheet.` : 'Waiting for a sheet.');
+}
+
+// Where each box sits on the sheet: its place on the wall, straightened, fitted to the paper.
+// Returns { landscape, boxes: [{ id, name, x, y, w, h }] } in fractions of the sheet.
+function sheetLayout() {
+  const list = S.shapes.filter((sh) => sh.quad);
+  if (!list.length) return { landscape: true, boxes: [] };
+  const SW = screenSize.w, SH = screenSize.h;
+  const bb = list.map((sh) => {
+    const xs = sh.quad.map((c) => c[0] * SW), ys = sh.quad.map((c) => c[1] * SH);
+    return { sh, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  });
+  const U = { x0: Math.min(...bb.map((b) => b.x0)), x1: Math.max(...bb.map((b) => b.x1)), y0: Math.min(...bb.map((b) => b.y0)), y1: Math.max(...bb.map((b) => b.y1)) };
+  const Uw = Math.max(1, U.x1 - U.x0), Uh = Math.max(1, U.y1 - U.y0);
+  const ratio = PAPER_RATIO[S.paper] || 1.4142;
+  const landscape = Uw >= Uh;
+  const A = landscape ? ratio : 1 / ratio; // sheet width, with its height = 1
+  const m = 0.08;
+  const k = Math.min((A * (1 - 2 * m)) / Uw, (1 - 2 * m) / Uh);
+  const ox = (A - Uw * k) / 2, oy = (1 - Uh * k) / 2;
+  const boxes = bb.map(({ sh, x0, x1, y0, y1 }) => {
+    const cx = ox + ((x0 + x1) / 2 - U.x0) * k, cy = oy + ((y0 + y1) / 2 - U.y0) * k;
+    // The box keeps the shape's own proportions inside the space its corners take up
+    const aw = (x1 - x0) * k * 0.94, ah = (y1 - y0) * k * 0.94;
+    let w = aw, h = w / sh.aspect;
+    if (h > ah) { h = ah; w = h * sh.aspect; }
+    return { id: sh.id, name: sh.name, x: (cx - w / 2) / A, y: cy - h / 2, w: w / A, h };
+  });
+  return { landscape, boxes };
+}
+
+function sheetTick(now, inkCount) {
+  if (sheet.state === 'taken') {
+    // Wait for the sheet to be taken away (or to go blank) before reading another
+    const gone = !paperSeen || inkCount < Math.max(40, sheet.baseline * 0.15);
+    if (gone) {
+      if (!sheet.goneSince) sheet.goneSince = now;
+      else if (now - sheet.goneSince > 600) {
+        sheet.state = 'empty';
+        lastDrawnBoxes = null;
+        setSheetStatus(`${sheet.count} of ${SHEETS_PER_ROUND} sheets on the wall. Place the next sheet.`);
+      }
+    } else sheet.goneSince = 0;
+    return;
+  }
+  if (!corners || !paperSeen || !inkBuf) { sheet.state = 'empty'; return; }
+  // Read it once the paper has stopped moving and no hand is over it
+  const still = stillnessMap();
+  let calm = true;
+  for (let b = 0; b < still.length; b++) if (!still[b]) { calm = false; break; }
+  const settled = (paperMode === 'locked' || (stableSince && now - stableSince > 500)) && calm && inkCount > 30;
+  if (!settled) { if (sheet.state === 'settling') setSheetStatus('Hold still…'); sheet.state = 'empty'; return; }
+  if (sheet.state !== 'settling') { sheet.state = 'settling'; sheet.since = now; setSheetStatus('Sheet found. Reading it…'); return; }
+  if (now - sheet.since > 700) captureSheet(inkCount);
+}
+
+function captureSheet(inkCount) {
+  const { boxes } = sheetLayout();
+  const parts = new Map(mapParts().parts.map((p) => [p.id, p]));
+  const mask = inkBuf.mask;
+  const per = new Map();
+  // Boxes drawn by hand on the sheet? Then they're used instead of the printed template's positions.
+  const drawn = findDrawnBoxes(mask, rw, rh, boxes);
+  // One random colour for the whole sheet (never the same as the last one)
+  let ci;
+  do { ci = Math.floor(Math.random() * SHEET_COLORS.length); } while (ci === sheet.lastColor && SHEET_COLORS.length > 1);
+  sheet.lastColor = ci;
+  const hex = SHEET_COLORS[ci];
+  const R = parseInt(hex.slice(1, 3), 16), G = parseInt(hex.slice(3, 5), 16), B = parseInt(hex.slice(5, 7), 16);
+  const inset = 0.02; // skip the box's own printed edge
+  let total = 0;
+  if (drawn) {
+    // Ink inside each drawn box (not its outline), placed through the box's four corners
+    for (let y = 0; y < rh; y++) {
+      for (let x = 0; x < rw; x++) {
+        const i = y * rw + x;
+        if (!mask[i] || !keep(i) || drawn.depth[i] <= drawn.edge) continue;
+        const b = drawn.byLabel.get(drawn.label[i]);
+        if (!b) continue;
+        const p = parts.get(b.id);
+        if (!p) continue;
+        const h = b.h, dd = h[6] * x + h[7] * y + 1;
+        const tu = Math.min(1, Math.max(0, (h[0] * x + h[1] * y + h[2]) / dd)), tv = Math.min(1, Math.max(0, (h[3] * x + h[4] * y + h[5]) / dd));
+        if (!per.has(b.id)) per.set(b.id, []);
+        per.get(b.id).push(p.x + tu * p.w, p.y + tv * p.h, R, G, B);
+        total++;
+      }
+    }
+  }
+  for (let y = 0; y < rh && !drawn; y++) {
+    const v = (y + 0.5) / rh;
+    for (let x = 0; x < rw; x++) {
+      const i = y * rw + x;
+      if (!mask[i] || !keep(i)) continue;
+      const u = (x + 0.5) / rw;
+      for (const b of boxes) {
+        const tu = (u - b.x) / b.w, tv = (v - b.y) / b.h;
+        if (tu < inset || tu > 1 - inset || tv < inset || tv > 1 - inset) continue;
+        const p = parts.get(b.id);
+        if (!p) break;
+        if (!per.has(b.id)) per.set(b.id, []);
+        per.get(b.id).push(p.x + tu * p.w, p.y + tv * p.h, R, G, B);
+        total++;
+        break;
+      }
+    }
+  }
+  sheet.state = 'taken'; sheet.goneSince = 0; sheet.baseline = inkCount;
+  if (autoLocked || paperMode === 'locked') { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
+  lastDrawnBoxes = drawn ? drawn.boxes : null;
+  if (total < 20) { setSheetStatus(drawn ? `Found ${drawn.boxes.length} box${drawn.boxes.length === 1 ? '' : 'es'}, but nothing drawn inside. Take the sheet away and try another.` : 'Nothing drawn inside the boxes. Take the sheet away and try another.'); return; }
+  const found = drawn ? ` Found ${drawn.boxes.length} of ${boxes.length} drawn boxes.` : '';
+  // The 5th sheet already had its time: clear the wall before this one goes up
+  if (sheet.clearTimer) doClear(true);
+  sheet.n++;
+  sheet.count++;
+  const room = Math.max(0, MAX_POINTS - pointCount);
+  for (const [id, list] of per) {
+    const p = parts.get(id);
+    let arr = new Float32Array(list);
+    if (arr.length / 5 > room) arr = arr.slice(0, Math.floor(room) * 5);
+    if (!arr.length) continue;
+    const group = `sheet:${sheet.n}:${id}`;
+    const rect = { x: p.x, y: p.y, w: p.w, h: p.h };
+    sheetChunks.set(group, { pts: arr, box: id, rect });
+    pointCount += arr.length / 5;
+    CH.postMessage({ type: 'sheet', group, box: id, rect });
+    CH.postMessage({ type: 'add', aspect: rw / rh, res: Math.max(rw, rh), pts: arr, group });
+  }
+  if (sheet.count >= SHEETS_PER_ROUND) {
+    sheet.clearTimer = setTimeout(() => { sheet.clearTimer = 0; doClear(true); }, S.sheetClearAfter * 1000);
+    setSheetStatus(`Sheet ${sheet.count} of ${SHEETS_PER_ROUND} is up.${found} The wall clears in ${S.sheetClearAfter} s. Take the sheet away.`);
+  } else {
+    setSheetStatus(`Sheet ${sheet.count} of ${SHEETS_PER_ROUND} is up.${found} Take the sheet away for the next one.`);
+  }
+}
+
+// ---------- Boxes drawn by hand ----------
+// Finds boxes drawn in marker on a blank sheet: closed outlines big enough to be a box. Everything the
+// outside of the sheet can't reach (the box line, its inside and the drawing in it) is one blob per box.
+// Each blob's four corners map it onto its wall box, and how deep a pixel is inside the blob tells the
+// box's own outline (near the edge) apart from the drawing (further in).
+// Drawn boxes are matched to wall boxes by where they sit on the sheet. Returns null when none are found.
+let lastDrawnBoxes = null; // [{ quad, name }] shown on the operator's paper view
+function findDrawnBoxes(mask, w, h, layout) {
+  const n = w * h;
+  // 1. Close small gaps in hand-drawn lines (2 px each way)
+  const R = 2, tmp = new Uint8Array(n), dil = new Uint8Array(n);
+  for (let y = 0; y < h; y++) {
+    let run = -1e9;
+    for (let x = 0; x < w + R; x++) {
+      if (x < w && mask[y * w + x]) run = x;
+      const tx = x - R;
+      if (tx >= 0 && tx < w && x - run <= 2 * R) tmp[y * w + tx] = 1;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let run = -1e9;
+    for (let y = 0; y < h + R; y++) {
+      if (y < h && tmp[y * w + x]) run = y;
+      const ty = y - R;
+      if (ty >= 0 && ty < h && y - run <= 2 * R) dil[ty * w + x] = 1;
+    }
+  }
+  // 2. Flood the outside in from the sheet's edges
+  const outside = new Uint8Array(n), queue = new Int32Array(n);
+  let qh = 0, qt = 0;
+  const seed = (i) => { if (!dil[i] && !outside[i]) { outside[i] = 1; queue[qt++] = i; } };
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
+  while (qh < qt) {
+    const i = queue[qh++], x = i % w;
+    if (x > 0) seed(i - 1);
+    if (x < w - 1) seed(i + 1);
+    if (i >= w) seed(i - w);
+    if (i < n - w) seed(i + w);
+  }
+  // 3. Blobs of what the outside couldn't reach
+  const label = new Int32Array(n);
+  const blobs = [];
+  for (let s0 = 0; s0 < n; s0++) {
+    if (outside[s0] || label[s0]) continue;
+    const id = blobs.length + 1;
+    const b = { id, area: 0, sx: 0, sy: 0, x0: w, y0: h, x1: 0, y1: 0, tl: [0, 0, 1e9], tr: [0, 0, -1e9], br: [0, 0, -1e9], bl: [0, 0, 1e9] };
+    qh = qt = 0;
+    label[s0] = id; queue[qt++] = s0;
+    while (qh < qt) {
+      const i = queue[qh++], x = i % w, y = (i / w) | 0;
+      b.area++; b.sx += x; b.sy += y;
+      if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+      if (x + y < b.tl[2]) b.tl = [x, y, x + y];
+      if (x - y > b.tr[2]) b.tr = [x, y, x - y];
+      if (x + y > b.br[2]) b.br = [x, y, x + y];
+      if (x - y < b.bl[2]) b.bl = [x, y, x - y];
+      const nb = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1];
+      for (const j of nb) if (j >= 0 && !outside[j] && !label[j]) { label[j] = id; queue[qt++] = j; }
+    }
+    blobs.push(b);
+  }
+  // Big enough to be a box, and box-like (fills most of its bounding box)
+  const boxes = blobs.filter((b) => {
+    const bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1;
+    return b.area > n * 0.012 && bw > w * 0.06 && bh > h * 0.06 && b.area / (bw * bh) > 0.6;
+  }).sort((a, b) => b.area - a.area).slice(0, Math.max(1, layout.length));
+  if (!boxes.length || !layout.length) return null;
+  // 4. Match drawn boxes to wall boxes by position (each set scaled to its own extent)
+  const norm = (pts) => {
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const ax = Math.min(...xs), bx = Math.max(...xs), ay = Math.min(...ys), by = Math.max(...ys);
+    return pts.map(([x, y]) => [bx - ax > 1e-6 ? (x - ax) / (bx - ax) : 0.5, by - ay > 1e-6 ? (y - ay) / (by - ay) : 0.5]);
+  };
+  const dc = norm(boxes.map((b) => [b.sx / b.area / w, b.sy / b.area / h]));
+  const wc = norm(layout.map((L) => [L.x + L.w / 2, L.y + L.h / 2]));
+  const pairs = [];
+  dc.forEach((a, i) => wc.forEach((c, j) => pairs.push([Math.hypot(a[0] - c[0], a[1] - c[1]), i, j])));
+  pairs.sort((a, b) => a[0] - b[0]);
+  const usedD = new Set(), usedW = new Set(), byLabel = new Map(), found = [];
+  for (const [, i, j] of pairs) {
+    if (usedD.has(i) || usedW.has(j)) continue;
+    usedD.add(i); usedW.add(j);
+    const b = boxes[i];
+    const quad = [b.tl, b.tr, b.br, b.bl].map(([x, y]) => [x, y]);
+    const hm = solveHomography(quad, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    if (!hm) continue;
+    byLabel.set(b.id, { id: layout[j].id, h: hm });
+    found.push({ quad, name: layout[j].name });
+  }
+  if (!found.length) return null;
+  // 5. How deep each pixel is inside its blob (2-pass chamfer distance): the box's outline sits near
+  // the blob's edge, the drawing further in
+  const depth = new Float32Array(n);
+  for (let i = 0; i < n; i++) depth[i] = outside[i] ? 0 : 1e6;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (!depth[i]) continue;
+    let d = depth[i];
+    if (x > 0) d = Math.min(d, depth[i - 1] + 1);
+    if (y > 0) d = Math.min(d, depth[i - w] + 1);
+    if (x > 0 && y > 0) d = Math.min(d, depth[i - w - 1] + 1.414);
+    if (x < w - 1 && y > 0) d = Math.min(d, depth[i - w + 1] + 1.414);
+    depth[i] = d;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const i = y * w + x;
+    if (!depth[i]) continue;
+    let d = depth[i];
+    if (x < w - 1) d = Math.min(d, depth[i + 1] + 1);
+    if (y < h - 1) d = Math.min(d, depth[i + w] + 1);
+    if (x < w - 1 && y < h - 1) d = Math.min(d, depth[i + w + 1] + 1.414);
+    if (x > 0 && y < h - 1) d = Math.min(d, depth[i + w - 1] + 1.414);
+    depth[i] = d;
+  }
+  // The outline's thickness: how deep its ink goes in at the middle of each box's left edge
+  let edge = 4;
+  for (const b of boxes) {
+    const y = Math.round((b.y0 + b.y1) / 2);
+    let x = b.x0;
+    while (x < b.x1 && !mask[y * w + x]) x++;
+    let t = 0;
+    while (x + t < b.x1 && mask[y * w + x + t]) t++;
+    edge = Math.max(edge, t + R + 3);
+  }
+  edge = Math.min(edge, Math.round(Math.min(w, h) * 0.04));
+  return { label, depth, edge, byLabel, boxes: found };
+}
+
+// Called from doClear: a fresh round
+function sheetCleared() {
+  clearTimeout(sheet.clearTimer);
+  sheet.clearTimer = 0;
+  sheet.count = 0;
+  sheetChunks.clear();
+  if (sheetMode()) setSheetStatus(sheet.state === 'taken' ? 'Wall cleared. Take the sheet away for the next one.' : 'Wall cleared. Waiting for a sheet.');
+}
+
+// The printed sheet: every mapped box in light blue (too faint to count as ink), named, laid out as on the wall
+$('btnSheetTemplate').addEventListener('click', () => {
+  const { landscape, boxes } = sheetLayout();
+  if (!boxes.length) return;
+  const ratio = PAPER_RATIO[S.paper] || 1.4142;
+  const W = landscape ? 2400 : Math.round(2400 / ratio), H = landscape ? Math.round(2400 / ratio) : 2400;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff';
+  x.fillRect(0, 0, W, H);
+  x.strokeStyle = '#a9cdf9';
+  x.fillStyle = '#a9cdf9';
+  x.lineWidth = 6;
+  x.textAlign = 'center';
+  x.font = '600 34px -apple-system, Helvetica, sans-serif';
+  for (const b of boxes) {
+    x.strokeRect(b.x * W, b.y * H, b.w * W, b.h * H);
+    x.fillText(b.name || '', (b.x + b.w / 2) * W, b.y * H - 16);
+  }
+  x.font = '500 30px -apple-system, Helvetica, sans-serif';
+  x.fillText('Draw inside the boxes with a dark marker', W / 2, H - 0.035 * H);
+  const url = c.toDataURL('image/png');
+  const size = S.paper === 'letter' ? 'letter' : 'A4';
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(`<!doctype html><title>Sheet template</title><style>@page{size:${size} ${landscape ? 'landscape' : 'portrait'};margin:0}html,body{margin:0;height:100%}img{width:100%;height:100%;object-fit:contain;display:block}</style><img src="${url}" onload="setTimeout(()=>print(),300)">`);
+  win.document.close();
+});
+
+sheetModeChanged();
 
 initShapes();
 phonesModeChanged();

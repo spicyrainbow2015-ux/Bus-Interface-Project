@@ -5,7 +5,7 @@ import { solveHomography } from './vision.js';
 import { createBrushSound } from './brushsound.js';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
-const BUILD = 22; // must match control.js; a newer operator makes this window reload (see 'settings')
+const BUILD = 24; // must match control.js; a newer operator makes this window reload (see 'settings')
 if (PREVIEW) document.body.classList.add('preview');
 const CH = new BroadcastChannel('ink-projector-v1');
 const ID = Math.random().toString(36).slice(2);
@@ -16,7 +16,7 @@ const ctx = canvas.getContext('2d');
 const off = document.createElement('canvas');
 const octx = off.getContext('2d');
 
-const S = { colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4, fade: 3, size: '1', showFrame: false, outlineGlow: 0.45 };
+const S = { colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4, fade: 3, size: '1', showFrame: false, outlineGlow: 0.45, sheetTurn: 6 };
 let outline = null; // { cv, place } glowing building outline
 let highlight = null; // { cv, place } the shape open for photo submissions
 let res = 480; // capture resolution along the long side (particles are sized from it)
@@ -37,6 +37,66 @@ const groupIds = new Map();
 const groupId = (name) => { if (!name) return 0; if (!groupIds.has(name)) groupIds.set(name, Math.min(65535, groupIds.size + 1)); return groupIds.get(name); };
 let count = 0;
 let alive = 0;
+
+// ---------- Paper sheets: each drawing glows in a ripple, then darkens; drawings in a box take turns ----------
+// A sheet's drawing in one box is one group. In each box the groups take turns: the one whose turn it
+// is lights up in a wave spreading from the middle of the box (with a bright crest), holds, then
+// darkens the same way while the next one starts. With one drawing in a box it simply pulses.
+const DIM = 0.1;          // a drawing waiting for its turn stays faintly visible
+const showOn = new Uint8Array(65536), showActive = new Uint8Array(65536);
+const showT0 = new Float32Array(65536), showCx = new Float32Array(65536), showCy = new Float32Array(65536);
+const showRx = new Float32Array(65536), showRy = new Float32Array(65536);
+const boxes = new Map();  // box id -> { list: [gid], epoch }
+let lastT = performance.now() / 1000;
+
+function addSheetDrawing({ group, box, rect }) {
+  const gid = groupId(group);
+  if (!gid || !rect) return;
+  let b = boxes.get(box);
+  if (!b) { b = { list: [], epoch: lastT }; boxes.set(box, b); }
+  if (b.list.includes(gid)) return;
+  b.list.push(gid);
+  // The newest drawing gets its turn right away; the others follow in order after it
+  b.epoch = lastT - (b.list.length - 1) * Math.max(1, S.sheetTurn);
+  showOn[gid] = 1;
+  showCx[gid] = rect.x + rect.w / 2; showCy[gid] = rect.y + rect.h / 2;
+  showRx[gid] = Math.max(0.01, rect.w / 2); showRy[gid] = Math.max(0.01, rect.h / 2);
+}
+function updateShows(t) {
+  const T = Math.max(1, S.sheetTurn);
+  for (const b of boxes.values()) {
+    const n = b.list.length;
+    if (!n) continue;
+    const k = Math.floor((t - b.epoch) / T);
+    const active = ((k % n) + n) % n;
+    b.list.forEach((gid, j) => {
+      showActive[gid] = j === active ? 1 : 0;
+      if (j === active) showT0[gid] = b.epoch + k * T;
+    });
+  }
+}
+// How bright a sheet particle is now: the wave reaches it later the further it is from the box's middle
+function showGain(i, t) {
+  const g = grp[i];
+  if (!showActive[g]) return DIM;
+  const T = Math.max(1, S.sheetTurn);
+  const d = Math.hypot((nx[i] - showCx[g]) / showRx[g], (ny[i] - showCy[g]) / showRy[g]); // 0 middle, ~1.4 corners
+  const tau = t - showT0[g] - d * 0.9;
+  // Darkens late in the turn, so the next drawing's ripple starts as this one fades (no empty gap)
+  const darkStart = Math.max(1.2, T - 2.3), darkLen = Math.min(1.0, Math.max(0.4, T - darkStart - 1.3));
+  if (tau < 0) return DIM;
+  if (tau < 0.3) return DIM + (1.9 - DIM) * (tau / 0.3);                 // the bright crest arrives
+  if (tau < 1.1) return 1.9 - 0.9 * ((tau - 0.3) / 0.8);                 // settles to a steady glow
+  if (tau < darkStart) return 1;
+  if (tau < darkStart + darkLen) return 1 + (DIM - 1) * ((tau - darkStart) / darkLen); // darkens
+  return DIM;
+}
+function clearSheetShows(t) {
+  // Released particles keep the brightness they had, so dim ones don't flash as they drift away
+  for (let i = 0; i < count; i++) if (showOn[grp[i]]) al[i] *= Math.min(1, showGain(i, t));
+  for (const b of boxes.values()) for (const gid of b.list) { showOn[gid] = 0; showActive[gid] = 0; }
+  boxes.clear();
+}
 let aspect = 1.4142;
 
 function removeAt(i) {
@@ -270,7 +330,7 @@ function render(t) {
         const k = (((nx[i] * 200 + ny[i] * 70) | 0) + tShift) & 255;
         r = NEON[k * 3]; g = NEON[k * 3 + 1]; b = NEON[k * 3 + 2];
       } else { r = cr[i]; g = cg[i]; b = cb[i]; }
-      const I = al[i] * bright * (1 + pulseAmp * Math.sin(pulseT - (nx[i] * 5 + ny[i] * 3)));
+      const I = al[i] * bright * (1 + pulseAmp * Math.sin(pulseT - (nx[i] * 5 + ny[i] * 3))) * (showOn[grp[i]] ? showGain(i, t) : 1);
       r *= I; g *= I; b *= I;
       const cx = Math.round(x), cy = Math.round(y);
       for (let oy = -Rc; oy <= Rc; oy++) {
@@ -292,7 +352,7 @@ function render(t) {
       const k = (((nx[i] * 200 + ny[i] * 70) | 0) + tShift) & 255;
       r = NEON[k * 3]; g = NEON[k * 3 + 1]; b = NEON[k * 3 + 2];
     } else { r = cr[i]; g = cg[i]; b = cb[i]; }
-    const I = al[i] * bright * (1 + pulseAmp * Math.sin(pulseT - (nx[i] * 5 + ny[i] * 3)));
+    const I = al[i] * bright * (1 + pulseAmp * Math.sin(pulseT - (nx[i] * 5 + ny[i] * 3))) * (showOn[grp[i]] ? showGain(i, t) : 1);
     r *= I; g *= I; b *= I;
 
     const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0;
@@ -394,7 +454,9 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
   const t = now / 1000;
+  lastT = t;
   step(dt, t);
+  if (boxes.size) updateShows(t);
   render(t);
 }
 requestAnimationFrame(frame);
@@ -408,11 +470,14 @@ CH.onmessage = ({ data: m }) => {
     addPoints(m.pts, m.live ? 'live' : true, m.group, m.delays);
   } else if (m.type === 'release') {
     releaseAll(m.group);
+  } else if (m.type === 'sheet') {
+    if (!m.to || m.to === ID) addSheetDrawing(m);
   } else if (m.type === 'erase') {
     eraseAt(m);
   } else if (m.type === 'sync' && m.to === ID) {
     if (m.aspect) { aspect = m.aspect; relayout(); }
     count = 0;
+    clearSheetShows(lastT); // the sheets' turns are sent again right after
     addPoints(m.pts, true);
     for (const g of m.groups || []) addPoints(g.pts, true, g.group);
   } else if (m.type === 'highlight') {
@@ -449,6 +514,7 @@ CH.onmessage = ({ data: m }) => {
     if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
     setParts(m.sig, m.parts, m.guides);
   } else if (m.type === 'clear') {
+    clearSheetShows(lastT);
     releaseAll();
   } else if (m.type === 'settings') {
     if (m.build > BUILD) {
