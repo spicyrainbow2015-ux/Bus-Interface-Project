@@ -75,6 +75,10 @@ outline switches to **My shapes**.
    position on the sheet, leaves out the box lines themselves and maps the drawing through each box's four
    corners. The boxes it found are outlined and named on the operator's paper view. Keep the box lines closed
    and the boxes apart from each other; small doodles outside the boxes are ignored.
+   Pencil and fine pen work too: **Pick up faint lines** finds thin lines that are darker than the paper on
+   both sides (creases and shadow edges aren't), and joins up broken bits. Raise it for fainter lines, lower
+   it if creases start showing in **Ink detected**. Whole sheets skip the skin-colour check, since they're
+   only read with no hand over them (it could hide grey lines on warm-tinted paper).
 3. On the wall each drawing gathers in, glows in a ripple from the middle of its box, then darkens. Drawings
    in the same box take turns (**Each drawing's turn to glow**); the others stay faintly visible.
 4. The sheet has to be taken away before the next one is read. After the 5th sheet the wall clears itself

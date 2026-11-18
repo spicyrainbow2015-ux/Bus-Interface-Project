@@ -5,7 +5,7 @@ import { solveHomography } from './vision.js';
 import { createBrushSound } from './brushsound.js';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
-const BUILD = 24; // must match control.js; a newer operator makes this window reload (see 'settings')
+const BUILD = 27; // must match control.js; a newer operator makes this window reload (see 'settings')
 if (PREVIEW) document.body.classList.add('preview');
 const CH = new BroadcastChannel('ink-projector-v1');
 const ID = Math.random().toString(36).slice(2);

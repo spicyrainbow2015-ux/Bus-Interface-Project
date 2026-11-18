@@ -150,6 +150,10 @@
             <p class="note">Print the sheet template, have visitors draw inside the boxes, then place the finished sheet under the camera. Each box's drawing goes to the same box on the wall, in one random colour per sheet. Uses your mapped shapes.</p>
             <button id="btnSheetTemplate">Print sheet template</button>
             <label class="field range">
+              <span>Pick up faint lines (pencil, fine pen) <output data-for="faintLines" data-pct></output></span>
+              <input type="range" data-key="faintLines" min="0" max="1" step="0.05">
+            </label>
+            <label class="field range">
               <span>Each drawing's turn to glow <output data-for="sheetTurn" data-unit="s"></output></span>
               <input type="range" data-key="sheetTurn" min="3" max="15" step="0.5">
             </label>
@@ -325,6 +329,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js?v=26"></script>
+  <script type="module" src="control.js?v=29"></script>
 </body>
 </html>

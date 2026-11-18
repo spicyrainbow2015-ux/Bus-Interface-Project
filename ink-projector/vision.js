@@ -262,6 +262,70 @@ export function extractInk(img, params, buf) {
   return count;
 }
 
+// Faint thin lines (pencil, fine pen) for whole sheets: a pixel counts when it's darker than the paper
+// on BOTH sides of it, in any of four directions, a couple of pixels away. That's what a thin line looks
+// like. A crease or the edge of a shadow is dark on one side only, so it doesn't count, and slow changes in
+// light cancel out. Runs after extractInk (uses its grey image) and adds what it finds to the mask.
+// thr: how much darker than the paper, e.g. 0.06 (very faint) .. 0.2 (only clear lines).
+export function addFaintLines(img, params, buf, thr) {
+  const { width: w, height: h } = img;
+  const n = w * h;
+  const { gray, mask } = buf;
+  if (!buf.g2 || buf.g2.length !== n) { buf.g2 = new Float32Array(n); buf.raw2 = new Uint8Array(n); buf.q2 = new Int32Array(n); }
+  const g2 = buf.g2, raw = buf.raw2, queue = buf.q2;
+  // A light 3x3 blur so camera noise doesn't look like lines
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      g2[i] = (gray[i - w - 1] + gray[i - w] + gray[i - w + 1] + gray[i - 1] + gray[i] + gray[i + 1] +
+        gray[i + w - 1] + gray[i + w] + gray[i + w + 1]) / 9;
+    }
+  }
+  const mx = Math.max(4, Math.round(params.margin * w)), my = Math.max(4, Math.round(params.margin * h));
+  raw.fill(0);
+  const dirs = [1, w, w + 1, w - 1];
+  for (let y = my; y < h - my; y++) {
+    for (let x = mx; x < w - mx; x++) {
+      const i = y * w + x, g = g2[i];
+      let best = 0;
+      for (let k = 0; k < 4; k++) {
+        const d = dirs[k];
+        for (let r = 2; r <= 3; r++) {
+          const a = g2[i - d * r], b = g2[i + d * r];
+          const side = a < b ? a : b;
+          const v = (side - g) / (side > 40 ? side : 40);
+          if (v > best) best = v;
+        }
+      }
+      if (best > thr) raw[i] = 2;            // clearly a line
+      else if (best > thr * 0.55) raw[i] = 1; // maybe: only kept if it joins a clear line
+    }
+  }
+  // Grow the clear line pixels into the faint ones next to them, so broken pencil lines join up
+  let qh = 0, qt = 0;
+  for (let i = 0; i < n; i++) if (raw[i] === 2) queue[qt++] = i;
+  while (qh < qt) {
+    const i = queue[qh++];
+    for (const j of [i - 1, i + 1, i - w, i + w, i - w - 1, i - w + 1, i + w - 1, i + w + 1]) {
+      if (raw[j] === 1) { raw[j] = 2; queue[qt++] = j; }
+    }
+  }
+  for (let i = 0; i < n; i++) raw[i] = raw[i] === 2 ? 1 : 0;
+  // Keep pixels with at least two neighbours (no specks), and add them to the ink
+  let count = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (mask[i]) { count++; continue; }
+      if (!raw[i]) continue;
+      const nb = raw[i - w - 1] + raw[i - w] + raw[i - w + 1] + raw[i - 1] + raw[i + 1] +
+        raw[i + w - 1] + raw[i + w] + raw[i + w + 1];
+      if (nb >= 2) { mask[i] = 1; count++; }
+    }
+  }
+  return count;
+}
+
 // ---------- Building outline ----------
 
 // Turns an image of a building into a line mask (0..255 per pixel).

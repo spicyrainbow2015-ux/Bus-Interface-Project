@@ -1,4 +1,4 @@
-import { detectPaper, warpQuad, extractInk, makeInkBuffers, outlineFromImage, solveHomography } from './vision.js';
+import { detectPaper, warpQuad, extractInk, addFaintLines, makeInkBuffers, outlineFromImage, solveHomography } from './vision.js?v=3';
 import { createSim } from './sim.js';
 import { BRUSHES, createStroke } from './brushes.js';
 import { createBrushSound } from './brushsound.js';
@@ -15,7 +15,7 @@ const DEFAULTS = {
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
   fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4, partFit: 'fill',
-  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30,
+  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30, faintLines: 0.6,
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow', 'padBrush', 'padSize', 'drawSound', 'sheetTurn'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
@@ -524,7 +524,10 @@ function tick(now) {
       const [w, h] = rectSizeFor(q);
       ensureBuffers(w, h);
       warpQuad(frameData, q, rect);
-      lastInkCount = extractInk(rect, S, inkBuf);
+      // Whole sheets are only read with no hand over them, so the skin check isn't needed there (and it
+      // can mistake grey lines on warm-tinted paper for skin)
+      lastInkCount = extractInk(rect, sheet ? { ...S, ignoreSkin: false } : S, inkBuf);
+      if (sheet && S.faintLines > 0) lastInkCount = addFaintLines(rect, S, inkBuf, 0.2 - 0.14 * S.faintLines); // pencil, fine pen
       if (sheet) sheetTick(now, lastInkCount); else updateCommit(lastInkCount, now);
       drawPaperAndInk();
     }
@@ -799,7 +802,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 24;
+const BUILD = 27;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -2733,8 +2736,8 @@ function captureSheet(inkCount) {
 let lastDrawnBoxes = null; // [{ quad, name }] shown on the operator's paper view
 function findDrawnBoxes(mask, w, h, layout) {
   const n = w * h;
-  // 1. Close small gaps in hand-drawn lines (2 px each way)
-  const R = 2, tmp = new Uint8Array(n), dil = new Uint8Array(n);
+  // 1. Close small gaps in hand-drawn lines (4 px each way)
+  const R = 4, tmp = new Uint8Array(n), dil = new Uint8Array(n);
   for (let y = 0; y < h; y++) {
     let run = -1e9;
     for (let x = 0; x < w + R; x++) {
@@ -2798,8 +2801,11 @@ function findDrawnBoxes(mask, w, h, layout) {
     const ax = Math.min(...xs), bx = Math.max(...xs), ay = Math.min(...ys), by = Math.max(...ys);
     return pts.map(([x, y]) => [bx - ax > 1e-6 ? (x - ax) / (bx - ax) : 0.5, by - ay > 1e-6 ? (y - ay) / (by - ay) : 0.5]);
   };
-  const dc = norm(boxes.map((b) => [b.sx / b.area / w, b.sy / b.area / h]));
-  const wc = norm(layout.map((L) => [L.x + L.w / 2, L.y + L.h / 2]));
+  // With every box found, compare the two arrangements (scaled to their own extent); with only some
+  // found, that's unreliable, so compare where they sit on the sheet instead
+  const all = boxes.length === layout.length;
+  const dRaw = boxes.map((b) => [b.sx / b.area / w, b.sy / b.area / h]), wRaw = layout.map((L) => [L.x + L.w / 2, L.y + L.h / 2]);
+  const dc = all ? norm(dRaw) : dRaw, wc = all ? norm(wRaw) : wRaw;
   const pairs = [];
   dc.forEach((a, i) => wc.forEach((c, j) => pairs.push([Math.hypot(a[0] - c[0], a[1] - c[1]), i, j])));
   pairs.sort((a, b) => a[0] - b[0]);
