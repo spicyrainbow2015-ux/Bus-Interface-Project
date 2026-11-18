@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ink Projector · Operator</title>
-  <link rel="stylesheet" href="operator.css?v=2">
+  <link rel="stylesheet" href="operator.css?v=3">
 </head>
 <body>
   <header class="top">
@@ -147,7 +147,15 @@
             </select>
           </label>
           <div class="fields-sub" id="sheetFields">
-            <p class="note">Print the sheet template, have visitors draw inside the boxes, then place the finished sheet under the camera. Each box's drawing goes to the same box on the wall, in one random colour per sheet. Uses your mapped shapes.</p>
+            <p class="note">Print the sheet template (or draw the boxes yourself), have visitors draw inside the boxes, then place the finished sheet under the camera and press Submit. Each box's drawing goes to the same box on the wall, in one random colour per sheet. Uses your mapped shapes.</p>
+            <label class="field">
+              <span>Read the sheet</span>
+              <select data-key="sheetTrigger">
+                <option value="button">When I press Submit (or Enter)</option>
+                <option value="auto">Automatically, once it's placed and still</option>
+              </select>
+            </label>
+            <button id="btnSubmitSheet" class="primary">Submit sheet <kbd>Enter</kbd></button>
             <button id="btnSheetTemplate">Print sheet template</button>
             <label class="field range">
               <span>Pick up faint lines (pencil, fine pen) <output data-for="faintLines" data-pct></output></span>
@@ -329,6 +337,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js?v=30"></script>
+  <script type="module" src="control.js?v=32"></script>
 </body>
 </html>

@@ -66,8 +66,10 @@ outline switches to **My shapes**.
 
 1. **Print sheet template:** every mapped box in light blue (too faint to count as ink), named and laid out as
    on the wall, straightened.
-2. Visitors draw inside the boxes, then place the finished sheet under the camera. Once it's still and no
-   hand is over it, the whole sheet is read at once (no approval). Only ink inside a box counts, skipping a
+2. Visitors draw inside the boxes, then place the finished sheet under the camera and press **Submit sheet**
+   (or **Enter**, on the operator page or the output window, so a USB button sending Enter works too). The
+   whole sheet is read at that moment. With **Read the sheet → Automatically**, it's read by itself instead,
+   once it's still and no hand is over it, and must be taken away before the next. Only ink inside a box counts, skipping a
    thin strip along its printed edge; anything outside the boxes is ignored. Each box's ink goes to the same
    box on the wall, all in one random colour for the sheet.
    **No printer?** Draw the boxes yourself with the marker on a blank sheet, roughly where they sit on the wall

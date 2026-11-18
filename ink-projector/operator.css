@@ -256,3 +256,8 @@ button.reject { background: #4a1d20; border-color: #7a2c31; }
   max-width: none; max-height: none; border-radius: 0; background: none; cursor: inherit; }
 .wall-view .wall-label { position: absolute; transform: translate(-50%, -130%); font: 600 12px -apple-system, BlinkMacSystemFont, sans-serif;
   white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px #000; }
+
+/* Submit sheet (whole-sheet capture) */
+#btnSubmitSheet { font-size: 15px; padding: 12px; }
+#btnSubmitSheet[hidden] { display: none; }
+#btnSubmitSheet.flash { filter: brightness(1.6); }

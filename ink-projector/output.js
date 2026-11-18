@@ -5,7 +5,7 @@ import { solveHomography } from './vision.js';
 import { createBrushSound } from './brushsound.js';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
-const BUILD = 28; // must match control.js; a newer operator makes this window reload (see 'settings')
+const BUILD = 29; // must match control.js; a newer operator makes this window reload (see 'settings')
 if (PREVIEW) document.body.classList.add('preview');
 const CH = new BroadcastChannel('ink-projector-v1');
 const ID = Math.random().toString(36).slice(2);
@@ -550,6 +550,10 @@ window.addEventListener('keydown', (e) => {
   if ((e.code === 'Space' || e.code === 'KeyC') && !e.repeat) {
     e.preventDefault();
     CH.postMessage({ type: 'request-clear' });
+  }
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && !e.repeat) {
+    e.preventDefault();
+    CH.postMessage({ type: 'request-submit' }); // read the paper sheet now (whole-sheet capture)
   }
 });
 

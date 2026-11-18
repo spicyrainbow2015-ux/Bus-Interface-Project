@@ -15,7 +15,7 @@ const DEFAULTS = {
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
   fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4, partFit: 'fill',
-  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30, faintLines: 0.6,
+  camCapture: 'live', sheetTurn: 6, sheetClearAfter: 30, faintLines: 0.6, sheetTrigger: 'button',
 };
 const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow', 'padBrush', 'padSize', 'drawSound', 'sheetTurn'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
@@ -90,6 +90,7 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     if (key === 'drawSound') brushSound.volume(S.drawSound);
     if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); phonesModeChanged(); sheetModeChanged(); }
     if (key === 'camCapture') { if (pointCount) doClear(true); resetBuffers(); sheetModeChanged(); }
+    if (key === 'sheetTrigger') sheetModeChanged();
     if (key === 'mapGuides') sendParts();
     if (OUTLINE_KEYS.includes(key)) { buildOutline(); updateSourceFields(); }
     if (key === 'guideOpacity') updatePadGuide();
@@ -108,6 +109,7 @@ function updateSourceFields() {
   $('fieldFile').hidden = S.source !== 'image';
   $('fieldCapture').hidden = draw;
   $('sheetFields').hidden = !sheetMode();
+  $('btnSubmitSheet').hidden = !sheetMode() || S.sheetTrigger === 'auto';
   $('camStage').hidden = draw;
   $('paperRow').hidden = draw;
   $('padStage').hidden = !draw;
@@ -802,7 +804,7 @@ renderSwatches();
 // ---------- Talking to output windows ----------
 // Bump with every change to the operator or output code: an output window still running older code
 // (opened before an update) reloads itself when it hears a newer number.
-const BUILD = 28;
+const BUILD = 29;
 function settingsMsg() {
   const s = {};
   OUTPUT_KEYS.forEach((k) => (s[k] = S[k]));
@@ -837,6 +839,7 @@ CH.onmessage = ({ data: m }) => {
   }
   else if (m.type === 'bye') outputs.delete(m.id);
   else if (m.type === 'request-clear') doClear();
+  else if (m.type === 'request-submit') submitSheet();
   else if (m.type === 'draw') drawRemote(m);
 };
 CH.postMessage({ type: 'control-hello' });
@@ -853,6 +856,10 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     if (tag === 'button' || tag === 'select') e.target.blur(); // so Space doesn't also press that control
     if (!e.repeat) doClear();
+  }
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && sheetMode() && tag !== 'input' && tag !== 'select' && tag !== 'button') {
+    e.preventDefault();
+    if (!e.repeat) submitSheet();
   }
 });
 
@@ -2575,7 +2582,8 @@ const sheet = { state: 'empty', since: 0, count: 0, n: 0, clearTimer: 0, goneSin
 const sheetChunks = new Map(); // group -> { pts, box, rect } (for output windows opened later)
 
 function setSheetStatus(t) { const el = $('sheetStatus'); if (el && el.textContent !== t) el.textContent = t; }
-const sheetWaitingForRemoval = () => sheet.state === 'taken';
+const sheetWaitingForRemoval = () => S.sheetTrigger === 'auto' && sheet.state === 'taken';
+const sheetByButton = () => S.sheetTrigger !== 'auto';
 
 function sheetModeChanged() {
   updateSourceFields();
@@ -2623,6 +2631,15 @@ function sheetLayout() {
 }
 
 function sheetTick(now, inkCount) {
+  if (sheetByButton()) {
+    // Read only when Submit is pressed; meanwhile just say whether a sheet is ready
+    if (now - (sheet.hintAt || 0) > 400) {
+      sheet.hintAt = now;
+      if (sheet.justSent && now - sheet.justSent < 4000) return; // keep "Sheet n is up" showing for a moment
+      setSheetStatus(!corners || !paperSeen ? 'Place a sheet under the camera.' : inkCount > 30 ? 'Sheet ready. Press Submit (or Enter).' : "Sheet found, but there's no drawing on it yet.");
+    }
+    return;
+  }
   if (sheet.state === 'taken') {
     // Wait for the sheet to be taken away (or to go blank) before reading another
     const gone = !paperSeen || inkCount < Math.max(40, sheet.baseline * 0.15);
@@ -2707,11 +2724,18 @@ function captureSheet(inkCount) {
       }
     }
   }
-  sheet.state = 'taken'; sheet.goneSince = 0; sheet.baseline = inkCount;
+  sheet.state = sheetByButton() ? 'empty' : 'taken'; sheet.goneSince = 0; sheet.baseline = inkCount;
+  sheet.justSent = performance.now();
   if (autoLocked || paperMode === 'locked') { paperMode = 'auto'; autoLocked = false; stableSince = 0; candidate = null; }
   lastDrawnBoxes = drawn ? drawn.boxes : null;
-  if (total < 20) { setSheetStatus(drawn ? `Found ${drawn.boxes.length} box${drawn.boxes.length === 1 ? '' : 'es'}, but nothing drawn inside. Take the sheet away and try another.` : 'Nothing drawn inside the boxes. Take the sheet away and try another.'); return; }
+  if (total < 20) {
+    sheet.justSent = performance.now();
+    const again = sheetByButton() ? '' : ' Take the sheet away and try another.';
+    setSheetStatus(drawn ? `Found ${drawn.boxes.length} box${drawn.boxes.length === 1 ? '' : 'es'}, but nothing drawn inside them.${again}` : `Nothing drawn inside the boxes.${again}`);
+    return;
+  }
   const found = drawn ? ` Found ${drawn.boxes.length} of ${boxes.length} drawn boxes.` : '';
+  const next = sheetByButton() ? 'Place the next sheet and press Submit.' : 'Take the sheet away for the next one.';
   // The 5th sheet already had its time: clear the wall before this one goes up
   if (sheet.clearTimer) doClear(true);
   sheet.n++;
@@ -2731,9 +2755,9 @@ function captureSheet(inkCount) {
   }
   if (sheet.count >= SHEETS_PER_ROUND) {
     sheet.clearTimer = setTimeout(() => { sheet.clearTimer = 0; doClear(true); }, S.sheetClearAfter * 1000);
-    setSheetStatus(`Sheet ${sheet.count} of ${SHEETS_PER_ROUND} is up.${found} The wall clears in ${S.sheetClearAfter} s. Take the sheet away.`);
+    setSheetStatus(`Sheet ${sheet.count} of ${SHEETS_PER_ROUND} is up.${found} The wall clears in ${S.sheetClearAfter} s. ${next}`);
   } else {
-    setSheetStatus(`Sheet ${sheet.count} of ${SHEETS_PER_ROUND} is up.${found} Take the sheet away for the next one.`);
+    setSheetStatus(`Sheet ${sheet.count} of ${SHEETS_PER_ROUND} is up.${found} ${next}`);
   }
 }
 
@@ -2868,6 +2892,18 @@ function findDrawnBoxes(mask, w, h, layout) {
   edge = Math.min(edge, Math.round(Math.min(w, h) * 0.04));
   return { label, depth, edge, byLabel, boxes: found };
 }
+
+// Submit: read the sheet under the camera now
+function submitSheet() {
+  if (!sheetMode()) return;
+  if (!corners || !paperSeen || !inkBuf || !rw) { setSheetStatus('No sheet found. Place it under the camera so its outline shows, then press Submit.'); return; }
+  if (lastInkCount <= 30) { setSheetStatus("There's no drawing on the sheet yet."); return; }
+  captureSheet(lastInkCount);
+  const b = $('btnSubmitSheet');
+  b.classList.add('flash');
+  setTimeout(() => b.classList.remove('flash'), 180);
+}
+$('btnSubmitSheet').addEventListener('click', submitSheet);
 
 // Called from doClear: a fresh round
 function sheetCleared() {
