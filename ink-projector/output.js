@@ -2,6 +2,7 @@
 // It receives points from the operator window over a BroadcastChannel.
 
 import { solveHomography } from './vision.js';
+import { createBrushSound } from './brushsound.js';
 
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 if (PREVIEW) document.body.classList.add('preview');
@@ -407,7 +408,7 @@ CH.onmessage = ({ data: m }) => {
     highlight = { cv, place: m.place };
   } else if (m.type === 'qr') {
     if (m.to && m.to !== ID) return;
-    showQr(m.on ? m.url : null);
+    showQr(m.on ? m.url : null, m.caption);
   } else if (m.type === 'outline') {
     if (m.to && m.to !== ID) return;
     if (!m.on) { outline = null; return; }
@@ -424,18 +425,19 @@ CH.onmessage = ({ data: m }) => {
   } else if (m.type === 'parts') {
     if (m.to && m.to !== ID) return;
     if (m.aspect && Math.abs(m.aspect - aspect) > 0.001) { aspect = m.aspect; relayout(); }
-    setParts(m.sig, m.parts);
+    setParts(m.sig, m.parts, m.guides);
   } else if (m.type === 'clear') {
     releaseAll();
   } else if (m.type === 'settings') {
     Object.assign(S, m.settings);
     try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {}
   } else if (m.type === 'control-hello') {
-    CH.postMessage({ type: 'hello', id: ID, preview: PREVIEW });
+    CH.postMessage({ type: 'hello', id: ID, preview: PREVIEW, ...sizeInfo() });
   }
 };
-CH.postMessage({ type: 'hello', id: ID, preview: PREVIEW });
-setInterval(() => CH.postMessage({ type: 'ping', id: ID, preview: PREVIEW }), 1500);
+const sizeInfo = () => ({ sw: window.innerWidth, sh: window.innerHeight });
+CH.postMessage({ type: 'hello', id: ID, preview: PREVIEW, ...sizeInfo() });
+setInterval(() => CH.postMessage({ type: 'ping', id: ID, preview: PREVIEW, ...sizeInfo() }), 1500);
 window.addEventListener('beforeunload', () => CH.postMessage({ type: 'bye', id: ID }));
 
 // ---------- Full screen, clear key, cursor ----------
@@ -465,7 +467,8 @@ window.addEventListener('mousemove', () => {
 // ---------- QR code for photo submissions ----------
 const qrBox = document.getElementById('qr');
 let qrUrl = null;
-function showQr(url) {
+function showQr(url, caption) {
+  if (caption) qrBox.querySelector('p').innerHTML = caption;
   if (url === qrUrl) return;
   qrUrl = url;
   if (!url || typeof window.qrcode !== 'function') { qrBox.hidden = true; return; }
@@ -517,12 +520,18 @@ function defaultQuad(p) {
   return [[r.x / X, r.y / Y], [(r.x + r.w) / X, r.y / Y], [(r.x + r.w) / X, (r.y + r.h) / Y], [r.x / X, (r.y + r.h) / Y]];
 }
 const saved = () => mapping[mapParts.sig] || null;
-const quadOf = (p) => (saved() && saved()[p.id]) || defaultQuad(p);
-const isMapped = () => !PREVIEW && (mapMode || (saved() && Object.keys(saved()).length > 0));
+// Parts that carry their own corners are mapped on the operator page; here M only shows guides.
+const managed = () => mapParts.parts.some((p) => p.quad);
+let opGuides = false; // operator's "Show guides on the wall"
+const showGuides = () => mapMode || opGuides;
+const quadOf = (p) => p.quad || (saved() && saved()[p.id]) || defaultQuad(p);
+const isMapped = () => !PREVIEW && (showGuides() || managed() || (saved() && Object.keys(saved()).length > 0));
 
-function setParts(sig, parts) {
+function setParts(sig, parts, guides) {
   if (!parts || !parts.length) return;
   mapParts = { sig, parts };
+  opGuides = !!guides;
+  updateUi();
   for (const [id, pc] of pieces) if (!parts.some((p) => p.id === id)) { pc.cv.remove(); pieces.delete(id); }
 }
 
@@ -560,7 +569,7 @@ function presentMapped() {
     }
     pc.cx.clearRect(0, 0, iw, ih);
     pc.cx.drawImage(canvas, (r.x - pad) * k, (r.y - pad) * k, iw, ih, 0, 0, iw, ih);
-    if (mapMode) {
+    if (showGuides()) {
       // The part's border and a grid, warped with it, so you can line it up with the wall
       const c = pc.cx, x0 = pad * k, y0 = pad * k, w = r.w * k, hh = r.h * k;
       c.strokeStyle = 'rgba(255, 210, 122, 0.35)';
@@ -574,7 +583,13 @@ function presentMapped() {
       c.strokeRect(x0, y0, w, hh);
     }
   }
-  if (mapMode) drawHandles();
+  if (showGuides()) drawHandles();
+}
+
+function updateUi() {
+  if (PREVIEW) { ui.style.display = 'none'; return; }
+  ui.style.display = showGuides() ? 'block' : 'none';
+  ui.style.pointerEvents = mapMode && !managed() ? 'auto' : 'none'; // drag here only when not mapped on the laptop
 }
 
 const LETTERS = ['A', 'B', 'C', 'D'];
@@ -652,10 +667,12 @@ ui.addEventListener('pointerup', () => { if (drag) { drag = null; saveMapping();
 
 function setMapMode(on) {
   mapMode = on;
-  ui.style.display = on ? 'block' : 'none';
+  updateUi();
   if (!on) { selected = null; drag = null; }
   hint.textContent = on
-    ? 'Mapping: drag the yellow corners onto the real surface (drag inside to move it). Arrow keys nudge the picked corner. R resets. M when done.'
+    ? managed()
+      ? 'Guides on. These shapes are mapped on the operator page (Map the shapes onto the wall). M hides the guides.'
+      : 'Mapping: drag the yellow corners onto the real surface (drag inside to move it). Arrow keys nudge the picked corner. R resets. M when done.'
     : 'Drag this window to the projector, then press F for full screen. M lines it up with the wall.';
   hint.classList.toggle('gone', !on);
 }
@@ -664,14 +681,14 @@ function mapKey(e) {
   if (PREVIEW) return false;
   if (e.code === 'KeyM') { setMapMode(!mapMode); return true; }
   if (!mapMode) return false;
-  if (e.code === 'KeyR') {
+  if (e.code === 'KeyR' && !managed()) {
     delete mapping[mapParts.sig];
     saveMapping();
     selected = null;
     return true;
   }
   const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  if (arrows[e.code] && selected) {
+  if (arrows[e.code] && selected && !managed()) {
     e.preventDefault();
     const step = e.shiftKey ? 10 : 1;
     const m = editableQuads();
@@ -694,6 +711,7 @@ function applyH(h, x, y) {
   const d = h[6] * x + h[7] * y + 1;
   return [(h[0] * x + h[1] * y + h[2]) / d, (h[3] * x + h[4] * y + h[5]) / d];
 }
+const brushSound = createBrushSound(); // the sound of drawing, played from the projector laptop
 let pen = null; // { h } inverse homography of the part the stroke started in
 
 function partUnder(mx, my) {
@@ -728,13 +746,18 @@ window.addEventListener('pointerdown', (e) => {
   pen = { h };
   try { document.body.setPointerCapture(e.pointerId); } catch {}
   penMsg('down', e);
+  brushSound.volume(S.drawSound ?? 0.6);
+  brushSound.begin(e.clientX, e.clientY, { brush: S.padBrush, size: S.padSize, area: { left: 0, width: vw() }, time: e.timeStamp });
 });
 window.addEventListener('pointermove', (e) => {
   if (!pen) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-  for (const ev of evs.length ? evs : [e]) penMsg('move', ev);
+  for (const ev of evs.length ? evs : [e]) {
+    penMsg('move', ev);
+    brushSound.move(ev.clientX, ev.clientY, ev.pointerType === 'pen' && ev.pressure > 0 ? ev.pressure : 0, ev.timeStamp);
+  }
 });
 for (const t of ['pointerup', 'pointercancel']) window.addEventListener(t, () => {
-  if (pen) CH.postMessage({ type: 'draw', phase: 'up' });
+  if (pen) { CH.postMessage({ type: 'draw', phase: 'up' }); brushSound.end(); }
   pen = null;
 });

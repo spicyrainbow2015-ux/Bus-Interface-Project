@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Draw on the Wall</title>
+  <style>
+    :root {
+      --bg: #101114; --card: #1a1c21; --line: #2c2f37; --text: #f1f1f3; --muted: #9a9ea8;
+      --accent: #ffd27a; --btn: #f3efe6; --btn-text: #15161a; --danger: #ff7a7a;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; background: var(--bg); color: var(--text); overscroll-behavior: none; }
+    body {
+      font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+      max-width: 560px; margin: 0 auto;
+    }
+    h1 { font-size: 24px; margin: 4px 0 4px; letter-spacing: -0.01em; }
+    .lede { color: var(--muted); margin: 0 0 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
+    button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      min-height: 44px; padding: 10px 14px; border-radius: 12px; cursor: pointer;
+      font: 600 15px -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #23262d; color: var(--text); border: 1px solid var(--line);
+    }
+    #mapCv { width: 100%; display: block; border-radius: 10px; background: #07080a; touch-action: manipulation; }
+    .shape-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .shape-btns button { justify-content: flex-start; min-height: 52px; }
+    .shape-btns i { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+    .msg { margin: 10px 0 0; font-size: 14px; color: var(--muted); }
+    .msg.err { color: var(--danger); }
+    .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .bar .name { flex: 1; font-weight: 600; font-size: 17px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .bar .name i { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+    .bar .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stagebox { display: flex; justify-content: center; margin-bottom: 10px; }
+    #drawCv { display: block; background: #f6f3ec; border-radius: 6px; box-shadow: 0 0 0 2px var(--accent); touch-action: none; }
+    .brushes { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+    .brushes button { min-height: 38px; padding: 6px 12px; font-size: 14px; flex: none; }
+    .brushes button.on { background: #3a3220; border-color: var(--accent); color: var(--accent); }
+    .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+    .swatch { width: 34px; height: 34px; min-height: 0; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+    .swatch.on { border-color: #fff; box-shadow: 0 0 0 2px var(--bg) inset; }
+    label.size { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+    label.size input { flex: 1; accent-color: var(--accent); }
+    .live { font-size: 13px; color: var(--muted); text-align: center; margin: 8px 0 0; }
+    .live.err { color: var(--danger); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <!-- 1. Pick a shape -->
+  <div id="stepMap">
+    <h1>Draw on the Wall</h1>
+    <p class="lede">These are the shapes on the wall. Tap one to draw in it. Your lines appear on the wall as you draw.</p>
+    <div class="card">
+      <canvas id="mapCv"></canvas>
+      <div class="shape-btns" id="shapeBtns"></div>
+      <p class="msg" id="mapMsg">Loading…</p>
+    </div>
+  </div>
+
+  <!-- 2. Draw -->
+  <div id="stepDraw" hidden>
+    <div class="bar">
+      <button id="btnBack" aria-label="Back to the map">← Map</button>
+      <div class="name"><i id="shapeDot"></i><span id="shapeName"></span></div>
+      <button id="btnSound" aria-label="Sound">🔊</button>
+    </div>
+    <div class="stagebox" id="stagebox"><canvas id="drawCv"></canvas></div>
+    <div class="brushes" id="brushes"></div>
+    <div class="swatches" id="swatches"></div>
+    <label class="size">Size <input type="range" id="size" min="2" max="36" step="1" value="8"></label>
+    <p class="live" id="live">Draw inside the box. It shows up on the wall in about a second.</p>
+  </div>
+
+  <script type="module" src="draw.js?v=1"></script>
+</body>
+</html>

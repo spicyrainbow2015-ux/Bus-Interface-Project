@@ -29,6 +29,7 @@
           <div class="swatches" id="swatches"></div>
           <label class="pad-size">Size <input type="range" data-key="padSize" min="2" max="36" step="1"></label>
           <label class="pad-size">Colour mix <input type="range" data-key="padMix" min="0" max="1" step="0.05"></label>
+          <label class="pad-size">Sound <input type="range" data-key="drawSound" min="0" max="1" step="0.05"></label>
         </div>
         <div class="stage cam-stage" id="camStage">
           <canvas id="cam" width="1280" height="720"></canvas>
@@ -37,6 +38,20 @@
         <div class="stage pad-stage" id="padStage" hidden>
           <canvas id="pad"></canvas>
         </div>
+      </div>
+
+      <div class="panel" id="mapPanel" hidden>
+        <div class="panel-head">
+          <h2>Map the shapes onto the wall</h2>
+          <span class="hint">This is the projector screen. Drag the corners and the wall follows.</span>
+        </div>
+        <div class="stage map-stage"><canvas id="mapCv" tabindex="0"></canvas></div>
+        <div class="map-tools">
+          <button id="btnAddShape">+ Add shape</button>
+          <label class="check"><input type="checkbox" data-key="mapGuides"> Show guides on the wall</label>
+        </div>
+        <div class="shape-list" id="shapeList"></div>
+        <p class="note map-note">Drag each corner (A top-left, B top-right, C bottom-right, D bottom-left) onto the matching corner on the wall, or drag inside a shape to move it. Hold <kbd>Shift</kbd> while dragging for fine control. Click a corner, then use the arrow keys to nudge it one projector pixel (<kbd>Shift</kbd>: 10). <b>Width ÷ height</b> is the shape's real proportions, which phones draw on; <b>Match the wall</b> takes them from the corners. Changing them clears the drawing.</p>
       </div>
 
       <div class="row2" id="paperRow">
@@ -61,6 +76,14 @@
       </div>
 
       <button id="btnClear" class="clear">Clear drawing <kbd>Space</kbd></button>
+      <div class="panel" id="phonesPanel" hidden>
+        <div class="panel-head"><h2>Phones</h2><span class="hint" id="phonesStatus">Waiting for phones</span></div>
+        <div class="fields">
+          <p class="note">Visitors scan the QR code, pick one of your shapes on their phone and draw with the same brushes. Their strokes appear on the wall as they draw, about a second later.</p>
+          <label class="check"><input type="checkbox" data-key="showQr"> Show QR code on output</label>
+          <p class="note">Phone page: <a id="drawLink" target="_blank" rel="noopener"></a></p>
+        </div>
+      </div>
       <div class="panel" id="subsPanel" hidden>
         <div class="panel-head"><h2>Photo submissions</h2><span class="hint" id="subsStatus">Checking…</span></div>
         <div class="fields">
@@ -102,6 +125,7 @@
             <select data-key="source">
               <option value="camera">Paper + camera</option>
               <option value="draw">Draw on screen</option>
+              <option value="phones">Phones draw live (your mapped shapes)</option>
               <option value="photos">Photo submissions (phones)</option>
               <option value="sim">Simulated paper drawing (no camera)</option>
               <option value="image">Photo file</option>
@@ -129,7 +153,7 @@
               <span>Building</span>
               <select data-key="outlineSrc">
                 <option value="door">Doorway (traced from your photo)</option>
-                <option value="boxes">Two boxes</option>
+                <option value="shapes">My shapes (mapped on site)</option>
                 <option value="sample">Sample building</option>
                 <option value="upload">My image</option>
               </select>
@@ -281,6 +305,6 @@
   </main>
 
   <video id="video" playsinline muted hidden></video>
-  <script type="module" src="control.js?v=12"></script>
+  <script type="module" src="control.js?v=15"></script>
 </body>
 </html>

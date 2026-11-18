@@ -231,3 +231,18 @@ button.reject { background: #4a1d20; border-color: #7a2c31; }
 #submitLink { color: var(--accent); word-break: break-all; }
 
 .open-section[hidden], .btn-row[hidden] { display: none; }
+
+/* Map the shapes onto the wall */
+.panel[hidden] { display: none; }
+.map-stage { background: #07080a; }
+.map-stage canvas { width: 100%; aspect-ratio: 16 / 9; touch-action: none; outline: none; }
+.map-stage canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.map-tools { display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.shape-list { display: flex; flex-direction: column; gap: 6px; padding: 10px 14px; }
+.shape-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.shape-dot { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.shape-name { flex: 1; min-width: 120px; }
+.shape-aspect { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.shape-aspect input { width: 70px; }
+.shape-del { padding: 4px 9px; }
+.map-note { padding: 0 14px 12px; margin: 0; }

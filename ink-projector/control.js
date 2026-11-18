@@ -1,6 +1,7 @@
 import { detectPaper, warpQuad, extractInk, makeInkBuffers, outlineFromImage } from './vision.js';
 import { createSim } from './sim.js';
 import { BRUSHES, createStroke } from './brushes.js';
+import { createBrushSound } from './brushsound.js';
 
 const $ = (id) => document.getElementById(id);
 const CH = new BroadcastChannel('ink-projector-v1');
@@ -10,23 +11,25 @@ const DEFAULTS = {
   source: 'sim', mirror: false, paper: 'a4', rotation: 0,
   outlineOn: false, outlineSrc: 'door', outlineMode: 'photo', outlineDetail: 0.4,
   drawLimit: 'shape', guideOpacity: 0.55, outlineOut: true, outlineGlow: 0.45,
-  padColor: '#17171d', padSize: 6, padBrush: 'pen', padMix: 0.35,
+  padColor: '#17171d', padSize: 6, padBrush: 'pen', padMix: 0.35, drawSound: 0.6, mapGuides: false,
   threshold: 0.38, hold: 0.4, margin: 0.03, density: 0.7, ignoreSkin: true, waitStill: true,
   colorMode: 'ink', motion: 0.5, wisps: 0.3, glow: 0.6, trails: 0.55, brightness: 0.8, pulse: 0.4,
   fade: 3, size: '1', showFrame: false, showQr: true, autoApprove: true, drawTime: 4, partFit: 'fill',
 };
-const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow'];
+const OUTPUT_KEYS = ['colorMode', 'motion', 'wisps', 'glow', 'pulse', 'trails', 'brightness', 'fade', 'size', 'showFrame', 'outlineGlow', 'padBrush', 'padSize', 'drawSound'];
 const OUTLINE_KEYS = ['outlineOn', 'outlineSrc', 'outlineMode', 'outlineDetail'];
 const PAPER_RATIO = { a4: 1.4142, letter: 1.2941, square: 1 };
 const LONG_SIDE = 480;
 const PHOTO_LONG_SIDE = 800; // photo submissions get more detail, since each fills only part of the doorway
-const isPad = () => S.source === 'draw' || S.source === 'photos';
+const isPad = () => S.source === 'draw' || S.source === 'photos' || S.source === 'phones';
+const drawsLive = () => S.source === 'draw' || S.source === 'phones'; // strokes are drawn as they happen
 const MAX_POINTS = 140000;
 
 let S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); } catch {}
 if (!S.doorwayIntroduced) { S.outlineSrc = 'door'; S.outlineOn = true; S.doorwayIntroduced = true; }
 if (S.padBrush === 'dots') S.padBrush = 'spray'; // Dots brush was folded into Spray
+if (S.outlineSrc === 'boxes') S.outlineSrc = 'shapes'; // Two boxes became editable shapes
 function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {} }
 
 // ---------- Elements ----------
@@ -82,8 +85,10 @@ document.querySelectorAll('[data-key]').forEach((el) => {
     save();
     refreshOutputs();
     if (OUTPUT_KEYS.includes(key)) sendSettings();
-    if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); }
-    if (OUTLINE_KEYS.includes(key)) buildOutline();
+    if (key === 'drawSound') brushSound.volume(S.drawSound);
+    if (key === 'source') { if (pointCount) doClear(true); updateSourceFields(); start(); afterOutlineChange(); photosModeChanged(); phonesModeChanged(); }
+    if (key === 'mapGuides') sendParts();
+    if (OUTLINE_KEYS.includes(key)) { buildOutline(); updateSourceFields(); }
     if (key === 'guideOpacity') updatePadGuide();
     if (key === 'outlineOut') sendOutline();
     if (key === 'showQr') sendQr();
@@ -103,9 +108,14 @@ function updateSourceFields() {
   $('padStage').hidden = !draw;
   $('padTools').hidden = !draw || photos;
   $('subsPanel').hidden = !photos;
+  $('phonesPanel').hidden = S.source !== 'phones';
+  $('mapPanel').hidden = !(S.outlineOn && S.outlineSrc === 'shapes');
+  if (!$('mapPanel').hidden) requestAnimationFrame(() => drawMap());
   $('camTitle').textContent = photos ? 'Doorway' : draw ? 'Drawing pad' : 'Camera';
   $('camHint').textContent = photos
     ? 'Approved phone drawings appear here and on the output, in the part each visitor chose.'
+    : S.source === 'phones'
+      ? 'Phone drawings appear here as visitors draw. You can draw here too.'
     : draw
       ? 'Draw with a mouse, trackpad or stylus. Lines appear on the output as you draw.'
       : 'Drag the corner dots to fit the paper outline';
@@ -441,6 +451,7 @@ function updateStatus() {
   const pp = $('pillPaper');
   if (S.source === 'photos') { pp.textContent = 'Taking phone drawings'; pp.className = 'pill ok'; }
   else if (S.source === 'draw') { pp.textContent = 'Drawing on screen'; pp.className = 'pill ok'; }
+  else if (S.source === 'phones') { pp.textContent = 'Phones drawing live'; pp.className = 'pill ok'; }
   else if (!corners) { pp.textContent = 'Paper: searching…'; pp.className = 'pill warn'; }
   else if (paperMode === 'locked') { pp.textContent = autoLocked ? 'Paper: found & locked' : 'Paper: locked (manual)'; pp.className = 'pill ok'; }
   else { pp.textContent = paperSeen ? 'Paper: found (auto)' : 'Paper: not visible'; pp.className = paperSeen ? 'pill ok' : 'pill warn'; }
@@ -547,7 +558,7 @@ let padDirty = false, padDrawing = false;
 
 function padTick() {
   const a = areaAspect();
-  const L = S.source === 'photos' ? PHOTO_LONG_SIDE : LONG_SIDE;
+  const L = padLong();
   const w = a >= 1 ? L : Math.round(L * a), h = a >= 1 ? Math.round(L / a) : L;
   ensureBuffers(w, h);
   if (padRaster.width !== w || padRaster.height !== h) {
@@ -571,7 +582,7 @@ function padTick() {
     const arr = new Float32Array(pts);
     chunks.push(arr);
     pointCount += arr.length / 5;
-    CH.postMessage({ type: 'add', aspect: w / h, res: Math.max(w, h), pts: arr, live: S.source === 'draw' });
+    CH.postMessage({ type: 'add', aspect: w / h, res: Math.max(w, h), pts: arr, live: drawsLive() });
   }
 }
 
@@ -666,8 +677,15 @@ function paintClipped(bb, clip, paint) {
 const pressureOf = (e) => (e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0);
 let padStrokeObj = null;
 
+// Drawing sound on this laptop when drawing on the pad (the output window plays its own when
+// drawing straight on the projection).
+const brushSound = createBrushSound();
+brushSound.volume(S.drawSound);
+const padArea = () => { const r = pad.getBoundingClientRect(); return { left: r.left, width: r.width }; };
+
 pad.addEventListener('pointerdown', (e) => {
   if (S.source === 'photos') return; // visitors choose the part on their phone
+  brushSound.begin(e.clientX, e.clientY, { brush: S.padBrush, size: S.padSize, area: padArea(), time: e.timeStamp });
   padDrawing = true;
   pad.setPointerCapture(e.pointerId);
   strokeClip = clipForStroke(padPos(e));
@@ -677,16 +695,19 @@ pad.addEventListener('pointerdown', (e) => {
 pad.addEventListener('pointermove', (e) => {
   if (!padDrawing) return;
   const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-  for (const ev of evs.length ? evs : [e]) drawMarks(padStrokeObj.move(padPos(ev), pressureOf(ev)));
+  for (const ev of evs.length ? evs : [e]) {
+    drawMarks(padStrokeObj.move(padPos(ev), pressureOf(ev)));
+    brushSound.move(ev.clientX, ev.clientY, pressureOf(ev), ev.timeStamp);
+  }
 });
-['pointerup', 'pointercancel'].forEach((t) => pad.addEventListener(t, () => { padDrawing = false; }));
+['pointerup', 'pointercancel'].forEach((t) => pad.addEventListener(t, () => { padDrawing = false; brushSound.end(); }));
 
 // Strokes drawn straight onto the projection (output window), in drawing-area fractions.
 // They go through the same brushes and shape limits as the pad. The output window is usually the
 // focused one then, and this page may be throttled, so the pad is flushed right away.
 let remoteStroke = null, flushTimer = 0;
 function drawRemote(m) {
-  if (S.source !== 'draw' || !padRaster.width) return;
+  if (!drawsLive() || !padRaster.width) return;
   const p = [m.u * padRaster.width, m.v * padRaster.height];
   if (m.phase === 'down') {
     strokeClip = clipForStroke(p);
@@ -715,6 +736,7 @@ $('brushes').addEventListener('click', (e) => {
   S.padBrush = id;
   save();
   renderBrushes();
+  sendSettings();
 });
 renderBrushes();
 
@@ -750,6 +772,7 @@ function sendSync(to) {
 
 CH.onmessage = ({ data: m }) => {
   if (!m) return;
+  if ((m.type === 'hello' || m.type === 'ping') && !m.preview && m.sw && m.sh) noteScreen(m.sw, m.sh);
   if (m.type === 'hello') { outputs.set(m.id, { preview: m.preview, last: performance.now() }); sendSync(m.id); sendOutline(m.id); sendHighlight(m.id); sendQr(m.id); }
   else if (m.type === 'ping') {
     if (!outputs.has(m.id)) { sendSync(m.id); sendOutline(m.id); sendHighlight(m.id); sendQr(m.id); }
@@ -899,41 +922,70 @@ function makeDoorway() {
   return c;
 }
 
-// Two plain boxes, e.g. two surfaces on a wall. Each one can be mapped separately on the
-// output window (press M there). Box positions are in this canvas's pixels.
-const BOXES_W = 1200, BOXES_H = 780;
-const BOXES = [
-  { id: 'box-1', name: 'Box 1', r: [80, 90, 560, 690] },
-  { id: 'box-2', name: 'Box 2', r: [640, 90, 1120, 690] },
-];
-function makeTwoBoxes() {
+// Mapped shapes: boxes the operator adds and pins onto the real wall by their four corners
+// (Map the shapes panel). Flat, each shape is a tile with its own proportions; the tiles are laid
+// out in rows to make the drawing area, so the pad, the colouring-book limits and the particles all
+// work as usual. On the output, each tile is warped onto its corners on the wall.
+const SHAPE_COLORS = ['#ffd27a', '#7ad7ff', '#ff9ec7', '#9effa8', '#c9a7ff', '#ffb27a', '#7affe4', '#ff7a7a'];
+const TILE_H = 600, TILE_GAP = 70, TILE_MARGIN = 70, TILES_PER_ROW = 3;
+function defaultShapes() {
+  return [
+    { id: 'shape-1', name: 'Box 1', aspect: 0.8, quad: [[0.12, 0.2], [0.42, 0.2], [0.42, 0.8], [0.12, 0.8]] },
+    { id: 'shape-2', name: 'Box 2', aspect: 0.8, quad: [[0.58, 0.2], [0.88, 0.2], [0.88, 0.8], [0.58, 0.8]] },
+  ];
+}
+if (!Array.isArray(S.shapes) || !S.shapes.length) S.shapes = defaultShapes();
+
+function shapeLayout() {
+  const rows = [];
+  S.shapes.forEach((sh, i) => { (rows[(i / TILES_PER_ROW) | 0] ||= []).push(sh); });
+  const rowW = rows.map((r) => r.reduce((a, sh) => a + TILE_H * sh.aspect, 0) + TILE_GAP * (r.length - 1));
+  const W = Math.round(Math.max(...rowW) + 2 * TILE_MARGIN);
+  const H = Math.round(rows.length * TILE_H + (rows.length - 1) * TILE_GAP + 2 * TILE_MARGIN);
+  const tiles = [];
+  rows.forEach((r, ri) => {
+    let x = (W - rowW[ri]) / 2;
+    const y = TILE_MARGIN + ri * (TILE_H + TILE_GAP);
+    for (const sh of r) { const w = TILE_H * sh.aspect; tiles.push({ id: sh.id, x, y, w, h: TILE_H }); x += w + TILE_GAP; }
+  });
+  return { W, H, tiles };
+}
+function makeShapesOutline() {
+  const L = shapeLayout();
   const c = document.createElement('canvas');
-  c.width = BOXES_W; c.height = BOXES_H;
+  c.width = L.W; c.height = L.H;
   const x = c.getContext('2d');
   x.fillStyle = '#fff';
   x.fillRect(0, 0, c.width, c.height);
   x.strokeStyle = '#000';
-  x.lineWidth = 5;
-  for (const { r: [l, t, rr, b] } of BOXES) x.strokeRect(l, t, rr - l, b - t);
+  x.lineWidth = Math.max(5, L.W / 240);
+  for (const t of L.tiles) x.strokeRect(t.x, t.y, t.w, t.h);
   return c;
 }
 
-// The pieces the output window can corner-pin onto the real surface: each box for the
-// Two boxes outline, otherwise the whole picture. Fractions of the drawing area.
+// The pieces the output window warps onto the wall: each mapped shape (with its corners), or
+// otherwise the whole picture (which the output can pin itself with M). Fractions of the drawing area.
 function mapParts() {
-  if (building && S.outlineSrc === 'boxes') {
+  if (building && S.outlineSrc === 'shapes') {
     const pl = placeIn(areaAspect(), outlineMargin());
+    const L = shapeLayout();
     return {
-      sig: 'boxes',
-      parts: BOXES.map(({ id, name, r: [l, t, rr, b] }) => ({
-        id, name,
-        x: pl.x + (l / BOXES_W) * pl.w, y: pl.y + (t / BOXES_H) * pl.h,
-        w: ((rr - l) / BOXES_W) * pl.w, h: ((b - t) / BOXES_H) * pl.h,
-      })),
+      sig: 'shapes', guides: !!S.mapGuides,
+      parts: L.tiles.map((t) => {
+        const sh = S.shapes.find((x) => x.id === t.id);
+        return {
+          id: t.id, name: sh.name, quad: sh.quad,
+          x: pl.x + (t.x / L.W) * pl.w, y: pl.y + (t.y / L.H) * pl.h,
+          w: (t.w / L.W) * pl.w, h: (t.h / L.H) * pl.h,
+        };
+      }),
     };
   }
   return { sig: 'whole', parts: [{ id: 'whole', name: 'Picture', x: 0, y: 0, w: 1, h: 1 }] };
 }
+function sendParts(to) { CH.postMessage({ type: 'parts', to, aspect: areaAspect(), ...mapParts() }); }
+// Long side of the drawing pad in capture pixels. Phone drawings get more detail.
+const padLong = () => (S.source === 'photos' || S.source === 'phones' ? PHOTO_LONG_SIDE : LONG_SIDE);
 
 function buildOutline() {
   updateOutlineFields();
@@ -941,7 +993,7 @@ function buildOutline() {
   const useUpload = S.outlineSrc === 'upload' && buildingImg;
   const src = useUpload ? buildingImg
     : S.outlineSrc === 'door' ? makeDoorway()
-    : S.outlineSrc === 'boxes' ? makeTwoBoxes()
+    : S.outlineSrc === 'shapes' ? makeShapesOutline()
     : makeSampleBuilding();
   const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
   const k = OUTLINE_LONG / Math.max(sw, sh);
@@ -1010,7 +1062,7 @@ function updatePadGuide() {
 }
 
 function sendOutline(to) {
-  CH.postMessage({ type: 'parts', to, aspect: areaAspect(), ...mapParts() });
+  sendParts(to);
   if (!building || !S.outlineOut) { CH.postMessage({ type: 'outline', to, on: false }); return; }
   const aspect = areaAspect();
   CH.postMessage({
@@ -1137,7 +1189,7 @@ const EMPTY_CLIP = document.createElement('canvas');
 EMPTY_CLIP.width = EMPTY_CLIP.height = 1;
 
 function clipForStroke(p) {
-  if (S.source !== 'draw' || !building || !building.labels || S.drawLimit === 'free') return null;
+  if (!drawsLive() || !building || !building.labels || S.drawLimit === 'free') return null;
   if (S.drawLimit === 'inside') return building.insideCv;
   const { w, h, labels, outside } = building;
   const bx = Math.round((p[0] / padRaster.width) * w), by = Math.round((p[1] / padRaster.height) * h);
@@ -1210,6 +1262,7 @@ async function api(op, body) {
 }
 
 const submitUrl = () => new URL('submit.html', location.href).href;
+const drawUrl = () => new URL('draw.html', location.href).href;
 // Phones need the template paper's proportions to find the shape on the sheet
 function sendPaperSize() {
   api('setState', { section: null, paperRatio: PAPER_RATIO[S.paper] || 1.2941 }).catch(() => {});
@@ -1344,7 +1397,12 @@ function sendHighlight(to) {
 }
 
 function sendQr(to) {
-  CH.postMessage({ type: 'qr', to, on: S.source === 'photos' && !!S.showQr, url: submitUrl() });
+  const phones = S.source === 'phones';
+  CH.postMessage({
+    type: 'qr', to, on: (S.source === 'photos' || phones) && !!S.showQr,
+    url: phones ? drawUrl() : submitUrl(),
+    caption: phones ? 'Scan to draw<br>on the wall' : 'Scan to draw<br>on the doorway',
+  });
 }
 
 let pollBusy = false;
@@ -1862,3 +1920,319 @@ function printSectionTemplate(L) {
 buildOutline();
 start();
 photosModeChanged();
+
+// ---------- Map the shapes onto the wall (on this laptop) ----------
+// The canvas is a mirror of the projector screen. Drag a shape's corners onto the real corners you
+// see on the wall, and the projection follows straight away. The shapes are saved here and on the
+// server, so visitors' phones show the same shapes.
+const mapCv = $('mapCv');
+const mapCtx = mapCv.getContext('2d');
+let screenSize = S.screenSize || { w: 1920, h: 1080 }; // the projector window, in CSS pixels
+let mapSel = null;   // { id, corner } picked corner (arrow keys nudge it)
+let mapDrag = null;
+let shapesSyncTimer = 0;
+const screenAspect = () => screenSize.w / screenSize.h;
+
+function noteScreen(w, h) {
+  if (Math.abs(w - screenSize.w) < 1 && Math.abs(h - screenSize.h) < 1) return;
+  screenSize = { w, h };
+  S.screenSize = screenSize;
+  save();
+  drawMap();
+  syncShapesSoon();
+}
+
+function shapeColor(i) { return SHAPE_COLORS[i % SHAPE_COLORS.length]; }
+
+function drawMap() {
+  if ($('mapPanel').hidden) return;
+  mapCv.style.aspectRatio = `${screenSize.w} / ${screenSize.h}`;
+  const dpr = window.devicePixelRatio || 1;
+  const cw = mapCv.clientWidth || 600, ch = mapCv.clientHeight || cw / screenAspect();
+  if (mapCv.width !== Math.round(cw * dpr) || mapCv.height !== Math.round(ch * dpr)) {
+    mapCv.width = Math.round(cw * dpr); mapCv.height = Math.round(ch * dpr);
+  }
+  const c = mapCtx;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = '#07080a';
+  c.fillRect(0, 0, cw, ch);
+  c.strokeStyle = 'rgba(255,255,255,0.05)';
+  c.lineWidth = 1;
+  for (let i = 1; i < 10; i++) {
+    c.beginPath(); c.moveTo((cw * i) / 10, 0); c.lineTo((cw * i) / 10, ch); c.stroke();
+    c.beginPath(); c.moveTo(0, (ch * i) / 10); c.lineTo(cw, (ch * i) / 10); c.stroke();
+  }
+  c.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+  S.shapes.forEach((sh, i) => {
+    const col = shapeColor(i);
+    const q = sh.quad.map(([x, y]) => [x * cw, y * ch]);
+    c.beginPath();
+    q.forEach(([x, y], k) => (k ? c.lineTo(x, y) : c.moveTo(x, y)));
+    c.closePath();
+    c.globalAlpha = 0.16; c.fillStyle = col; c.fill();
+    c.globalAlpha = 1; c.strokeStyle = col; c.lineWidth = 2; c.stroke();
+    const cx = q.reduce((a, p) => a + p[0], 0) / 4, cy = q.reduce((a, p) => a + p[1], 0) / 4;
+    c.fillStyle = col; c.textAlign = 'center';
+    c.fillText(sh.name, cx, cy + 4);
+    c.textAlign = 'left';
+    q.forEach(([x, y], k) => {
+      const sel = mapSel && mapSel.id === sh.id && mapSel.corner === k;
+      c.beginPath(); c.arc(x, y, 8, 0, Math.PI * 2);
+      c.lineWidth = 2; c.strokeStyle = sel ? '#fff' : col; c.stroke();
+      c.beginPath(); c.arc(x, y, 2, 0, Math.PI * 2); c.fillStyle = sel ? '#fff' : col; c.fill();
+      c.fillText('ABCD'[k], x + 10, y - 8);
+    });
+  });
+}
+
+function mapPoint(e) {
+  const r = mapCv.getBoundingClientRect();
+  return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, r];
+}
+function mapHit(u, v, r) {
+  let best = null, bd = 14;
+  for (const sh of S.shapes) sh.quad.forEach(([x, y], k) => {
+    const d = Math.hypot((x - u) * r.width, (y - v) * r.height);
+    if (d < bd) { bd = d; best = { id: sh.id, corner: k }; }
+  });
+  if (best) return best;
+  for (let i = S.shapes.length - 1; i >= 0; i--) {
+    const q = S.shapes[i].quad;
+    let inside = false;
+    for (let a = 0, b = 3; a < 4; b = a++) {
+      const [xa, ya] = q[a], [xb, yb] = q[b];
+      if ((ya > v) !== (yb > v) && u < ((xb - xa) * (v - ya)) / (yb - ya) + xa) inside = !inside;
+    }
+    if (inside) return { id: S.shapes[i].id, corner: -1 };
+  }
+  return null;
+}
+
+mapCv.addEventListener('pointerdown', (e) => {
+  const [u, v, r] = mapPoint(e);
+  const hit = mapHit(u, v, r);
+  mapCv.focus();
+  if (!hit) { mapSel = null; drawMap(); return; }
+  if (hit.corner >= 0) mapSel = hit;
+  const sh = S.shapes.find((x) => x.id === hit.id);
+  mapDrag = { ...hit, u, v, orig: sh.quad.map((p) => p.slice()) };
+  mapCv.setPointerCapture(e.pointerId);
+  drawMap();
+});
+mapCv.addEventListener('pointermove', (e) => {
+  const [u, v, r] = mapPoint(e);
+  if (!mapDrag) {
+    const hit = mapHit(u, v, r);
+    mapCv.style.cursor = hit ? (hit.corner >= 0 ? 'grab' : 'move') : 'default';
+    return;
+  }
+  const k = e.shiftKey ? 0.2 : 1; // Shift: fine control
+  const du = (u - mapDrag.u) * k, dv = (v - mapDrag.v) * k;
+  const sh = S.shapes.find((x) => x.id === mapDrag.id);
+  if (!sh) return;
+  sh.quad = mapDrag.orig.map(([x, y], i) => (mapDrag.corner === -1 || mapDrag.corner === i ? [x + du, y + dv] : [x, y]));
+  shapesMoved();
+});
+['pointerup', 'pointercancel'].forEach((t) => mapCv.addEventListener(t, () => { if (mapDrag) { mapDrag = null; save(); } }));
+mapCv.addEventListener('keydown', (e) => {
+  const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const a = arrows[e.code];
+  if (!a || !mapSel) return;
+  e.preventDefault();
+  const sh = S.shapes.find((x) => x.id === mapSel.id);
+  if (!sh) return;
+  const step = e.shiftKey ? 10 : 1; // projector pixels
+  const p = sh.quad[mapSel.corner];
+  sh.quad[mapSel.corner] = [p[0] + (a[0] * step) / screenSize.w, p[1] + (a[1] * step) / screenSize.h];
+  shapesMoved();
+  save();
+});
+window.addEventListener('resize', () => drawMap());
+
+// Corners moved: the wall follows right away; phones get the new map shortly after
+function shapesMoved() {
+  sendParts();
+  drawMap();
+  syncShapesSoon();
+}
+// Shapes added, removed or reshaped: the drawing area is laid out again, which clears the drawing
+function shapesRelaid() {
+  save();
+  if (pointCount) doClear(true);
+  buildOutline();
+  renderShapeList();
+  drawMap();
+  syncShapesSoon();
+}
+
+function syncShapesSoon() {
+  clearTimeout(shapesSyncTimer);
+  shapesSyncTimer = setTimeout(syncShapes, 500);
+}
+function syncShapes() {
+  if (S.source !== 'phones') return;
+  const a = areaAspect(), L = padLong();
+  const pw = a >= 1 ? L : Math.round(L * a), ph = a >= 1 ? Math.round(L / a) : L;
+  const parts = mapParts().parts;
+  const shapes = S.shapes.map((sh) => {
+    const p = parts.find((x) => x.id === sh.id);
+    return { id: sh.id, name: sh.name, aspect: sh.aspect, quad: sh.quad, tw: p ? Math.round(p.w * pw) : 200, th: p ? Math.round(p.h * ph) : 200 };
+  });
+  api('setShapes', { shapes, screen: screenAspect() })
+    .then(() => setPhonesStatus(phoneStatusText()))
+    .catch((err) => setPhonesStatus(err.message === 'offline' ? "Can't reach the server" : err.message));
+}
+
+// Proportions of the shape as it appears on the wall (from its corners on the projector)
+function wallAspect(sh) {
+  const q = sh.quad.map(([x, y]) => [x * screenSize.w, y * screenSize.h]);
+  const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  return (d(q[0], q[1]) + d(q[3], q[2])) / Math.max(1, d(q[0], q[3]) + d(q[1], q[2]));
+}
+
+function renderShapeList() {
+  const box = $('shapeList');
+  box.innerHTML = '';
+  S.shapes.forEach((sh, i) => {
+    const row = document.createElement('div');
+    row.className = 'shape-row';
+    row.innerHTML = `
+      <i class="shape-dot" style="background:${shapeColor(i)}"></i>
+      <input class="shape-name" type="text" maxlength="40" aria-label="Shape name">
+      <label class="shape-aspect">Width ÷ height <input type="number" min="0.1" max="10" step="0.05" aria-label="Proportions"></label>
+      <button class="shape-match" title="Set the proportions from how the shape is mapped on the wall">Match the wall</button>
+      <button class="shape-del" title="Remove this shape" aria-label="Remove ${sh.name}">✕</button>`;
+    const [name, aspect] = row.querySelectorAll('input');
+    name.value = sh.name;
+    aspect.value = (+sh.aspect).toFixed(2);
+    name.addEventListener('input', () => { sh.name = name.value || `Box ${i + 1}`; save(); sendParts(); drawMap(); syncShapesSoon(); });
+    aspect.addEventListener('change', () => {
+      const v = parseFloat(aspect.value);
+      if (!(v > 0.05)) { aspect.value = (+sh.aspect).toFixed(2); return; }
+      sh.aspect = Math.min(10, v);
+      shapesRelaid();
+    });
+    row.querySelector('.shape-match').addEventListener('click', () => { sh.aspect = Math.round(wallAspect(sh) * 100) / 100; shapesRelaid(); });
+    const del = row.querySelector('.shape-del');
+    del.disabled = S.shapes.length < 2;
+    del.addEventListener('click', () => { S.shapes = S.shapes.filter((x) => x !== sh); shapesRelaid(); });
+    box.append(row);
+  });
+}
+
+$('btnAddShape').addEventListener('click', () => {
+  const n = S.shapes.length;
+  const w = 0.22, h = (w * screenSize.w) / screenSize.h / 0.8;
+  const x0 = 0.1 + ((n * 0.07) % 0.55), y0 = Math.max(0.05, 0.5 - h / 2 + ((n % 3) - 1) * 0.06);
+  S.shapes.push({
+    id: `shape-${Date.now().toString(36)}`, name: `Box ${n + 1}`, aspect: 0.8,
+    quad: [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]],
+  });
+  shapesRelaid();
+});
+
+function initShapes() {
+  renderShapeList();
+  drawMap();
+}
+
+// ---------- Phones drawing live (draw.html) ----------
+// Visitors pick a shape on their phone and draw. Each stroke arrives in small pieces about a second
+// after it was drawn. It's replayed here at the speed it was drawn, with the same brushes and limits
+// as the pad, so it appears on the wall as if drawn live.
+let strokeNext = -1;          // position in the server's stroke list (-1 = start from now)
+let phonePollTimer = 0, phoneDrainTimer = 0, phoneBusy = false;
+let phoneStrokeCount = 0;
+const phoneStrokes = new Map(); // sid -> { part, brush, size, color, mix, queue, offset, obj, clip, ended, last }
+
+function setPhonesStatus(t) { $('phonesStatus').textContent = t; }
+const phoneStatusText = () => (phoneStrokeCount ? `${phoneStrokeCount} stroke${phoneStrokeCount === 1 ? '' : 's'} so far` : 'Waiting for phones');
+
+function phonesModeChanged() {
+  clearInterval(phonePollTimer);
+  clearInterval(phoneDrainTimer);
+  sendQr();
+  if (S.source !== 'phones') return;
+  if (!S.outlineOn || S.outlineSrc !== 'shapes') {
+    S.outlineOn = true;
+    S.outlineSrc = 'shapes';
+    save();
+    document.querySelector('[data-key="outlineOn"]').checked = true;
+    document.querySelector('[data-key="outlineSrc"]').value = 'shapes';
+    buildOutline();
+    updateSourceFields();
+  }
+  $('drawLink').href = drawUrl();
+  $('drawLink').textContent = drawUrl();
+  strokeNext = -1;
+  phoneStrokes.clear();
+  syncShapes();
+  pollPhones();
+  phonePollTimer = setInterval(pollPhones, 400);
+  phoneDrainTimer = setInterval(drainPhones, 16);
+}
+
+async function pollPhones() {
+  if (S.source !== 'phones' || phoneBusy) return;
+  phoneBusy = true;
+  try {
+    const r = await api(`strokes&since=${strokeNext}`);
+    strokeNext = r.next;
+    for (const it of r.items || []) queuePiece(it);
+    setPhonesStatus(phoneStatusText());
+  } catch (err) {
+    setPhonesStatus(err.message === 'offline' ? 'Needs the live site or node serve.js' : "Can't reach the server");
+  } finally {
+    phoneBusy = false;
+  }
+}
+
+function queuePiece(it) {
+  const part = mapParts().parts.find((p) => p.id === it.shape);
+  if (!part || !Array.isArray(it.pts)) return;
+  const now = performance.now();
+  let st = phoneStrokes.get(it.sid);
+  if (!st) {
+    st = { part, brush: it.brush, size: it.size, color: it.color, mix: it.mix, queue: [], offset: null, obj: null, clip: null, ended: false, last: now };
+    phoneStrokes.set(it.sid, st);
+    phoneStrokeCount++;
+  }
+  for (const [u, v, pr, t] of it.pts) {
+    if (st.offset == null) st.offset = now + 120 - t; // replay at the speed it was drawn
+    st.queue.push({ due: st.offset + t, u, v, pr });
+  }
+  if (it.end) st.ended = true;
+  st.last = now;
+}
+
+function drainPhones() {
+  if (!phoneStrokes.size || !padRaster.width || !building || !building.labels) return;
+  const now = performance.now();
+  let drew = false;
+  for (const [sid, st] of phoneStrokes) {
+    while (st.queue.length && st.queue[0].due <= now) {
+      const { u, v, pr } = st.queue.shift();
+      const p = [(st.part.x + u * st.part.w) * padRaster.width, (st.part.y + v * st.part.h) * padRaster.height];
+      let marks;
+      if (!st.obj) {
+        // Always kept inside the shape it starts in
+        const L = labelAt(p);
+        st.clip = L && !building.outside[L] ? regionCanvas(L) : EMPTY_CLIP;
+        st.obj = createStroke({ brush: st.brush, size: st.size, color: st.color, mix: st.mix });
+        marks = st.obj.begin(p, pr);
+      } else {
+        marks = st.obj.move(p, pr);
+      }
+      const keep = strokeClip;
+      strokeClip = st.clip;
+      drawMarks(marks);
+      strokeClip = keep;
+      drew = true;
+    }
+    if (!st.queue.length && (st.ended || now - st.last > 8000)) phoneStrokes.delete(sid);
+  }
+  if (drew) padTick();
+}
+
+initShapes();
+phonesModeChanged();

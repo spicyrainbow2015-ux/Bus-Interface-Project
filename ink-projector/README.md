@@ -23,6 +23,31 @@ Pick one under **Source → Input**:
   **Hatch** (short dashes across the stroke; circles become radiating rings), **Ripple**
   (parallel contour lines), **Polka** (big evenly spaced dots) and **Triangles** (scattered solid triangles). **Colour mix** spreads each mark's hue and lightness around the chosen colour. Lines become particles the
   moment you draw them, and Clear wipes the pad along with the output.
+  **Sound** plays a drawing sound made live in the browser: louder and brighter the faster you draw,
+  fading away when the pen stops, with its own character per brush (soft felt-tip for Pen, an airy hiss
+  for Spray, scratchy Hatch, soft dabs for Polka and Triangles). It plays from the operator page when
+  drawing on the pad, and from the output window when drawing on the projection. Set it to 0 to mute.
+
+## Phones draw live on mapped shapes
+
+Set **Input** to **Phones draw live (your mapped shapes)**. The outline switches to **My shapes**.
+
+1. **Map the shapes (on site):** the **Map the shapes onto the wall** panel is a mirror of the projector
+   screen. **+ Add shape**, then drag each shape's corners A–D onto the real corners you see on the wall.
+   The projection follows as you drag. Drag inside a shape to move it, hold Shift for fine control, and
+   click a corner and use the arrow keys to nudge it by one projector pixel. **Show guides on the wall**
+   projects each shape's border and a grid while you line them up. **Width ÷ height** is the shape's real
+   proportions, which visitors draw on (**Match the wall** takes them from the corners). Changing the
+   proportions or adding or removing a shape clears the drawing.
+2. **Visitors** scan the QR code (or open `draw.html`), see a map of the shapes, tap one and draw with
+   Pen, Spray, Hatch, Ripple, Polka or Triangles in any colour, with the drawing sound on their phone.
+   Each stroke is sent in small pieces while it's drawn. The operator page replays it on the wall at the
+   speed it was drawn, about a second behind, and keeps it inside its shape.
+3. The operator can draw on the pad, or straight on the output window, at the same time.
+
+The shapes are stored on the server (`op=setShapes`), and so are the stroke pieces (`op=stroke`, read with
+`op=strokes`). Keep the operator page open: it's what draws the phone strokes. Phones can't reach `localhost`,
+so test with real phones on the deployed site.
 
 ## Photo submissions (phones)
 
